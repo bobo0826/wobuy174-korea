@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+:root {
+  --background: #F5F5F5;
+  --foreground: #605B51;
+  --font-round: ui-rounded, "Arial Rounded MT Bold", "Hiragino Maru Gothic ProN", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-hand: "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", cursive;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-round);
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.font-hand {
+  font-family: var(--font-hand);
+}
