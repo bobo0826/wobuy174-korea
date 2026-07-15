@@ -563,7 +563,13 @@ function CloseIcon() {
   );
 }
 
-export function ProductCatalog({ initialCategory = "latest" }: { initialCategory?: Category }) {
+export function ProductCatalog({
+  initialCategory = "latest",
+  showAllCategory = true,
+}: {
+  initialCategory?: Category;
+  showAllCategory?: boolean;
+}) {
   const [activeCategory, setActiveCategory] = useState<Category>(initialCategory);
   const [activeBeddingType, setActiveBeddingType] = useState<
     "all" | "cool" | "allSeason" | "pillow"
@@ -576,6 +582,9 @@ export function ProductCatalog({ initialCategory = "latest" }: { initialCategory
   const [remoteCatalogLoaded, setRemoteCatalogLoaded] = useState(false);
   const galleryRef = useRef<HTMLDivElement>(null);
   const pageSize = 16;
+  const visibleCategories = showAllCategory
+    ? categories
+    : categories.filter((category) => category.id !== "latest");
 
   useEffect(() => {
     const supabase = getSupabaseClient();
@@ -652,7 +661,7 @@ export function ProductCatalog({ initialCategory = "latest" }: { initialCategory
       <section id="products" className="scroll-mt-24 px-5 pb-20 pt-8 sm:px-8 sm:pb-28 lg:px-12">
         <div className="mx-auto max-w-[1500px]">
           <div className="scrollbar-none -mx-5 flex overflow-x-auto border-y border-[#D9D6D0] px-5 sm:mx-0 sm:px-0">
-            {categories.map((category) => {
+            {visibleCategories.map((category) => {
               const isActive = activeCategory === category.id;
               return (
                 <button
@@ -736,7 +745,7 @@ export function ProductCatalog({ initialCategory = "latest" }: { initialCategory
             <span className="text-xs tracking-[0.08em] text-[#605B51]/65">{filteredProducts.length} ITEMS</span>
           </div>
 
-          <div id="products-grid" className="grid grid-cols-4 gap-x-2.5 gap-y-8 sm:gap-x-4 sm:gap-y-10 md:grid-cols-5 lg:grid-cols-6 lg:gap-x-5">
+          <div id="products-grid" className="grid grid-cols-3 gap-x-3 gap-y-8 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-10 md:grid-cols-5 lg:grid-cols-6 lg:gap-x-5">
             {visibleProducts.map((product) => (
               <button
                 aria-label={`查看 ${product.name} 商品資訊`}
@@ -758,7 +767,7 @@ export function ProductCatalog({ initialCategory = "latest" }: { initialCategory
                 <p className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-[12px] font-semibold leading-5 tracking-[-0.015em] text-[#605B51] sm:mt-3 sm:text-sm sm:leading-6">
                   {product.name}
                 </p>
-                <p className="mt-1 text-[15px] font-semibold leading-5 tracking-[-0.02em] text-[#A81515]">NT$ {formatPrice(product.price)}</p>
+                <p className="mt-1 text-[13px] font-semibold leading-5 tracking-[-0.02em] text-[#A81515] sm:text-sm">NT$ {formatPrice(product.price)}</p>
               </button>
             ))}
           </div>
@@ -996,18 +1005,18 @@ export default function Home() {
         </div>
       </section>
 
-      <ProductCatalog />
+      <ProductCatalog showAllCategory={false} />
 
       <section className="min-h-[750px] border-y border-[#D9D6D0] px-5 py-5 sm:min-h-0 sm:px-8 sm:py-16 lg:px-12">
-        <div className="mx-auto grid max-w-[1500px] gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-24">
+        <div className="mx-auto grid max-w-[1500px] gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
           <div>
             <p className="text-[10px] font-semibold tracking-[0.24em] text-[#605B51]/70">ORDER WITH LINE@</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-[-0.05em] sm:text-4xl">詢價與下單方式</h2>
-            <p className="mt-5 max-w-sm text-sm leading-7 text-[#605B51] sm:text-base">
+            <p className="mt-4 max-w-sm text-sm leading-6 text-[#605B51] sm:text-base">
               看到喜歡的商品後，截圖傳給我們；庫存、規格與後續安排，我們會在 LINE@ 協助你確認。
             </p>
             <a
-              className="mt-8 inline-flex items-center gap-2 rounded-full bg-[#605B51] px-6 py-3.5 text-sm font-medium tracking-[0.06em] text-[#F5F5F5] transition-transform hover:-translate-y-0.5 hover:bg-[#766F63]"
+              className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#605B51] px-6 py-3.5 text-sm font-medium tracking-[0.06em] text-[#F5F5F5] transition-transform hover:-translate-y-0.5 hover:bg-[#766F63]"
               href={lineOfficialUrl}
               target="_blank"
               rel="noreferrer"
@@ -1022,10 +1031,10 @@ export default function Home() {
               ["03", "傳送至 LINE@", "將截圖傳送至 LINE@ 官方帳號詢價或下單。"],
               ["04", "確認訂單資訊", "客服將協助確認庫存、商品規格與後續安排。"],
             ].map(([number, title, description]) => (
-              <li className="grid grid-cols-[42px_1fr] gap-x-4 border-b border-[#D9D6D0] py-5 sm:grid-cols-[56px_1fr_auto] sm:items-center sm:gap-x-6" key={number}>
+              <li className="grid grid-cols-[42px_1fr] gap-x-4 border-b border-[#D9D6D0] py-4 sm:grid-cols-[56px_1fr_auto] sm:items-center sm:gap-x-6" key={number}>
                 <span className="text-xs font-medium tracking-[0.12em] text-[#605B51]/65">{number}</span>
                 <h3 className="text-base font-semibold">{title}</h3>
-                <p className="col-start-2 mt-1 text-sm leading-6 text-[#605B51] sm:col-start-auto sm:mt-0 sm:max-w-[16rem]">{description}</p>
+                <p className="col-start-2 mt-1 text-sm leading-5 text-[#605B51] sm:col-start-auto sm:mt-0 sm:max-w-[16rem]">{description}</p>
               </li>
             ))}
           </ol>
