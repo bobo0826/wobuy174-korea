@@ -16,6 +16,15 @@ const categoryFilters = [
 
 type CategoryFilter = (typeof categoryFilters)[number]["id"];
 
+const beddingTypeFilters = [
+  { id: "all", label: "全部" },
+  { id: "cool", label: "涼感被" },
+  { id: "allSeason", label: "四季被" },
+  { id: "pillow", label: "秒睡枕" },
+] as const;
+
+type BeddingTypeFilter = (typeof beddingTypeFilters)[number]["id"];
+
 type ManagedProduct = {
   id: string;
   code: string;
@@ -24,6 +33,7 @@ type ManagedProduct = {
   status: string;
   sort_order: number | null;
   categories: string[] | null;
+  bedding_type: string | null;
   image_urls: string[] | null;
   published: boolean;
 };
@@ -42,6 +52,7 @@ export default function AdminProductsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [products, setProducts] = useState<ManagedProduct[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>("all");
+  const [activeBeddingType, setActiveBeddingType] = useState<BeddingTypeFilter>("all");
   const [sortValues, setSortValues] = useState<Record<string, string>>({});
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -159,9 +170,15 @@ export default function AdminProductsPage() {
     setIsBusy(false);
   };
 
-  const visibleProducts = activeCategory === "all"
-    ? products
-    : products.filter((product) => product.categories?.includes(activeCategory));
+  const visibleProducts = products.filter((product) => {
+    const categoryMatches = activeCategory === "all" || product.categories?.includes(activeCategory);
+    const beddingTypeMatches =
+      activeCategory !== "bedding" ||
+      activeBeddingType === "all" ||
+      product.bedding_type === activeBeddingType;
+
+    return categoryMatches && beddingTypeMatches;
+  });
 
   if (!isSupabaseConfigured) {
     return (
@@ -210,9 +227,20 @@ export default function AdminProductsPage() {
             {categoryFilters.map((filter) => {
               const count = filter.id === "all" ? products.length : products.filter((product) => product.categories?.includes(filter.id)).length;
               const selected = activeCategory === filter.id;
-              return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#605B51]"}`} key={filter.id} onClick={() => setActiveCategory(filter.id)}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
+              return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#605B51]"}`} key={filter.id} onClick={() => { setActiveCategory(filter.id); setActiveBeddingType("all"); }}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
             })}
           </div>
+          {activeCategory === "bedding" && (
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-[#D9D6D0] pt-3">
+              {beddingTypeFilters.map((filter) => {
+                const count = filter.id === "all"
+                  ? products.filter((product) => product.categories?.includes("bedding")).length
+                  : products.filter((product) => product.categories?.includes("bedding") && product.bedding_type === filter.id).length;
+                const selected = activeBeddingType === filter.id;
+                return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#7D2F35] bg-[#7D2F35] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#7D2F35]"}`} key={filter.id} onClick={() => setActiveBeddingType(filter.id)}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
+              })}
+            </div>
+          )}
         </div>
 
         {message && <p className="mt-5 text-sm leading-6 text-[#A81515]">{message}</p>}
@@ -233,9 +261,11 @@ export default function AdminProductsPage() {
             </thead>
             <tbody className="divide-y divide-[#D9D6D0]">
               {visibleProducts.map((product) => {
-                const labels = categoryFilters
+                const labels: string[] = categoryFilters
                   .filter((filter) => filter.id !== "all" && product.categories?.includes(filter.id))
                   .map((filter) => filter.label);
+                const beddingTypeLabel = beddingTypeFilters.find((filter) => filter.id === product.bedding_type)?.label;
+                if (beddingTypeLabel) labels.push(beddingTypeLabel);
                 return (
                   <tr className="align-middle" key={product.id}>
                     <td className="px-4 py-3">

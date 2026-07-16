@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getSupabaseClient, isSupabaseConfigured } from "./lib/supabase";
 
 export type Category =
@@ -71,6 +71,18 @@ export const roundedFontFamily =
   'ui-rounded, "Arial Rounded MT Bold", "Hiragino Maru Gothic ProN", "PingFang TC", "Microsoft JhengHei", sans-serif';
 const handwrittenFontFamily =
   '"HanziPen TC", "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", cursive';
+
+const desktopPageSizeQuery = "(min-width: 1024px)";
+
+function subscribeToPageSizeChange(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia(desktopPageSizeQuery);
+  mediaQuery.addEventListener("change", onStoreChange);
+  return () => mediaQuery.removeEventListener("change", onStoreChange);
+}
+
+function getPageSizeSnapshot() {
+  return window.matchMedia(desktopPageSizeQuery).matches ? 18 : 15;
+}
 
 const categories: { id: Category; label: string }[] = [
   { id: "latest", label: "所有商品" },
@@ -580,8 +592,12 @@ export function ProductCatalog({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(products);
   const [remoteCatalogLoaded, setRemoteCatalogLoaded] = useState(false);
+  const pageSize = useSyncExternalStore(
+    subscribeToPageSizeChange,
+    getPageSizeSnapshot,
+    () => 15,
+  );
   const galleryRef = useRef<HTMLDivElement>(null);
-  const pageSize = 16;
   const visibleCategories = showAllCategory
     ? categories
     : categories.filter((category) => category.id !== "latest");
@@ -619,9 +635,10 @@ export function ProductCatalog({
     return matchesCategory && matchesBedding && matchesKorea;
   });
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const activePage = Math.min(currentPage, totalPages);
   const visibleProducts = filteredProducts.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
+    (activePage - 1) * pageSize,
+    activePage * pageSize,
   );
   const galleryImages = selectedProduct
     ? (selectedProduct.images?.length ? selectedProduct.images : [selectedProduct.image]).slice(0, 3)
@@ -783,16 +800,16 @@ export function ProductCatalog({
               <button
                 aria-label="上一頁"
                 className="rounded-full border border-[#D9D6D0] px-4 py-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-35 hover:border-[#605B51]"
-                disabled={currentPage === 1}
-                onClick={() => selectPage(currentPage - 1)}
+                disabled={activePage === 1}
+                onClick={() => selectPage(activePage - 1)}
               >
                 上一頁
               </button>
               {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
                 <button
-                  aria-current={currentPage === page ? "page" : undefined}
+                  aria-current={activePage === page ? "page" : undefined}
                   className={`h-9 w-9 rounded-full text-xs transition-colors ${
-                    currentPage === page
+                    activePage === page
                       ? "bg-[#605B51] text-[#F5F5F5]"
                       : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
                   }`}
@@ -805,8 +822,8 @@ export function ProductCatalog({
               <button
                 aria-label="下一頁"
                 className="rounded-full border border-[#D9D6D0] px-4 py-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-35 hover:border-[#605B51]"
-                disabled={currentPage === totalPages}
-                onClick={() => selectPage(currentPage + 1)}
+                disabled={activePage === totalPages}
+                onClick={() => selectPage(activePage + 1)}
               >
                 下一頁
               </button>
