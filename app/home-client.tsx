@@ -558,15 +558,6 @@ function Arrow({ className = "" }: { className?: string }) {
   );
 }
 
-function PinIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" style={{ width: "1.25rem", height: "1.25rem", flex: "0 0 auto" }} fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
-      <circle cx="12" cy="10" r="2.5" />
-    </svg>
-  );
-}
-
 function CloseIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" style={{ width: "1.25rem", height: "1.25rem", flex: "0 0 auto" }} fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -675,7 +666,7 @@ export function ProductCatalog({
 
   return (
     <>
-      <section id="products" className="scroll-mt-24 px-5 pb-20 pt-8 sm:px-8 sm:pb-28 lg:px-12">
+      <section id="products" className="scroll-mt-24 px-5 pb-20 pt-8 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
         <div className="mx-auto max-w-[1500px]">
           <div className="scrollbar-none -mx-5 flex overflow-x-auto border-y border-[#D9D6D0] px-5 sm:mx-0 sm:px-0">
             {visibleCategories.map((category) => {
@@ -981,7 +972,7 @@ export default function Home() {
         </div>
       </header>
 
-      <section id="top" className="relative isolate min-h-[200px] border-b border-[#D9D6D0] px-5 py-3 sm:px-8 sm:py-28 lg:px-12 lg:py-36">
+      <section id="top" className="relative isolate min-h-[200px] border-b border-[#D9D6D0] px-5 py-3 sm:px-8 sm:py-28 lg:px-12 lg:py-5">
         <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
           <div className="absolute -right-10 top-3 h-32 w-32 rounded-full border border-[#D9D6D0] sm:-right-8 sm:top-8 sm:h-72 sm:w-72" />
           <div className="absolute -left-10 bottom-[-40px] h-24 w-24 rounded-full bg-[#EAE8E4] sm:-left-5 sm:bottom-[-70px] sm:h-56 sm:w-56" />
@@ -1016,15 +1007,12 @@ export default function Home() {
               加入 LINE 社群
             </a>
           </div>
-          <p className="mt-12 hidden items-center justify-center gap-1.5 text-xs text-[#605B51]/70 sm:flex">
-            <PinIcon /> 嘉義縣朴子市開元路174號
-          </p>
         </div>
       </section>
 
       <ProductCatalog showAllCategory={false} />
 
-      <section className="min-h-[750px] border-y border-[#D9D6D0] px-5 py-5 sm:min-h-0 sm:px-8 sm:py-16 lg:px-12">
+      <section className="border-y border-[#D9D6D0] px-5 py-5 sm:px-8 sm:py-10 lg:px-12 lg:py-14">
         <div className="mx-auto grid max-w-[1500px] gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
           <div>
             <p className="text-[10px] font-semibold tracking-[0.24em] text-[#605B51]/70">ORDER WITH LINE@</p>
@@ -1048,10 +1036,10 @@ export default function Home() {
               ["03", "傳送至 LINE@", "將截圖傳送至 LINE@ 官方帳號詢價或下單。"],
               ["04", "確認訂單資訊", "客服將協助確認庫存、商品規格與後續安排。"],
             ].map(([number, title, description]) => (
-              <li className="grid grid-cols-[42px_1fr] gap-x-4 border-b border-[#D9D6D0] py-4 sm:grid-cols-[56px_1fr_auto] sm:items-center sm:gap-x-6" key={number}>
+              <li className="grid grid-cols-[42px_1fr] gap-x-4 border-b border-[#D9D6D0] py-4 sm:grid-cols-[56px_1fr_auto] sm:items-center sm:gap-x-6 2xl:grid-cols-[56px_380px_minmax(0,1fr)]" key={number}>
                 <span className="text-xs font-medium tracking-[0.12em] text-[#605B51]/65">{number}</span>
                 <h3 className="text-base font-semibold">{title}</h3>
-                <p className="col-start-2 mt-1 text-sm leading-5 text-[#605B51] sm:col-start-auto sm:mt-0 sm:max-w-[16rem]">{description}</p>
+                <p className="col-start-2 mt-1 text-sm leading-5 text-[#605B51] sm:col-start-auto sm:mt-0 sm:max-w-[16rem] 2xl:max-w-none 2xl:whitespace-nowrap">{description}</p>
               </li>
             ))}
           </ol>

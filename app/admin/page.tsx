@@ -356,10 +356,12 @@ export default function AdminPage() {
     return () => authListener.subscription.unsubscribe();
   }, []);
 
-  const signIn = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const signIn = async () => {
     const supabase = getSupabaseClient();
-    if (!supabase) return;
+    if (!supabase) {
+      setMessage("找不到 Supabase 登入設定，請重新啟動本機預覽後再試一次。");
+      return;
+    }
 
     if (!email.trim() || !password) {
       setMessage("請先完整輸入 Email 與密碼。");
@@ -521,11 +523,11 @@ export default function AdminPage() {
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">WOBUY174_ ADMIN</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">商品管理後台</h1>
           <p className="mt-4 text-sm leading-7 text-[#605B51]/75">請使用已加入管理權限的帳號登入。</p>
-          <form className="mt-7 space-y-4" noValidate onSubmit={signIn}>
-            <label className="block text-sm font-medium">Email<input className={inputClass} type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-            <label className="block text-sm font-medium">密碼<input className={inputClass} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+          <form className="mt-7 space-y-4" noValidate onSubmit={(event) => { event.preventDefault(); void signIn(); }}>
+            <label className="block text-sm font-medium">Email<input aria-required="true" className={inputClass} type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+            <label className="block text-sm font-medium">密碼<input aria-required="true" className={inputClass} type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
             <Link className="inline-block text-sm font-medium underline underline-offset-4 transition-opacity hover:opacity-65" href="/admin/reset-password">忘記密碼？重新設定</Link>
-            <button className="w-full rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy} type="submit">{isBusy ? "登入中…" : "登入後台"}</button>
+            <button className="w-full rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy} onClick={() => void signIn()} type="button">{isBusy ? "登入中…" : "登入後台"}</button>
           </form>
           {message && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{message}</p>}
         </div>
