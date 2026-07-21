@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8f7f4;
+  --foreground: #292824;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: #dbe8dc;
+  color: #292824;
+}
+
+aside.fixed > div:first-child > p:first-child,
+header > div:first-child > b.text-sm,
+aside.relative > p:first-child {
+  font-size: 0 !important;
+}
+
+aside.fixed > div:first-child > p:first-child::after,
+header > div:first-child > b.text-sm::after,
+aside.relative > p:first-child::after {
+  content: "wobuy174＿";
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #6e695f;
+}
+
+/* 庫存總覽：摘要卡片固定每列兩張。 */
+main > section.grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* 出貨單以 A5 直式版面呈現，列印時固定為實際紙張尺寸。 */
+@media print {
+  @page {
+    size: A5 portrait;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 148mm;
+    min-height: 210mm;
+    background: #fff !important;
+  }
+
+  .shipping-slip-page,
+  .shipping-slip-shell,
+  .shipping-slip-sheet {
+    width: 148mm !important;
+    min-height: 210mm;
+    margin: 0 !important;
+  }
+
+  .shipping-slip-page {
+    padding: 0 !important;
+  }
+}
