@@ -194,6 +194,8 @@ function OrderDetail({ order, back }: { order: Order; back: () => void }) {
 
 export function Orders({ created, go }: { created: boolean; go: (view: "create") => void }) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("全部狀態");
   const createdOrder: Order = {
     id: "#WB-260721-019",
     createdAt: "剛剛",
@@ -214,6 +216,12 @@ export function Orders({ created, go }: { created: boolean; go: (view: "create")
     note: "訂單已由後台建立。",
   };
   const displayedOrders = created ? [createdOrder, ...orders] : orders;
+  const statuses = ["全部狀態", "待確認", "已確認", "備貨中", "已出貨", "已取消"];
+  const visibleOrders = displayedOrders.filter((order) => {
+    const matchesStatus = statusFilter === "全部狀態" || order.status === statusFilter;
+    const matchesQuery = !query.trim() || [order.id, order.customer, order.lineName, ...order.items.map((item) => item.name)].join(" ").toLowerCase().includes(query.trim().toLowerCase());
+    return matchesStatus && matchesQuery;
+  });
 
   if (selectedOrder) return <OrderDetail order={selectedOrder} back={() => setSelectedOrder(null)} />;
 
@@ -230,11 +238,11 @@ export function Orders({ created, go }: { created: boolean; go: (view: "create")
     <section className="overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
       <div className="flex flex-col gap-4 border-b border-[#F0EDE8] p-5 sm:p-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <label className="flex h-11 max-w-md flex-1 items-center gap-2 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#928C84]"><span>⌕</span><input className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#AAA39A]" placeholder="搜尋訂單編號、客戶姓名或商品" /></label>
-          <span className="text-xs text-[#807A71]">共 {displayedOrders.length + 24} 筆訂單</span>
+          <label className="flex h-11 max-w-md flex-1 items-center gap-2 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#928C84]"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#AAA39A]" placeholder="搜尋訂單編號、客戶姓名或商品" /></label>
+          <span className="text-xs text-[#807A71]">顯示 {visibleOrders.length} 筆訂單</span>
         </div>
         <div className="flex gap-2 overflow-x-auto">
-          {["全部狀態", "草稿", "待確認", "已確認", "備貨中", "已出庫", "已取消"].map((status, index) => <button key={status} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${index === 0 ? "bg-[#292824] text-white" : "bg-[#F4F1ED] text-[#706A61]"}`}>{status}</button>)}
+          {statuses.map((status) => <button key={status} onClick={() => setStatusFilter(status)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${statusFilter === status ? "bg-[#292824] text-white" : "bg-[#F4F1ED] text-[#706A61]"}`}>{status}</button>)}
         </div>
       </div>
 
@@ -242,14 +250,14 @@ export function Orders({ created, go }: { created: boolean; go: (view: "create")
         <table className="w-full min-w-[910px] text-left">
           <thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">訂單編號</th><th className="px-3 py-3">建立日期</th><th className="px-3 py-3">客戶</th><th className="px-3 py-3">商品</th><th className="px-3 py-3">金額</th><th className="px-3 py-3">付款</th><th className="px-3 py-3">訂單狀態</th><th className="px-3 py-3">庫存狀態</th><th className="px-6 py-3 text-right">操作</th></tr></thead>
           <tbody className="divide-y divide-[#F0EDE8] text-sm">
-            {displayedOrders.map((order) => {
+            {visibleOrders.length ? visibleOrders.map((order) => {
               const total = order.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0) + order.shipping;
               const count = order.items.reduce((sum, item) => sum + item.quantity, 0);
               return <tr key={order.id} onClick={() => setSelectedOrder(order)} className="cursor-pointer hover:bg-[#FCFBF9]">
                 <td className="px-6 py-4 font-semibold text-[#4A4640]">{order.id}</td><td className="px-3 py-4 text-[#777168]">{order.createdAt}</td><td className="px-3 py-4 text-[#5C574F]">{order.customer}</td><td className="px-3 py-4">{count} 項</td><td className="px-3 py-4 font-medium">{currency(total)}</td><td className="px-3 py-4"><Pill tone="green">{order.paymentStatus}</Pill></td><td className="px-3 py-4"><Pill tone={order.statusTone}>{order.status}</Pill></td><td className="px-3 py-4"><Pill tone={order.status === "待確認" ? "orange" : "green"}>{order.stockStatus}</Pill></td>
                 <td className="px-6 py-4 text-right"><button onClick={(event) => { event.stopPropagation(); setSelectedOrder(order); }} className="text-sm font-semibold text-[#5E7665]">查看詳情 →</button></td>
               </tr>;
-            })}
+            }) : <tr><td colSpan={9} className="px-6 py-10 text-center text-[#8D877E]">找不到符合條件的訂單。</td></tr>}
           </tbody>
         </table>
       </div>
