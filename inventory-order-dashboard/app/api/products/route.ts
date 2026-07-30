@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireSignedIn, withRefreshedSession } from "@/lib/auth";
+import { syncProductToGoogleSheet } from "@/lib/google-sheets-sync";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -47,12 +49,14 @@ function validateProduct(input: ProductInput) {
   return { product };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const auth = await requireSignedIn(request);
+    if (!auth.context) return auth.response!;
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.from("products").select("*").order("created_at", { ascending: false });
     if (error) throw error;
-    return NextResponse.json({ products: data });
+    return withRefreshedSession(NextResponse.json({ products: data }), auth.context);
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "無法讀取商品資料。" },
@@ -63,13 +67,16 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSignedIn(request);
+    if (!auth.context) return auth.response!;
     const validation = validateProduct(await request.json());
     if ("error" in validation) return NextResponse.json(validation, { status: 400 });
 
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.from("products").insert(validation.product).select().single();
     if (error) throw error;
-    return NextResponse.json({ product: data }, { status: 201 });
+    const sync = await syncProductToGoogleSheet(data);
+    return withRefreshedSession(NextResponse.json({ product: data, sync }, { status: 201 }), auth.context);
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "無法建立商品。" },

@@ -95,3 +95,50 @@ create index if not exists orders_customer_id_idx on orders(customer_id);
 create index if not exists order_items_order_id_idx on order_items(order_id);
 create index if not exists inventory_adjustments_product_id_idx on inventory_adjustments(product_id);
 create index if not exists purchase_order_items_purchase_order_id_idx on purchase_order_items(purchase_order_id);
+
+-- Login and role management
+create table if not exists user_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  display_name text not null default '',
+  role text not null default 'staff' check (role in ('admin', 'staff')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.user_profiles (id, email, display_name)
+  values (
+    new.id,
+    coalesce(new.email, ''),
+    coalesce(new.raw_user_meta_data ->> 'display_name', split_part(coalesce(new.email, ''), '@', 1))
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+-- Add a profile for any account that existed before this SQL was run.
+insert into public.user_profiles (id, email, display_name)
+select id, coalesce(email, ''), coalesce(raw_user_meta_data ->> 'display_name', split_part(coalesce(email, ''), '@', 1))
+from auth.users
+on conflict (id) do nothing;
+
+alter table public.user_profiles enable row level security;
+
+drop policy if exists "Users can read their own profile" on public.user_profiles;
+create policy "Users can read their own profile"
+  on public.user_profiles for select
+  using (auth.uid() = id);
+
+create index if not exists user_profiles_role_idx on public.user_profiles(role);

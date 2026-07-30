@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Dashboard } from "./dashboard-summary";
 import { Orders } from "./orders-page";
 
@@ -18,6 +18,21 @@ type View =
   | "newProduct"
   | "newPurchase";
 type Tone = "green" | "orange" | "blue" | "stone";
+
+type CurrentUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  role: "admin" | "staff";
+};
+
+type ManagedUser = {
+  id: string;
+  email: string;
+  display_name: string;
+  role: "admin" | "staff";
+  created_at: string;
+};
 
 type Product = {
   id: number;
@@ -67,12 +82,12 @@ const currency = (value: number) => `NT$ ${value.toLocaleString("zh-TW")}`;
 const buttonClass = "inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#292824]";
 const statusClass: Record<Tone, string> = { green: "bg-[#E7F0E8] text-[#477154]", orange: "bg-[#FAECDD] text-[#A66932]", blue: "bg-[#E5EEF2] text-[#4B6D79]", stone: "bg-[#F3F1ED] text-[#68645C]" };
 
-function Primary({ children, onClick, className = "", disabled = false }: { children: React.ReactNode; onClick?: () => void; className?: string; disabled?: boolean }) {
-  return <button onClick={onClick} disabled={disabled} className={`${buttonClass} bg-[#292824] text-white hover:bg-[#46423D] disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>{children}</button>;
+function Primary({ children, onClick, className = "", disabled = false, type = "button" }: { children: React.ReactNode; onClick?: () => void; className?: string; disabled?: boolean; type?: "button" | "submit" }) {
+  return <button type={type} onClick={onClick} disabled={disabled} className={`${buttonClass} bg-[#292824] text-white hover:bg-[#46423D] disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>{children}</button>;
 }
 
-function Secondary({ children, onClick, className = "", disabled = false }: { children: React.ReactNode; onClick?: () => void; className?: string; disabled?: boolean }) {
-  return <button onClick={onClick} disabled={disabled} className={`${buttonClass} border border-[#E5E1DB] bg-white text-[#58544D] hover:bg-[#FCFBF9] disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>{children}</button>;
+function Secondary({ children, onClick, className = "", disabled = false, type = "button" }: { children: React.ReactNode; onClick?: () => void; className?: string; disabled?: boolean; type?: "button" | "submit" }) {
+  return <button type={type} onClick={onClick} disabled={disabled} className={`${buttonClass} border border-[#E5E1DB] bg-white text-[#58544D] hover:bg-[#FCFBF9] disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>{children}</button>;
 }
 
 function Pill({ children, tone = "stone" }: { children: React.ReactNode; tone?: Tone }) {
@@ -133,6 +148,7 @@ function Products({ openProduct, openNewProduct }: { openProduct: (id: number) =
 
 function NewProduct({ back }: { back: () => void }) {
   const [saved, setSaved] = useState(false);
+  const [syncNotice, setSyncNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [country, setCountry] = useState("");
@@ -145,12 +161,16 @@ function NewProduct({ back }: { back: () => void }) {
     setSaving(true);
     setSaveError("");
     setSaved(false);
+    setSyncNotice("");
 
     try {
       const response = await fetch("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, country, category }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? result.message ?? "無法儲存商品。");
       setSaved(true);
+      if (result.sync?.status === "synced") setSyncNotice("商品已同步至 Google 試算表。");
+      if (result.sync?.status === "disabled") setSyncNotice("商品已儲存；Google 試算表同步尚未設定。");
+      if (result.sync?.status === "failed") setSyncNotice(`商品已儲存；${result.sync.message}`);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "無法儲存商品。");
     } finally {
@@ -160,7 +180,7 @@ function NewProduct({ back }: { back: () => void }) {
 
   return <>
     <Header eyebrow="NEW PRODUCT" title="新增商品" description="建立商品基本資料、售價與初始庫存。"><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header>
-    {saved && <Card className="mb-5 border-[#D9E5DB] bg-[#EEF5EF] p-5"><b className="block text-[#34563D]">商品已建立</b><small className="mt-1 block text-sm text-[#57735D]">商品資料已儲存至商品資料庫。</small></Card>}
+    {saved && <Card className="mb-5 border-[#D9E5DB] bg-[#EEF5EF] p-5"><b className="block text-[#34563D]">商品已建立</b><small className="mt-1 block text-sm text-[#57735D]">商品資料已儲存至商品資料庫。{syncNotice && ` ${syncNotice}`}</small></Card>}
     {saveError && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-5"><b className="block text-[#965723]">商品尚未儲存</b><small className="mt-1 block text-sm text-[#A36B3C]">{saveError}</small></Card>}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
       <div className="space-y-5">
@@ -240,6 +260,108 @@ function StockOverview({ stock, openProduct, adjustStock }: { stock: Record<numb
 function GenericPage({ view, go }: { view: "purchases" | "reports" | "settings"; go: (view: View) => void }) {
   const info = { purchases: ["PURCHASING", "採購與供應商", "管理供應商資料、採購單與進貨作業。", "＋ 建立採購單"], reports: ["ANALYTICS", "報表中心", "從銷售與庫存資料中掌握補貨、商品與營運表現。", "匯出報表"], settings: ["SETTINGS", "系統設定", "管理倉庫、訂單編號、權限與通知規則。", "儲存設定"] }[view];
   return <><Header eyebrow={info[0]} title={info[1]} description={info[2]}><Primary onClick={view === "purchases" ? () => go("newPurchase") : undefined}>{info[3]}</Primary></Header><div className="grid gap-5 md:grid-cols-2">{view === "purchases" ? <><Card className="p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE ORDERS</p><h2 className="mt-2 text-xl font-semibold">進行中的採購單</h2><div className="mt-5 space-y-4">{[["#PO-260721-04", "Seoul Daily", "今天", "待收貨"], ["#PO-260718-03", "Mori Select", "7/22", "部分收貨"], ["#PO-260716-02", "Atelier Home", "7/25", "已發送"]].map(([id, vendor, date, state]) => <div key={id} className="flex items-center justify-between border-b border-[#F0EDE8] pb-4"><span><b className="block text-sm">{id}</b><small className="mt-1 block text-xs text-[#938D84]">{vendor} · 預計 {date} 到貨</small></span><Pill tone="blue">{state}</Pill></div>)}</div></Card><Card className="p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">SUPPLIERS</p><h2 className="mt-2 text-xl font-semibold">常用供應商</h2><p className="mt-2 text-sm text-[#898379]">可直接從低庫存清單建立採購單。</p><Secondary className="mt-6">管理供應商</Secondary></Card></> : view === "reports" ? <><Metric label="銷售總額" value="NT$ 284,600" note="本月累計 · +16.8%" accent/><Metric label="商品售罄率" value="72.4%" note="售出／可售庫存"/><Card className="p-6"><h2 className="font-semibold">銷售概況</h2><div className="mt-8 flex h-40 items-end gap-2">{[35,58,48,72,52,88,65,92,74,83,68,95].map((h,i) => <span key={i} className={`flex-1 rounded-t-md ${i===11?"bg-[#738C7A]":"bg-[#DFE8E1]"}`} style={{height:`${h}%`}} />)}</div></Card><Card className="p-6"><h2 className="font-semibold">本月熱銷商品</h2><div className="mt-5 space-y-4">{products.slice(0,3).map((product,i)=><div key={product.id}><div className="flex justify-between text-sm"><b>{product.name}</b><span className="text-[#5E7665]">{86-i*12} 件</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-[#F0EDE8]"><span className="block h-full rounded-full bg-[#86A28E]" style={{width:`${94-i*13}%`}}/></div></div>)}</div></Card></> : <><Card className="p-6"><h2 className="font-semibold">基本設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-2">{[["品牌名稱","MUSE STOCK"],["預設幣別","TWD · 新台幣"],["時區","Asia/Taipei"],["訂單編號前綴","WB"]].map(([label,value])=><label key={label} className="text-sm font-semibold text-[#58534C]">{label}<input defaultValue={value} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"/></label>)}</div></Card><Card className="p-6"><h2 className="font-semibold">通知設定</h2><div className="mt-4 divide-y divide-[#F0EDE8]">{["低庫存提醒","待確認訂單提醒","取消訂單自動回補庫存"].map(title=><div key={title} className="flex items-center justify-between py-4"><span><b className="block text-sm">{title}</b><small className="mt-1 block text-xs text-[#938D84]">系統將在需要處理時通知管理人員。</small></span><span className="relative h-6 w-11 rounded-full bg-[#78957E]"><i className="absolute right-1 top-1 h-4 w-4 rounded-full bg-white"/></span></div>)}</div></Card></>}</div></>;
+}
+
+function SystemSettings({ currentUser }: { currentUser: CurrentUser }) {
+  const isAdmin = currentUser.role === "admin";
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [loading, setLoading] = useState(isAdmin);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ displayName: "", email: "", password: "", role: "staff" as "admin" | "staff" });
+
+  const loadUsers = async () => {
+    if (!isAdmin) return;
+    setLoading(true);
+    try {
+      const response = await fetch("/api/admin/users");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法讀取帳號清單。");
+      setUsers(result.users ?? []);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法讀取帳號清單。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void loadUsers(); }, [isAdmin]);
+
+  const addUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreating(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法建立帳號。");
+      setUsers((previous) => [...previous, result.user]);
+      setForm({ displayName: "", email: "", password: "", role: "staff" });
+      setShowForm(false);
+      setNotice("帳號已建立，可使用設定的 Email 與密碼登入。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法建立帳號。");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const updateRole = async (user: ManagedUser, role: "admin" | "staff") => {
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: user.id, role }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法更新權限。");
+      setUsers((previous) => previous.map((item) => item.id === user.id ? result.user : item));
+      setNotice("帳號權限已更新。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法更新權限。");
+    }
+  };
+
+  const removeUser = async (user: ManagedUser) => {
+    if (!window.confirm(`確定要刪除 ${user.display_name || user.email} 的帳號嗎？`)) return;
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/admin/users?id=${encodeURIComponent(user.id)}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法刪除帳號。");
+      setUsers((previous) => previous.filter((item) => item.id !== user.id));
+      setNotice("帳號已刪除。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法刪除帳號。");
+    }
+  };
+
+  return <>
+    <Header eyebrow="SETTINGS" title="系統設定" description="管理後台帳號、角色權限與系統偏好。" />
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="space-y-5">
+        <Card className="p-5 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ACCOUNT MANAGEMENT</p><h2 className="mt-2 text-xl font-semibold">系統帳號管理</h2><p className="mt-2 text-sm leading-6 text-[#807A72]">管理員可建立帳號、指定管理員或員工角色，以及移除離職帳號。</p></div>
+            {isAdmin && <Primary onClick={() => { setShowForm((value) => !value); setError(""); }}>＋ 建立帳號</Primary>}
+          </div>
+
+          {notice && <p role="status" className="mt-5 rounded-xl border border-[#D7E7D9] bg-[#EEF5EF] px-4 py-3 text-sm font-semibold text-[#45634C]">{notice}</p>}
+          {error && <p role="alert" className="mt-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] px-4 py-3 text-sm font-semibold text-[#9B562A]">{error}</p>}
+
+          {showForm && <form onSubmit={addUser} className="mt-5 rounded-2xl border border-[#E9E5DF] bg-[#FCFBF9] p-4 sm:p-5"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-[#58534C]">顯示名稱<input required value={form.displayName} onChange={(event) => setForm((previous) => ({ ...previous, displayName: event.target.value }))} placeholder="例如：小芸" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">帳號角色<select value={form.role} onChange={(event) => setForm((previous) => ({ ...previous, role: event.target.value as "admin" | "staff" }))} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none"><option value="staff">員工</option><option value="admin">系統管理員</option></select></label><label className="text-sm font-semibold text-[#58534C]">Email<input required type="email" value={form.email} onChange={(event) => setForm((previous) => ({ ...previous, email: event.target.value }))} placeholder="name@example.com" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">初始密碼<input required minLength={8} type="password" value={form.password} onChange={(event) => setForm((previous) => ({ ...previous, password: event.target.value }))} placeholder="至少 8 碼" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label></div><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Secondary onClick={() => setShowForm(false)}>取消</Secondary><Primary type="submit" disabled={creating}>{creating ? "建立中…" : "建立帳號"}</Primary></div></form>}
+
+          {!isAdmin ? <div className="mt-5 rounded-xl bg-[#F8F6F2] p-4 text-sm leading-6 text-[#766F66]">你目前是員工帳號，無法建立或變更其他帳號的權限。請聯繫系統管理員協助處理。</div> : <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[620px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-4 py-3">帳號</th><th className="px-3 py-3">Email</th><th className="px-3 py-3">角色</th><th className="px-4 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{loading ? <tr><td colSpan={4} className="px-4 py-7 text-center text-[#8F887F]">載入帳號中…</td></tr> : users.map((user) => <tr key={user.id}><td className="px-4 py-4"><b className="block text-[#4A4640]">{user.display_name || "未命名帳號"}{user.id === currentUser.id && <small className="ml-2 text-xs font-normal text-[#8F887F]">目前登入</small>}</b></td><td className="px-3 py-4 text-[#706A61]">{user.email}</td><td className="px-3 py-4"><select aria-label={`${user.display_name || user.email} 的角色`} value={user.role} onChange={(event) => updateRole(user, event.target.value as "admin" | "staff")} className="h-9 rounded-lg border border-[#E5E1DB] bg-white px-2 text-xs font-semibold text-[#58544D] outline-none"><option value="admin">系統管理員</option><option value="staff">員工</option></select></td><td className="px-4 py-4 text-right"><button disabled={user.id === currentUser.id} onClick={() => removeUser(user)} className="text-sm font-semibold text-[#A35F37] disabled:cursor-not-allowed disabled:opacity-35">刪除</button></td></tr>)}</tbody></table></div>}
+        </Card>
+      </div>
+      <aside className="h-fit space-y-5 xl:sticky xl:top-6">
+        <Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CURRENT ACCOUNT</p><h2 className="mt-2 text-lg font-semibold">目前登入帳號</h2><div className="mt-5 rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">顯示名稱</p><p className="mt-1 text-sm font-semibold">{currentUser.displayName}</p><p className="mt-4 text-xs font-semibold text-[#8A8379]">Email</p><p className="mt-1 break-all text-sm font-semibold">{currentUser.email}</p><p className="mt-4 text-xs font-semibold text-[#8A8379]">角色</p><Pill tone={isAdmin ? "green" : "stone"}>{isAdmin ? "系統管理員" : "員工"}</Pill></div></Card>
+        <Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PERMISSIONS</p><h2 className="mt-2 text-lg font-semibold">權限說明</h2><ul className="mt-4 space-y-3 text-sm leading-6 text-[#756F66]"><li>系統管理員：管理帳號與角色。</li><li>員工：可登入與使用日常後台功能。</li><li>帳號異動會立即套用至下一次操作。</li></ul></Card>
+      </aside>
+    </div>
+  </>;
 }
 
 function NewPurchase({ back }: { back: () => void }) {
@@ -353,15 +475,45 @@ function CreateOrder({ stock, confirmOrder, back }: { stock: Record<number, numb
 export default function Home() {
   const [view, setView] = useState<View>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [createdOrder, setCreatedOrder] = useState(false);
   const [selectedId, setSelectedId] = useState(products[0].id);
   const [stock, setStock] = useState<Record<number, number>>(() => Object.fromEntries(products.map(product => [product.id, product.available])));
+  useEffect(() => {
+    let active = true;
+    const loadSession = async () => {
+      try {
+        const response = await fetch("/api/auth/session");
+        const result = await response.json();
+        if (!response.ok || !result.user) {
+          window.location.replace("/login");
+          return;
+        }
+        if (active) setCurrentUser(result.user);
+      } catch {
+        window.location.replace("/login");
+      } finally {
+        if (active) setAuthReady(true);
+      }
+    };
+    void loadSession();
+    return () => { active = false; };
+  }, []);
   const go = (next: View) => { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const openProduct = (id: number) => { setSelectedId(id); go("product"); };
   const confirmOrder = (lines: Record<number, number>) => { setStock(previous => Object.fromEntries(Object.entries(previous).map(([id, amount]) => [Number(id), amount - (lines[Number(id)] ?? 0)]))); setCreatedOrder(true); };
   const adjustStock = (id: number, quantity: number) => { setStock((previous) => ({ ...previous, [id]: Math.max(0, (previous[id] ?? 0) + quantity) })); };
+  const signOut = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.assign("/login");
+  };
+  if (!authReady || !currentUser) return <main className="flex min-h-screen items-center justify-center bg-[#F8F7F4] px-5 text-[#6F6960]"><p className="rounded-xl border border-[#E9E5DF] bg-white px-5 py-4 text-sm font-semibold">正在確認登入狀態…</p></main>;
   const selectedProduct = products.find(product => product.id === selectedId) ?? products[0];
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <Orders created={createdOrder} go={go}/> : view === "products" ? <Products openProduct={openProduct} openNewProduct={() => go("newProduct")}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[selectedProduct.id]} back={() => go("products")}/> : view === "newProduct" ? <NewProduct back={() => go("products")}/> : view === "newPurchase" ? <NewPurchase back={() => go("purchases")}/> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview stock={stock} openProduct={openProduct} adjustStock={adjustStock}/> : view === "create" ? <CreateOrder stock={stock} confirmOrder={confirmOrder} back={() => go("orders")}/> : <GenericPage view={view} go={go}/>;
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <Orders created={createdOrder} go={go}/> : view === "products" ? <Products openProduct={openProduct} openNewProduct={() => go("newProduct")}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[selectedProduct.id]} back={() => go("products")}/> : view === "newProduct" ? <NewProduct back={() => go("products")}/> : view === "newPurchase" ? <NewPurchase back={() => go("purchases")}/> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview stock={stock} openProduct={openProduct} adjustStock={adjustStock}/> : view === "create" ? <CreateOrder stock={stock} confirmOrder={confirmOrder} back={() => go("orders")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : <GenericPage view={view} go={go}/>;
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || ((view === "product" || view === "newProduct") && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || ((view === "product" || view === "newProduct") && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
-  return <div className="min-h-screen bg-[#F8F7F4] text-[#292824]"><aside className="fixed inset-y-0 left-0 z-40 hidden w-[244px] flex-col border-r border-[#E9E5DF] bg-[#FCFBF9] px-4 py-5 lg:flex"><div className="px-2"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold text-[#45413B]">商品與庫存管理</p></div><div className="mt-10">{links}</div><div className="mt-auto"><Primary onClick={() => go("create")} className="w-full">＋ 建立訂單</Primary><div className="mt-6 flex items-center gap-3 border-t border-[#E9E5DF] px-2 pt-5"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E5DDD2] text-xs font-bold text-[#766859]">Y</span><span><b className="block text-sm">怡文</b><small className="block text-xs text-[#969087]">系統管理員</small></span></div></div></aside><div className="lg:pl-[244px]"><header className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-[#E9E5DF] bg-[#F8F7F4]/90 px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-3"><button aria-label="開啟選單" onClick={() => setMenuOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-lg lg:hidden">≡</button><div className="hidden h-10 min-w-[270px] items-center gap-2 rounded-xl border border-[#E7E2DB] bg-white px-3 text-sm text-[#AAA39A] md:flex">⌕　搜尋商品、SKU、條碼或訂單</div><b className="text-sm md:hidden">MUSE STOCK</b></div><div className="flex items-center gap-2"><button aria-label="通知" className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-[#726C63]">◌<span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[#C8796D]"/></button><button className="hidden h-10 items-center gap-2 rounded-xl border border-[#E4E0D9] bg-white px-3 text-sm font-semibold sm:flex"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E5DDD2] text-[10px]">Y</span>怡文</button></div></header><main className="mx-auto w-full max-w-[1600px] px-5 py-7 sm:px-8 sm:py-9">{content}</main></div>{menuOpen && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="關閉選單" onClick={() => setMenuOpen(false)} className="absolute inset-0 bg-[#292824]/30"/><aside className="relative flex h-full w-[280px] flex-col bg-[#FCFBF9] p-5 shadow-2xl"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold">商品與庫存管理</p><div className="mt-8">{links}</div><Primary onClick={() => go("create")} className="mt-auto w-full">＋ 建立訂單</Primary></aside></div>}</div>;
+  const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";
+  const initial = currentUser.displayName.trim().slice(0, 1) || "U";
+  return <div className="min-h-screen bg-[#F8F7F4] text-[#292824]"><aside className="fixed inset-y-0 left-0 z-40 hidden w-[244px] flex-col border-r border-[#E9E5DF] bg-[#FCFBF9] px-4 py-5 lg:flex"><div className="px-2"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold text-[#45413B]">商品與庫存管理</p></div><div className="mt-10">{links}</div><div className="mt-auto"><Primary onClick={() => go("create")} className="w-full">＋ 建立訂單</Primary><button onClick={() => go("settings")} className="mt-6 flex w-full items-center gap-3 border-t border-[#E9E5DF] px-2 pt-5 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E5DDD2] text-xs font-bold text-[#766859]">{initial}</span><span className="min-w-0"><b className="block truncate text-sm">{currentUser.displayName}</b><small className="block text-xs text-[#969087]">{displayRole}</small></span></button></div></aside><div className="lg:pl-[244px]"><header className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-[#E9E5DF] bg-[#F8F7F4]/90 px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-3"><button aria-label="開啟選單" onClick={() => setMenuOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-lg lg:hidden">≡</button><div className="hidden h-10 min-w-[270px] items-center gap-2 rounded-xl border border-[#E7E2DB] bg-white px-3 text-sm text-[#AAA39A] md:flex">⌕　搜尋商品、SKU、條碼或訂單</div><b className="text-sm md:hidden">MUSE STOCK</b></div><div className="relative flex items-center gap-2"><button aria-label="通知" className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-[#726C63]">◌<span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[#C8796D]"/></button><button onClick={() => setAccountOpen((value) => !value)} className="hidden h-10 items-center gap-2 rounded-xl border border-[#E4E0D9] bg-white px-3 text-sm font-semibold sm:flex"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E5DDD2] text-[10px]">{initial}</span>{currentUser.displayName}</button>{accountOpen && <div className="absolute right-0 top-12 w-52 rounded-2xl border border-[#E9E5DF] bg-white p-2 shadow-xl"><button onClick={() => { go("settings"); setAccountOpen(false); }} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#5D7764] hover:bg-[#F3F7F3]">系統設定</button><button onClick={signOut} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#9A5B38] hover:bg-[#FFF7F0]">登出</button></div>}</div></header><main className="mx-auto w-full max-w-[1600px] px-5 py-7 sm:px-8 sm:py-9">{content}</main></div>{menuOpen && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="關閉選單" onClick={() => setMenuOpen(false)} className="absolute inset-0 bg-[#292824]/30"/><aside className="relative flex h-full w-[280px] flex-col bg-[#FCFBF9] p-5 shadow-2xl"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold">商品與庫存管理</p><div className="mt-8">{links}</div><button onClick={signOut} className="mt-auto text-sm font-semibold text-[#9A5B38]">登出</button><Primary onClick={() => go("create")} className="mt-4 w-full">＋ 建立訂單</Primary></aside></div>}</div>;
 }
