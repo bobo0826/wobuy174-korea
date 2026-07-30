@@ -39,6 +39,9 @@ create table if not exists suppliers (
   updated_at timestamptz not null default now()
 );
 
+alter table public.products
+  add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
+
 create table if not exists orders (
   id uuid primary key default gen_random_uuid(),
   order_number text not null unique,
@@ -106,6 +109,7 @@ create table if not exists purchase_order_items (
 );
 
 create index if not exists products_country_category_idx on products(country, category);
+create index if not exists products_supplier_id_idx on products(supplier_id);
 create index if not exists suppliers_name_idx on suppliers(name);
 create index if not exists orders_customer_id_idx on orders(customer_id);
 create index if not exists order_items_order_id_idx on order_items(order_id);
