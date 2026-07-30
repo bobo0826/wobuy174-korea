@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type OrderItem = {
   name: string;
@@ -26,12 +26,46 @@ type Order = {
   note: string;
 };
 
+type StoredOrder = {
+  id: string;
+  order_number: string;
+  order_date: string;
+  status: string;
+  payment_method: string;
+  reconciliation_status: string;
+  delivery_fee: number;
+  note: string;
+  customers: { name: string; line_name: string; phone: string; address: string } | null;
+  order_items: Array<{ product_name: string; category: string; unit_price: number; quantity: number }>;
+};
+
 const currency = (value: number) => `NT$ ${value.toLocaleString("zh-TW")}`;
 
 const tones = {
   green: "bg-[#E7F0E8] text-[#477154]",
   orange: "bg-[#FAECDD] text-[#A66932]",
   blue: "bg-[#E5EEF2] text-[#4B6D79]",
+};
+
+const statusTone = (status: string): Order["statusTone"] => status === "待確認" ? "orange" : status === "已確認" ? "green" : "blue";
+const toOrder = (record: StoredOrder): Order => {
+  const customer = record.customers;
+  return {
+    id: record.order_number,
+    createdAt: record.order_date.replaceAll("-", "."),
+    customer: customer?.name || "未指定客戶",
+    lineName: customer?.line_name || "—",
+    phone: customer?.phone || "—",
+    address: customer?.address || "—",
+    payment: record.payment_method,
+    paymentStatus: record.payment_method === "銀行轉帳" ? record.reconciliation_status : "已付款",
+    status: record.status,
+    statusTone: statusTone(record.status),
+    stockStatus: record.status === "已出貨" ? "庫存已扣除" : record.status === "已確認" ? "待扣庫存" : record.status === "已取消" ? "未扣除庫存" : "尚未扣除",
+    items: record.order_items.map((item) => ({ name: item.product_name, specification: item.category, unitPrice: item.unit_price, quantity: item.quantity })),
+    shipping: record.delivery_fee,
+    note: record.note || "—",
+  };
 };
 
 const orders: Order[] = [
@@ -196,26 +230,29 @@ export function Orders({ created, go }: { created: boolean; go: (view: "create")
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("全部狀態");
-  const createdOrder: Order = {
-    id: "#WB-260721-019",
-    createdAt: "剛剛",
-    customer: "王思妤",
-    lineName: "@szu.yi",
-    phone: "0912-456-789",
-    address: "台南市中西區府前路一段 120 號",
-    payment: "銀行轉帳",
-    paymentStatus: "已付款",
-    status: "已確認",
-    statusTone: "green",
-    stockStatus: "庫存已保留",
-    items: [
-      { name: "雲朵感純棉四季被", specification: "奶油白／單人", unitPrice: 1680, quantity: 1 },
-      { name: "刺繡小熊收納化妝包", specification: "燕麥／小尺寸", unitPrice: 420, quantity: 2 },
-    ],
-    shipping: 80,
-    note: "訂單已由後台建立。",
-  };
-  const displayedOrders = created ? [createdOrder, ...orders] : orders;
+  const [storedOrders, setStoredOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const loadOrders = async () => {
+      setLoading(true);
+      setLoadError("");
+      try {
+        const response = await fetch("/api/orders");
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message ?? "無法讀取訂單資料。");
+        if (active) setStoredOrders((result.orders ?? []).map((order: StoredOrder) => toOrder(order)));
+      } catch (reason) {
+        if (active) setLoadError(reason instanceof Error ? reason.message : "無法讀取訂單資料。");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void loadOrders();
+    return () => { active = false; };
+  }, [created]);
+  const displayedOrders = storedOrders;
   const statuses = ["全部狀態", "待確認", "已確認", "備貨中", "已出貨", "已取消"];
   const visibleOrders = displayedOrders.filter((order) => {
     const matchesStatus = statusFilter === "全部狀態" || order.status === statusFilter;
@@ -235,6 +272,7 @@ export function Orders({ created, go }: { created: boolean; go: (view: "create")
       <button onClick={() => go("create")} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white hover:bg-[#46423D]">＋ 建立訂單</button>
     </div>
 
+    {loadError && <p role="alert" className="mb-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] px-4 py-3 text-sm font-semibold text-[#9B562A]">{loadError}</p>}
     <section className="overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
       <div className="flex flex-col gap-4 border-b border-[#F0EDE8] p-5 sm:p-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -250,7 +288,7 @@ export function Orders({ created, go }: { created: boolean; go: (view: "create")
         <table className="w-full min-w-[910px] text-left">
           <thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">訂單編號</th><th className="px-3 py-3">建立日期</th><th className="px-3 py-3">客戶</th><th className="px-3 py-3">商品</th><th className="px-3 py-3">金額</th><th className="px-3 py-3">付款</th><th className="px-3 py-3">訂單狀態</th><th className="px-3 py-3">庫存狀態</th><th className="px-6 py-3 text-right">操作</th></tr></thead>
           <tbody className="divide-y divide-[#F0EDE8] text-sm">
-            {visibleOrders.length ? visibleOrders.map((order) => {
+            {loading ? <tr><td colSpan={9} className="px-6 py-10 text-center text-[#8D877E]">載入訂單資料中…</td></tr> : visibleOrders.length ? visibleOrders.map((order) => {
               const total = order.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0) + order.shipping;
               const count = order.items.reduce((sum, item) => sum + item.quantity, 0);
               return <tr key={order.id} onClick={() => setSelectedOrder(order)} className="cursor-pointer hover:bg-[#FCFBF9]">

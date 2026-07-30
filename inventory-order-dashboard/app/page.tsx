@@ -126,6 +126,17 @@ const nav: { id: Exclude<View, "create" | "product">; label: string; no: string 
 ];
 
 const currency = (value: number) => `NT$ ${value.toLocaleString("zh-TW")}`;
+const taipeiToday = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+};
+const firstOrderNumberForDate = (date: string) => `${date.replaceAll("-", "")}001`;
 const buttonClass = "inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#292824]";
 const statusClass: Record<Tone, string> = { green: "bg-[#E7F0E8] text-[#477154]", orange: "bg-[#FAECDD] text-[#A66932]", blue: "bg-[#E5EEF2] text-[#4B6D79]", stone: "bg-[#F3F1ED] text-[#68645C]" };
 
@@ -643,49 +654,218 @@ function NewPurchase({ back }: { back: () => void }) {
   return <><Header eyebrow="NEW PURCHASE ORDER" title="建立採購單" description="建立供應商、商品與預計收貨資料。"><Secondary onClick={back}>← 返回採購與供應商</Secondary></Header>{submitted && <Card className="mb-5 border-[#D9E5DB] bg-[#EEF5EF] p-5"><b className="block text-[#34563D]">採購單已建立</b><small className="mt-1 block text-sm text-[#57735D]">採購單 #PO-260721-05 已儲存，等待供應商確認。</small></Card>}<div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE INFORMATION</p><h2 className="mt-2 text-xl font-semibold">採購資訊</h2><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-[#575149]">採購單編號<input defaultValue="#PO-260721-05" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#575149]">預計到貨日期<input type="date" defaultValue="2026-07-28" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#575149]">供應商<select value={supplier} onChange={(event) => setSupplier(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>Seoul Daily</option><option>Mori Select</option><option>Atelier Home</option></select></label><label className="text-sm font-semibold text-[#575149]">付款條件<select className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>貨到付款</option><option>預付訂金</option><option>月結 30 天</option></select></label></div></Card><Card className="overflow-hidden"><div className="border-b border-[#F0EDE8] p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ITEMS</p><h2 className="mt-2 text-xl font-semibold">採購商品</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">商品</th><th className="px-3 py-3">商品種類</th><th className="px-3 py-3">採購成本</th><th className="px-3 py-3">數量</th><th className="px-6 py-3 text-right">小計</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{products.slice(0, 3).map((product) => <tr key={product.id}><td className="px-6 py-4"><b className="block text-[#4A4640]">{product.name}</b><small className="mt-1 block text-xs text-[#938D84]">{product.specification}</small></td><td className="px-3 py-4 text-[#726C63]">{product.country} · {product.category}</td><td className="px-3 py-4">{currency(product.cost)}</td><td className="px-3 py-4"><input type="number" min="0" value={quantities[product.id] ?? 0} onChange={(event) => updateQuantity(product.id, event.target.value)} className="h-9 w-20 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm outline-none" /></td><td className="px-6 py-4 text-right font-semibold">{currency(product.cost * (quantities[product.id] ?? 0))}</td></tr>)}</tbody></table></div></Card></div><aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE SUMMARY</p><h2 className="mt-2 text-xl font-semibold">採購摘要</h2><p className="mt-2 text-sm text-[#807A72]">供應商：{supplier}</p><div className="mt-5 space-y-3 border-y border-[#F0EDE8] py-5">{selected.map((product) => <div key={product.id} className="flex justify-between gap-3 text-sm"><span className="min-w-0"><b className="block truncate">{product.name}</b><small className="mt-1 block text-xs text-[#938D84]">× {quantities[product.id]}</small></span><b className="shrink-0">{currency(product.cost * quantities[product.id])}</b></div>)}</div><div className="mt-5 flex justify-between text-base font-semibold"><span>預計採購總額</span><b>{currency(total)}</b></div><Primary onClick={() => setSubmitted(true)} className="mt-6 w-full">建立採購單</Primary></aside></div></>;
 }
 
-function CreateOrder({ stock, confirmOrder, back, openCustomers }: { stock: Record<string, number>; confirmOrder: (lines: Record<number, number>) => void; back: () => void; openCustomers: () => void }) {
-  const [lines, setLines] = useState<Record<number, number>>({ 1: 1, 3: 2 });
+function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { catalog: Product[]; stock: Record<string, number>; confirmOrder: (lines: Record<string, number>) => void; back: () => void; openCustomers: () => void }) {
+  const storedProducts = catalog.filter((product) => typeof product.id === "string");
+  const [lines, setLines] = useState<Record<string, number>>(() => Object.fromEntries(storedProducts.slice(0, 2).map((product) => [String(product.id), 1])));
   const [orderMethod, setOrderMethod] = useState<"social" | "staff">("social");
-  const [linePrices, setLinePrices] = useState<Record<number, number>>(() => Object.fromEntries(products.map((product) => [product.id, product.retailPrice])));
-  const [addProductId, setAddProductId] = useState(String(products.find((product) => product.id !== 1 && product.id !== 3)?.id ?? products[0].id));
+  const [linePrices, setLinePrices] = useState<Record<string, number>>(() => Object.fromEntries(storedProducts.map((product) => [String(product.id), product.retailPrice])));
+  const [addProductId, setAddProductId] = useState(String(storedProducts[2]?.id ?? storedProducts[0]?.id ?? ""));
+  const [orderDate, setOrderDate] = useState(taipeiToday);
+  const [orderNumber, setOrderNumber] = useState(() => firstOrderNumberForDate(taipeiToday()));
   const [status, setStatus] = useState("待確認");
+  const [note, setNote] = useState("");
   const [payment, setPayment] = useState("銀行轉帳");
   const [reconciliation, setReconciliation] = useState("待查帳");
   const [delivery, setDelivery] = useState<"pickup" | "myship">("myship");
   const [modal, setModal] = useState<"confirm" | "deduct" | null>(null);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
   const [stockDeducted, setStockDeducted] = useState(false);
-  const selected = products.filter((product) => lines[product.id]);
-  const subtotal = useMemo(() => selected.reduce((sum, product) => sum + linePrices[product.id] * lines[product.id], 0), [selected, linePrices, lines]);
-  const costTotal = useMemo(() => selected.reduce((sum, product) => sum + product.cost * lines[product.id], 0), [selected, lines]);
+  const [savedOrderId, setSavedOrderId] = useState("");
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [orderError, setOrderError] = useState("");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [customerError, setCustomerError] = useState("");
+  const [customerFields, setCustomerFields] = useState<Array<[string, string]>>([[
+    "客戶姓名", "尚未選擇"], ["LINE@名稱", "—"], ["電話", "—"], ["地址", "—"],
+  ]);
+  const [newCustomer, setNewCustomer] = useState({ name: "", lineName: "", phone: "", address: "" });
+  const stockFor = (product: Product) => stock[String(product.id)] ?? product.available;
+  const selected = storedProducts.filter((product) => lines[String(product.id)]);
+  const subtotal = useMemo(() => selected.reduce((sum, product) => sum + (linePrices[String(product.id)] ?? product.retailPrice) * lines[String(product.id)], 0), [selected, linePrices, lines]);
+  const costTotal = useMemo(() => selected.reduce((sum, product) => sum + product.cost * lines[String(product.id)], 0), [selected, lines]);
   const shipping = delivery === "pickup" || subtotal >= 2500 ? 0 : 38;
   const total = subtotal + shipping;
   const netProfit = total - costTotal;
-  const customerFields = [["客戶姓名", "王思妤"], ["LINE@名稱", "@szu.yi"], ["電話", "0912-456-789"], ["地址", "台南市中西區府前路一段 120 號"]];
-  const availableProducts = products.filter((product) => !lines[product.id] && stock[product.id] > 0);
+  const availableProducts = storedProducts.filter((product) => !lines[String(product.id)] && stockFor(product) > 0);
 
-  const updateQuantity = (id: number, change: number) => setLines((previous) => {
+  useEffect(() => {
+    let active = true;
+    const loadCustomers = async () => {
+      try {
+        const response = await fetch("/api/customers");
+        const result = await response.json();
+        if (response.ok && active) setCustomers(result.customers ?? []);
+      } catch {
+        if (active) setCustomerError("無法讀取客戶資料。請重新整理後再試。");
+      }
+    };
+    void loadCustomers();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!storedProducts.length) return;
+    setLines((previous) => Object.keys(previous).length ? previous : Object.fromEntries(storedProducts.slice(0, 2).map((product) => [String(product.id), 1])));
+    setLinePrices((previous) => Object.keys(previous).length ? previous : Object.fromEntries(storedProducts.map((product) => [String(product.id), product.retailPrice])));
+    setAddProductId((previous) => previous || String(storedProducts[2]?.id ?? storedProducts[0]?.id ?? ""));
+  }, [storedProducts]);
+
+  useEffect(() => {
+    let active = true;
+    const loadOrderNumber = async () => {
+      try {
+        const response = await fetch(`/api/orders?nextFor=${orderDate}`);
+        const result = await response.json();
+        if (response.ok && active && result.orderNumber) setOrderNumber(result.orderNumber);
+      } catch {
+        // 資料庫暫時無法連線時，保留日期加 001 的預設編號。
+      }
+    };
+    void loadOrderNumber();
+    return () => { active = false; };
+  }, [orderDate]);
+
+  const updateQuantity = (id: string, change: number) => setLines((previous) => {
     const nextQuantity = (previous[id] ?? 0) + change;
     const next = { ...previous };
     if (nextQuantity <= 0) delete next[id];
-    else next[id] = Math.min(stock[id], nextQuantity);
+    else {
+      const product = storedProducts.find((item) => String(item.id) === id);
+      next[id] = Math.min(product ? stockFor(product) : 0, nextQuantity);
+    }
     return next;
   });
   const changeOrderMethod = (nextMethod: "social" | "staff") => {
     setOrderMethod(nextMethod);
-    setLinePrices(Object.fromEntries(products.map((product) => [product.id, nextMethod === "social" ? product.retailPrice : product.staffPrice])));
+    setLinePrices(Object.fromEntries(storedProducts.map((product) => [String(product.id), nextMethod === "social" ? product.retailPrice : product.staffPrice])));
   };
   const addProduct = () => {
-    const id = Number(addProductId);
-    if (!id || lines[id] || stock[id] <= 0) return;
+    const id = addProductId;
+    const product = storedProducts.find((item) => String(item.id) === id);
+    if (!product || lines[id] || stockFor(product) <= 0) return;
     setLines((previous) => ({ ...previous, [id]: 1 }));
   };
-  const confirmOrderAction = () => { setStatus("已確認"); setOrderConfirmed(true); setModal(null); };
-  const deductInventory = () => { confirmOrder(lines); setStockDeducted(true); setModal(null); };
+  const changeOrderDate = (nextDate: string) => {
+    setOrderDate(nextDate);
+    setOrderNumber(firstOrderNumberForDate(nextDate));
+  };
+  const chooseCustomer = (id: string) => {
+    setSelectedCustomerId(id);
+    const customer = customers.find((item) => item.id === id);
+    if (!customer) return;
+    setCustomerFields([
+      ["客戶姓名", customer.name],
+      ["LINE@名稱", customer.line_name || "—"],
+      ["電話", customer.phone || "—"],
+      ["地址", customer.address || "—"],
+    ]);
+  };
+  const saveNewCustomer = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSavingCustomer(true);
+    setCustomerError("");
+    try {
+      const response = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newCustomer),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法新增客戶。請稍後再試。");
+      const customer = result.customer as Customer;
+      setCustomers((previous) => [customer, ...previous]);
+      setSelectedCustomerId(customer.id);
+      setCustomerFields([
+        ["客戶姓名", customer.name],
+        ["LINE@名稱", customer.line_name || "—"],
+        ["電話", customer.phone || "—"],
+        ["地址", customer.address || "—"],
+      ]);
+      setNewCustomer({ name: "", lineName: "", phone: "", address: "" });
+      setShowNewCustomer(false);
+    } catch (reason) {
+      setCustomerError(reason instanceof Error ? reason.message : "無法新增客戶。請稍後再試。");
+    } finally {
+      setSavingCustomer(false);
+    }
+  };
+  const confirmOrderAction = async () => {
+    if (!selectedCustomerId) {
+      setOrderError("請先選擇或新增客戶，再確認訂單。");
+      setModal(null);
+      return;
+    }
+    setSavingOrder(true);
+    setOrderError("");
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderNumber,
+          customerId: selectedCustomerId,
+          orderDate,
+          status: "已確認",
+          orderMethod: orderMethod === "social" ? "社群下單" : "員工下單",
+          paymentMethod: payment,
+          reconciliationStatus: reconciliation,
+          deliveryMethod: delivery === "pickup" ? "門市自取" : "賣貨便",
+          note,
+          items: selected.map((product) => ({
+            productId: typeof product.id === "string" ? product.id : "",
+            productName: product.name,
+            category: product.category,
+            unitPrice: linePrices[String(product.id)] ?? product.retailPrice,
+            unitCost: product.cost,
+            quantity: lines[String(product.id)],
+          })),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法建立訂單。請稍後再試。");
+      setOrderNumber(result.order.order_number);
+      setSavedOrderId(result.order.id);
+      setStatus("已確認");
+      setOrderConfirmed(true);
+      setModal(null);
+    } catch (reason) {
+      setOrderError(reason instanceof Error ? reason.message : "無法建立訂單。請稍後再試。");
+      setModal(null);
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+  const deductInventory = async () => {
+    if (!savedOrderId) return;
+    setSavingOrder(true);
+    setOrderError("");
+    try {
+      const response = await fetch(`/api/orders/${savedOrderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "complete" }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法完成訂單並扣除庫存。請稍後再試。");
+      confirmOrder(lines);
+      setStatus(result.order.status);
+      setStockDeducted(true);
+      setModal(null);
+    } catch (reason) {
+      setOrderError(reason instanceof Error ? reason.message : "無法完成訂單並扣除庫存。請稍後再試。");
+      setModal(null);
+    } finally {
+      setSavingOrder(false);
+    }
+  };
 
   return <>
     <Header eyebrow="NEW ORDER" title="建立訂單" description="確認商品、數量與客戶資料後，訂單將立即更新可售庫存。" />
-    {stockDeducted && <Card className="mb-5 flex flex-col gap-3 border-[#D9E5DB] bg-[#EEF5EF] p-5 sm:flex-row sm:items-center sm:justify-between"><span><b className="block text-[#34563D]">訂單已確認並扣除庫存</b><small className="mt-1 block text-sm text-[#57735D]">訂單 #WB-260721-019 已建立完成，可售庫存已同步更新。</small></span><Primary onClick={back}>查看訂單</Primary></Card>}
+    {orderError && <Card className="mb-5 border-[#F1D4C4] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{orderError}</Card>}
+    {stockDeducted && <Card className="mb-5 flex flex-col gap-3 border-[#D9E5DB] bg-[#EEF5EF] p-5 sm:flex-row sm:items-center sm:justify-between"><span><b className="block text-[#34563D]">訂單已確認並扣除庫存</b><small className="mt-1 block text-sm text-[#57735D]">訂單 {orderNumber} 已建立完成，可售庫存已同步更新。</small></span><Primary onClick={back}>查看訂單</Primary></Card>}
 
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-5">
@@ -693,24 +873,26 @@ function CreateOrder({ stock, confirmOrder, back, openCustomers }: { stock: Reco
           <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ORDER INFORMATION</p>
           <h2 className="mt-1 text-lg font-semibold">訂單資訊</h2>
           <div className="mt-5 grid grid-cols-2 gap-4">
-            <label className="text-sm font-semibold text-[#58534C]">訂單編號<input defaultValue="#WB-260721-019" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label>
-            <label className="text-sm font-semibold text-[#58534C]">訂單日期<input type="date" defaultValue="2026-07-21" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label>
+            <label className="text-sm font-semibold text-[#58534C]">訂單編號<input value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label>
+            <label className="text-sm font-semibold text-[#58534C]">訂單日期<input type="date" value={orderDate} onChange={(event) => changeOrderDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label>
             <label className="text-sm font-semibold text-[#58534C]">訂單狀態<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>待確認</option><option>已確認</option><option>已出貨</option></select></label>
-            <label className="text-sm font-semibold text-[#58534C]">備註<input placeholder="輸入訂單備註" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /></label>
+            <label className="text-sm font-semibold text-[#58534C]">備註<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="輸入訂單備註" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /></label>
           </div>
           <div className="mt-5 border-t border-[#F0EDE8] pt-5"><p className="text-sm font-semibold text-[#58534C]">下單方式</p><p className="mt-1 text-xs text-[#938D84]">下單方式會套用商品預設價格，仍可逐筆調整單價。</p><div className="mt-3 grid grid-cols-2 gap-3"><button onClick={() => changeOrderMethod("social")} className={`rounded-xl border p-4 text-left ${orderMethod === "social" ? "border-[#86A28E] bg-[#EEF5EF]" : "border-[#E6E1DB] bg-[#FCFBF9]"}`}><b className="block text-sm">社群下單</b><small className="mt-1 block text-xs text-[#6F806F]">套用一般售價</small></button><button onClick={() => changeOrderMethod("staff")} className={`rounded-xl border p-4 text-left ${orderMethod === "staff" ? "border-[#86A28E] bg-[#EEF5EF]" : "border-[#E6E1DB] bg-[#FCFBF9]"}`}><b className="block text-sm">員工下單</b><small className="mt-1 block text-xs text-[#6F806F]">套用員工價</small></button></div></div>
         </Card>
 
         <Card className="p-5 sm:p-6">
-          <div className="flex justify-between"><span><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CUSTOMER</p><h2 className="mt-1 text-lg font-semibold">選擇客戶</h2></span><button onClick={openCustomers} className="text-sm font-semibold text-[#5E7665]">＋ 新增客戶</button></div>
-          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] gap-3"><Search placeholder="搜尋客戶姓名、LINE@名稱或電話" /><Secondary onClick={openCustomers} className="px-3">管理客戶</Secondary></div>
+          <div className="flex justify-between"><span><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CUSTOMER</p><h2 className="mt-1 text-lg font-semibold">選擇客戶</h2></span><button onClick={() => { setCustomerError(""); setShowNewCustomer((value) => !value); }} className="text-sm font-semibold text-[#5E7665]">＋ 新增客戶</button></div>
+          {showNewCustomer && <form onSubmit={saveNewCustomer} className="mt-5 rounded-xl border border-[#E9E5DF] bg-[#FCFBF9] p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold text-[#58534C]">客戶姓名<input required value={newCustomer.name} onChange={(event) => setNewCustomer((previous) => ({ ...previous, name: event.target.value }))} placeholder="例如：王思妤" className="mt-2 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">LINE@名稱<input value={newCustomer.lineName} onChange={(event) => setNewCustomer((previous) => ({ ...previous, lineName: event.target.value }))} placeholder="例如：@szu.yi" className="mt-2 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">電話<input value={newCustomer.phone} onChange={(event) => setNewCustomer((previous) => ({ ...previous, phone: event.target.value }))} placeholder="例如：0912-456-789" className="mt-2 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">地址<input value={newCustomer.address} onChange={(event) => setNewCustomer((previous) => ({ ...previous, address: event.target.value }))} placeholder="配送地址" className="mt-2 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label></div>{customerError && <p role="alert" className="mt-3 text-sm font-semibold text-[#A35F37]">{customerError}</p>}<div className="mt-4 flex justify-end gap-2"><Secondary onClick={() => setShowNewCustomer(false)}>取消</Secondary><Primary type="submit" disabled={savingCustomer}>{savingCustomer ? "新增中…" : "儲存客戶"}</Primary></div></form>}
+          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] gap-3"><select value={selectedCustomerId} onChange={(event) => chooseCustomer(event.target.value)} className="h-11 min-w-0 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#58534C] outline-none"><option value="">選擇已建立的客戶</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{customer.line_name ? ` · ${customer.line_name}` : ""}</option>)}</select><Secondary onClick={openCustomers} className="px-3">管理客戶</Secondary></div>
           <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2]">{customerFields.map(([label, value]) => <div key={label} className="bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-1 break-words text-sm font-semibold leading-6 text-[#48433C]">{value}</p></div>)}</div>
         </Card>
 
         <Card className="p-5 sm:p-6">
           <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCTS</p><h2 className="mt-1 text-lg font-semibold">加入商品</h2>
-          <div className="mt-5 overflow-x-auto"><div className="min-w-[500px]"><div className="grid grid-cols-[70px_minmax(120px,1fr)_82px_94px_64px] gap-2 border-b border-[#E8E4DD] bg-[#FBFAF8] px-2 py-3 text-[10px] font-semibold tracking-wide text-[#928C83]"><span>分類</span><span>商品名稱</span><span>單價</span><span>數量</span><span>淨利</span></div><div className="divide-y divide-[#F0EDE8]">{selected.map((product) => <div key={product.id} className="grid grid-cols-[70px_minmax(120px,1fr)_82px_94px_64px] items-center gap-2 px-2 py-4"><span className="text-xs font-medium leading-5 text-[#615C54] sm:text-sm">{product.category}</span><span className="min-w-0"><b className="block truncate text-xs sm:text-sm">{product.name}</b><small className="mt-1 block truncate text-[10px] text-[#918B81] sm:text-xs">{product.specification} · 可售 {stock[product.id]}</small></span><label><span className="sr-only">{product.name} 單價</span><input aria-label={`${product.name} 單價`} type="number" min="0" value={linePrices[product.id]} onChange={(event) => setLinePrices((previous) => ({ ...previous, [product.id]: Math.max(0, Number(event.target.value) || 0) }))} className="h-9 w-full rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-xs font-semibold text-[#48433C] outline-none" /></label><span className="flex h-9 items-center rounded-lg border border-[#E6E1DB]"><button aria-label={`減少 ${product.name} 數量`} onClick={() => updateQuantity(product.id, -1)} className="h-full w-7 text-base">−</button><b className="w-7 text-center text-xs">{lines[product.id]}</b><button aria-label={`增加 ${product.name} 數量`} onClick={() => updateQuantity(product.id, 1)} className="h-full w-7 text-base">＋</button></span><b className={`text-xs ${linePrices[product.id] >= product.cost ? "text-[#45634C]" : "text-[#A66932]"}`}>{currency((linePrices[product.id] - product.cost) * lines[product.id])}</b></div>)}</div></div></div>
-          <div className="mt-5 flex flex-col gap-2 border-t border-[#F0EDE8] pt-5 sm:flex-row"><select value={addProductId} onChange={(event) => setAddProductId(event.target.value)} disabled={!availableProducts.length} className="h-11 min-w-0 flex-1 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#58534C] outline-none">{availableProducts.length ? availableProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · 可售 {stock[product.id]}</option>) : <option>目前沒有可加入的商品</option>}</select><Secondary onClick={addProduct} disabled={!availableProducts.length}>＋ 增加商品</Secondary></div>
+          {!storedProducts.length && <p className="mt-4 rounded-xl bg-[#F8F6F2] p-4 text-sm leading-6 text-[#766F66]">請先到商品資料庫新增或匯入商品；訂單只會使用已儲存於資料庫的商品，才能正確扣除庫存。</p>}
+          <div className="mt-5 overflow-x-auto"><div className="min-w-[500px]"><div className="grid grid-cols-[70px_minmax(120px,1fr)_82px_94px_64px] gap-2 border-b border-[#E8E4DD] bg-[#FBFAF8] px-2 py-3 text-[10px] font-semibold tracking-wide text-[#928C83]"><span>分類</span><span>商品名稱</span><span>單價</span><span>數量</span><span>淨利</span></div><div className="divide-y divide-[#F0EDE8]">{selected.map((product) => { const id = String(product.id); const price = linePrices[id] ?? product.retailPrice; return <div key={product.id} className="grid grid-cols-[70px_minmax(120px,1fr)_82px_94px_64px] items-center gap-2 px-2 py-4"><span className="text-xs font-medium leading-5 text-[#615C54] sm:text-sm">{product.category}</span><span className="min-w-0"><b className="block truncate text-xs sm:text-sm">{product.name}</b><small className="mt-1 block truncate text-[10px] text-[#918B81] sm:text-xs">{product.specification} · 可售 {stockFor(product)}</small></span><label><span className="sr-only">{product.name} 單價</span><input aria-label={`${product.name} 單價`} type="number" min="0" value={price} onChange={(event) => setLinePrices((previous) => ({ ...previous, [id]: Math.max(0, Number(event.target.value) || 0) }))} className="h-9 w-full rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-xs font-semibold text-[#48433C] outline-none" /></label><span className="flex h-9 items-center rounded-lg border border-[#E6E1DB]"><button aria-label={`減少 ${product.name} 數量`} onClick={() => updateQuantity(id, -1)} className="h-full w-7 text-base">−</button><b className="w-7 text-center text-xs">{lines[id]}</b><button aria-label={`增加 ${product.name} 數量`} onClick={() => updateQuantity(id, 1)} className="h-full w-7 text-base">＋</button></span><b className={`text-xs ${price >= product.cost ? "text-[#45634C]" : "text-[#A66932]"}`}>{currency((price - product.cost) * lines[id])}</b></div>; })}</div></div></div>
+          <div className="mt-5 flex flex-col gap-2 border-t border-[#F0EDE8] pt-5 sm:flex-row"><select value={addProductId} onChange={(event) => setAddProductId(event.target.value)} disabled={!availableProducts.length} className="h-11 min-w-0 flex-1 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#58534C] outline-none">{availableProducts.length ? availableProducts.map((product) => <option key={product.id} value={String(product.id)}>{product.name} · 可售 {stockFor(product)}</option>) : <option>目前沒有可加入的商品</option>}</select><Secondary onClick={addProduct} disabled={!availableProducts.length}>＋ 增加商品</Secondary></div>
           <p className="mt-3 text-xs text-[#938D84]">將數量減少至 0 時，該商品會自動從訂單中移除。</p>
         </Card>
 
@@ -721,22 +903,21 @@ function CreateOrder({ stock, confirmOrder, back, openCustomers }: { stock: Reco
         <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ORDER SUMMARY</p>
         <h2 className="mt-1 text-lg font-semibold">訂單摘要</h2>
         <p className="mt-2 text-xs text-[#938D84]">{orderMethod === "social" ? "社群下單 · 一般售價" : "員工下單 · 員工價"}</p>
-        <div className="mt-5 space-y-3 border-b border-[#F0EDE8] pb-5">{selected.map((product) => <div key={product.id} className="flex justify-between gap-3 text-sm"><span className="text-[#676158]">{product.name}<small className="ml-2 text-[#99938A]">× {lines[product.id]}</small></span><b>{currency(linePrices[product.id] * lines[product.id])}</b></div>)}</div>
+        <div className="mt-5 space-y-3 border-b border-[#F0EDE8] pb-5">{selected.map((product) => { const id = String(product.id); const price = linePrices[id] ?? product.retailPrice; return <div key={product.id} className="flex justify-between gap-3 text-sm"><span className="text-[#676158]">{product.name}<small className="ml-2 text-[#99938A]">× {lines[id]}</small></span><b>{currency(price * lines[id])}</b></div>; })}</div>
         <div className="space-y-3 py-5 text-sm text-[#777168]">
           <div className="flex justify-between"><span>商品小計</span><span>{currency(subtotal)}</span></div>
           <div className="flex justify-between"><span>商品成本</span><span>{currency(costTotal)}</span></div>
-          <div className="flex justify-between"><span>{delivery === "pickup" ? "門市自取運費" : "賣貨便運費"}</span><span>{shipping === 0 ? "免運" : currency(shipping)}</span></div>
+          {delivery === "myship" && <div className="flex justify-between"><span>賣貨便運費</span><span>{shipping === 0 ? "免運" : currency(shipping)}</span></div>}
           <div className="flex justify-between border-t border-[#F0EDE8] pt-4 text-base font-semibold text-[#292824]"><span>訂單總額</span><span>{currency(total)}</span></div>
           <div className="flex justify-between text-sm font-semibold text-[#45634C]"><span>淨利</span><span>{currency(netProfit)}</span></div>
         </div>
-        <div className="rounded-xl bg-[#F7F4EF] p-4"><b className="text-xs text-[#695E51]">訂單確認與庫存扣除分開管理</b><small className="mt-1 block text-xs leading-5 text-[#8B8175]">確認訂單後，可再執行庫存扣除並保留操作紀錄。</small></div>
-        <div className="mt-5 grid grid-cols-2 gap-2"><Primary onClick={() => setModal("confirm")} className="w-full" disabled={!selected.length || orderConfirmed}>確認訂單</Primary><Primary onClick={() => setModal("deduct")} className="w-full bg-[#5D7B64] hover:bg-[#4A6650]" disabled={!orderConfirmed || stockDeducted}>訂單完成（扣庫存）</Primary><Secondary onClick={() => { window.location.href = "/shipping-slip"; }} className="col-span-2 w-full">出貨單列印</Secondary></div>
+        <div className="mt-5 grid grid-cols-2 gap-2"><Primary onClick={() => setModal("confirm")} className="w-full" disabled={!selected.length || !selectedCustomerId || orderConfirmed || savingOrder}>確認訂單</Primary><Primary onClick={() => setModal("deduct")} className="w-full bg-[#5D7B64] hover:bg-[#4A6650]" disabled={!orderConfirmed || stockDeducted || savingOrder}>訂單完成（扣庫存）</Primary><Secondary onClick={() => { window.location.href = "/shipping-slip"; }} className="col-span-2 w-full">出貨單列印</Secondary></div>
       </aside>
     </div>
 
     <div className="mt-6 flex justify-center"><Secondary onClick={back} className="w-full sm:w-auto">取消建立</Secondary></div>
 
-    {modal && <div className="fixed inset-0 z-50 flex items-end bg-[#292824]/30 sm:items-center sm:justify-center sm:p-6"><div role="dialog" aria-modal="true" className="w-full max-w-lg rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-3xl"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">FINAL CHECK</p><h2 className="mt-2 text-xl font-semibold">{modal === "confirm" ? "確認訂單？" : "完成訂單並扣除庫存？"}</h2><p className="mt-3 text-sm leading-6 text-[#766F66]">{modal === "confirm" ? "確認後，訂單狀態將更新為已確認；庫存可於下一步另外扣除。" : "完成訂單後，可售庫存會立即更新並保留完整的庫存異動紀錄。"}</p>{modal === "deduct" && <div className="mt-5 overflow-hidden rounded-xl border border-[#ECE8E2]"><div className="grid grid-cols-[1fr_45px_45px_60px] gap-2 bg-[#FBFAF8] px-4 py-3 text-[10px] font-bold text-[#938D84]"><span>商品</span><span>可售</span><span>本次</span><span>扣除後</span></div>{selected.map((product) => <div key={product.id} className="grid grid-cols-[1fr_45px_45px_60px] gap-2 border-t border-[#F0EDE8] px-4 py-3 text-xs"><b className="truncate">{product.name}</b><span>{stock[product.id]}</span><span>{lines[product.id]}</span><b className="text-[#45634C]">{stock[product.id] - lines[product.id]}</b></div>)}</div>}<div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Secondary onClick={() => setModal(null)}>返回修改</Secondary><Primary onClick={modal === "confirm" ? confirmOrderAction : deductInventory}>{modal === "confirm" ? "確認訂單" : "訂單完成"}</Primary></div></div></div>}
+    {modal && <div className="fixed inset-0 z-50 flex items-end bg-[#292824]/30 sm:items-center sm:justify-center sm:p-6"><div role="dialog" aria-modal="true" className="w-full max-w-lg rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-3xl"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">FINAL CHECK</p><h2 className="mt-2 text-xl font-semibold">{modal === "confirm" ? "確認訂單？" : "完成訂單並扣除庫存？"}</h2><p className="mt-3 text-sm leading-6 text-[#766F66]">{modal === "confirm" ? "確認後，訂單資料會立即寫入資料庫；庫存可於下一步另外扣除。" : "完成訂單後，可售庫存會立即更新並保留完整的庫存異動紀錄。"}</p>{modal === "deduct" && <div className="mt-5 overflow-hidden rounded-xl border border-[#ECE8E2]"><div className="grid grid-cols-[1fr_45px_45px_60px] gap-2 bg-[#FBFAF8] px-4 py-3 text-[10px] font-bold text-[#938D84]"><span>商品</span><span>可售</span><span>本次</span><span>扣除後</span></div>{selected.map((product) => { const id = String(product.id); const available = stockFor(product); return <div key={product.id} className="grid grid-cols-[1fr_45px_45px_60px] gap-2 border-t border-[#F0EDE8] px-4 py-3 text-xs"><b className="truncate">{product.name}</b><span>{available}</span><span>{lines[id]}</span><b className="text-[#45634C]">{available - lines[id]}</b></div>; })}</div>}<div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Secondary onClick={() => setModal(null)} disabled={savingOrder}>返回修改</Secondary><Primary onClick={modal === "confirm" ? () => { void confirmOrderAction(); } : () => { void deductInventory(); }} disabled={savingOrder}>{savingOrder ? "處理中…" : modal === "confirm" ? "確認訂單" : "訂單完成"}</Primary></div></div></div>}
   </>;
 }
 
@@ -777,7 +958,11 @@ export default function Home() {
       try {
         const response = await fetch("/api/products");
         const result = await response.json();
-        if (response.ok && active) setDatabaseProducts((result.products ?? []).map((product: StoredProduct) => toProduct(product)));
+        if (response.ok && active) {
+          const loaded: Product[] = (result.products ?? []).map((product: StoredProduct) => toProduct(product));
+          setDatabaseProducts(loaded);
+          setStock((previous) => ({ ...previous, ...Object.fromEntries(loaded.map((product) => [String(product.id), product.available])) }));
+        }
       } catch {
         // 商品資料庫連線失敗時，仍保留既有示範資料供介面操作。
       }
@@ -788,7 +973,7 @@ export default function Home() {
   const go = (next: View) => { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const openProduct = (productOrId: Product | number) => { setSelectedProduct(typeof productOrId === "number" ? products.find((product) => product.id === productOrId) ?? products[0] : productOrId); go("product"); };
   const addDatabaseProducts = (incoming: Product[]) => setDatabaseProducts((previous) => [...incoming, ...previous.filter((product) => !incoming.some((item) => item.id === product.id))]);
-  const confirmOrder = (lines: Record<number, number>) => { setStock(previous => Object.fromEntries(Object.entries(previous).map(([id, amount]) => [id, amount - (lines[Number(id)] ?? 0)]))); setCreatedOrder(true); };
+  const confirmOrder = (lines: Record<string, number>) => { setStock(previous => Object.fromEntries(Object.entries(previous).map(([id, amount]) => [id, amount - (lines[id] ?? 0)]))); setCreatedOrder(true); };
   const adjustStock = (id: number, quantity: number) => { setStock((previous) => ({ ...previous, [id]: Math.max(0, (previous[id] ?? 0) + quantity) })); };
   const signOut = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -796,7 +981,7 @@ export default function Home() {
   };
   if (!authReady || !currentUser) return <main className="flex min-h-screen items-center justify-center bg-[#F8F7F4] px-5 text-[#6F6960]"><p className="rounded-xl border border-[#E9E5DF] bg-white px-5 py-4 text-sm font-semibold">正在確認登入狀態…</p></main>;
   const catalog = [...databaseProducts, ...products];
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <Orders created={createdOrder} go={go}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={() => go("newProduct")} openImportProducts={() => go("importProducts")}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")}/> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchase back={() => go("purchases")}/> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview stock={stock} openProduct={openProduct} adjustStock={adjustStock}/> : view === "create" ? <CreateOrder stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : <GenericPage view={view} go={go}/>;
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <Orders created={createdOrder} go={go}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={() => go("newProduct")} openImportProducts={() => go("importProducts")}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")}/> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchase back={() => go("purchases")}/> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview stock={stock} openProduct={openProduct} adjustStock={adjustStock}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : <GenericPage view={view} go={go}/>;
   const isProductsView = view === "products" || view === "product" || view === "newProduct" || view === "importProducts";
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
   const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";
