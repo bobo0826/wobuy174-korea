@@ -69,8 +69,6 @@ const mapUrl =
   "https://www.google.com/maps/search/?api=1&query=%E5%98%89%E7%BE%A9%E7%B8%A3%E6%9C%B4%E5%AD%90%E5%B8%82%E9%96%8B%E5%85%83%E8%B7%AF174%E8%99%9F";
 export const roundedFontFamily =
   'ui-rounded, "Arial Rounded MT Bold", "Hiragino Maru Gothic ProN", "PingFang TC", "Microsoft JhengHei", sans-serif';
-const handwrittenFontFamily =
-  '"HanziPen TC", "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", cursive';
 
 const desktopPageSizeQuery = "(min-width: 1024px)";
 
@@ -666,8 +664,12 @@ export function ProductCatalog({
 
   return (
     <>
-      <section id="products" className="scroll-mt-24 px-5 pb-20 pt-8 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
+      <section id="products" className="scroll-mt-24 px-5 pb-20 pt-0 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
         <div className="mx-auto max-w-[1500px]">
+          <div className="flex items-center justify-between border-b border-[#D9D6D0] py-3.5 sm:py-4">
+            <p className="text-[10px] font-semibold tracking-[0.2em] text-[#605B51]/70">SHOP BY CATEGORY</p>
+            <p className="text-[11px] tracking-[0.06em] text-[#605B51]/60 sm:text-xs">日韓小物・限量連線・現貨商品</p>
+          </div>
           <div className="scrollbar-none -mx-5 flex overflow-x-auto border-y border-[#D9D6D0] px-5 sm:mx-0 sm:px-0">
             {visibleCategories.map((category) => {
               const isActive = activeCategory === category.id;
@@ -748,7 +750,7 @@ export function ProductCatalog({
             </div>
           )}
 
-          <div className="flex items-center justify-between pb-5 pt-8">
+          <div className="flex items-center justify-between pb-5 pt-7 sm:pt-8">
             <h2 className="text-xl font-semibold tracking-[-0.03em] sm:text-2xl">{categoryTitles[activeCategory]}</h2>
             <span className="text-xs tracking-[0.08em] text-[#605B51]/65">{filteredProducts.length} ITEMS</span>
           </div>
@@ -835,8 +837,8 @@ export function ProductCatalog({
       {selectedProduct && (
         <div className="fixed inset-0 z-50 flex items-end bg-[#605B51]/45 p-0 sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-label={`${selectedProduct.name} 商品資訊`}>
           <button className="absolute inset-0 cursor-default" aria-label="關閉商品資訊" onClick={() => setSelectedProduct(null)} />
-          <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-[16px] bg-[#F5F5F5] sm:max-w-4xl sm:rounded-[12px]">
-            <button className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-[#F5F5F5]/90 text-[#605B51] shadow-sm" aria-label="關閉商品資訊" onClick={() => setSelectedProduct(null)}>
+          <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-[16px] bg-[#FAF7F0] sm:max-w-4xl sm:rounded-[12px]">
+            <button className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-[#FAF7F0]/90 text-[#605B51] shadow-sm" aria-label="關閉商品資訊" onClick={() => setSelectedProduct(null)}>
               <CloseIcon />
             </button>
             <div className="grid md:grid-cols-2">
@@ -923,7 +925,7 @@ export function ProductCatalog({
 
 export default function Home() {
   return (
-    <main className="overflow-x-clip bg-[#F5F5F5] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
+    <main className="overflow-x-clip bg-[#FAF7F0] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
       <div className="bg-[#605B51] px-4 py-2 text-center text-[11px] tracking-[0.08em] text-[#F5F5F5] sm:text-xs">
         新品與連線資訊，優先發布於 LINE 社群
         <a
@@ -936,9 +938,9 @@ export default function Home() {
         </a>
       </div>
 
-      <header className="sticky top-0 z-30 border-b border-[#D9D6D0]/90 bg-[#F5F5F5]/95 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-[#D9D6D0]/90 bg-[#FAF7F0]/95 backdrop-blur">
         <div className="mx-auto flex h-[72px] max-w-[1500px] items-center justify-between px-5 sm:px-8 lg:px-12">
-          <a href="#top" className="group leading-none" aria-label="回到信男代購首頁">
+          <a href="#products" className="group leading-none" aria-label="回到商品列表">
             <span className="block text-base font-semibold tracking-[0.13em] sm:text-lg">信男代購</span>
             <span className="mt-1 block text-[9px] font-medium tracking-[0.22em] text-[#605B51]/70 transition-colors group-hover:text-[#605B51]">
               WOBUY174_
@@ -971,44 +973,6 @@ export default function Home() {
           </div>
         </div>
       </header>
-
-      <section id="top" className="relative isolate min-h-[200px] border-b border-[#D9D6D0] px-5 py-3 sm:px-8 sm:py-28 lg:px-12 lg:py-5">
-        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
-          <div className="absolute -right-10 top-3 h-32 w-32 rounded-full border border-[#D9D6D0] sm:-right-8 sm:top-8 sm:h-72 sm:w-72" />
-          <div className="absolute -left-10 bottom-[-40px] h-24 w-24 rounded-full bg-[#EAE8E4] sm:-left-5 sm:bottom-[-70px] sm:h-56 sm:w-56" />
-          <span className="absolute right-[8%] top-[18%] text-[11vw] font-semibold leading-none tracking-[-0.08em] text-[#EAE8E4] sm:text-[9vw]">
-            174
-          </span>
-        </div>
-
-        <div className="mx-auto max-w-5xl text-center">
-          <p className="text-[9px] font-semibold tracking-[0.24em] text-[#605B51]/70 sm:text-xs sm:tracking-[0.28em]">WOBUY174_</p>
-          <h1 className="font-hand mt-2 text-[28px] font-light italic leading-[1.2] tracking-[0.055em] text-[#605B51] sm:mt-7 sm:text-[clamp(1.95rem,5vw,4.25rem)] sm:tracking-[0.065em]" style={{ fontFamily: handwrittenFontFamily }}>
-            我來帶你走遍世界，
-            <br />
-            挑最好的給你<span className="ml-1 text-[0.72em] align-[0.12em]">💓</span>
-          </h1>
-          <p className="mt-2 text-[16px] font-bold tracking-[0.06em] text-[#605B51] sm:mt-7 sm:text-lg sm:tracking-[0.08em]">
-            日韓代購｜正品直送｜實體店面｜安心放心
-          </p>
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:mt-10 sm:gap-3">
-            <a
-              className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[#605B51] px-4 py-2.5 text-xs font-medium tracking-[0.05em] text-[#F5F5F5] transition-transform hover:-translate-y-0.5 hover:bg-[#766F63] sm:px-6 sm:py-3.5 sm:text-sm sm:tracking-[0.06em]"
-              href="/products"
-            >
-              開始逛商品 <Arrow className="h-4 w-4" />
-            </a>
-            <a
-              className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[#D9D6D0] bg-[#F5F5F5] px-4 py-2.5 text-xs font-medium tracking-[0.05em] transition-colors hover:border-[#605B51] hover:text-[#605B51] sm:px-6 sm:py-3.5 sm:text-sm sm:tracking-[0.06em]"
-              href={lineCommunityUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              加入 LINE 社群
-            </a>
-          </div>
-        </div>
-      </section>
 
       <ProductCatalog showAllCategory={false} />
 
@@ -1046,7 +1010,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="min-h-[380px] border-t border-[#D9D6D0] bg-[#EAE8E4] px-5 pb-16 pt-8 sm:px-8 sm:pb-12 md:min-h-0 lg:px-12">
+      <footer className="min-h-[380px] border-t border-[#D9D6D0] bg-[#F0ECE3] px-5 pb-16 pt-8 sm:px-8 sm:pb-12 md:min-h-0 lg:px-12">
         <div className="mx-auto grid max-w-[1500px] gap-7 md:grid-cols-[1fr_auto]">
           <div>
             <p className="text-lg font-semibold tracking-[0.1em]">信男代購</p>

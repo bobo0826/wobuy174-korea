@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #F5F5F5;
+  --background: #FAF7F0;
   --foreground: #605B51;
   --font-round: ui-rounded, "Arial Rounded MT Bold", "Hiragino Maru Gothic ProN", "PingFang TC", "Microsoft JhengHei", sans-serif;
   --font-hand: "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", cursive;

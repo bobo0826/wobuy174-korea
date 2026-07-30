@@ -9,8 +9,8 @@ import {
 
 export default function ProductsPage() {
   return (
-    <main className="min-h-screen overflow-x-clip bg-[#F5F5F5] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
-      <header className="sticky top-0 z-30 border-b border-[#D9D6D0]/90 bg-[#F5F5F5]/95 backdrop-blur">
+    <main className="min-h-screen overflow-x-clip bg-[#FAF7F0] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
+      <header className="sticky top-0 z-30 border-b border-[#D9D6D0]/90 bg-[#FAF7F0]/95 backdrop-blur">
         <div className="mx-auto flex h-[72px] max-w-[1500px] items-center justify-between px-5 sm:px-8 lg:px-12">
           <Link href="/" className="group leading-none" aria-label="回到信男代購首頁">
             <span className="block text-base font-semibold tracking-[0.13em] sm:text-lg">信男代購</span>
