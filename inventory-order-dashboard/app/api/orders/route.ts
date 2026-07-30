@@ -29,10 +29,10 @@ type CreateOrderInput = {
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const orderNumberPattern = /^\d{8}\d{3,}$/;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-const orderStatuses = ["待確認", "已確認", "已出貨", "已取消"];
+const orderStatuses = ["預購中", "已到貨", "已出貨", "已取消"];
 const orderMethods = ["社群下單", "員工下單"];
 const paymentMethods = ["銀行轉帳", "信用卡", "現金"];
-const reconciliationStatuses = ["待查帳", "已查帳", "查帳異常"];
+const reconciliationStatuses = ["未付款", "已付款"];
 const deliveryMethods = ["門市自取", "賣貨便"];
 
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -64,10 +64,10 @@ function validateOrder(input: CreateOrderInput) {
   const orderDate = text(input.orderDate);
   const orderNumber = text(input.orderNumber);
   const customerId = text(input.customerId);
-  const status = text(input.status) || "已確認";
+  const status = text(input.status) || "預購中";
   const orderMethod = text(input.orderMethod);
   const paymentMethod = text(input.paymentMethod);
-  const reconciliationStatus = text(input.reconciliationStatus) || "待查帳";
+  const reconciliationStatus = text(input.reconciliationStatus) || "未付款";
   const deliveryMethod = text(input.deliveryMethod);
   const note = text(input.note);
 
@@ -76,7 +76,7 @@ function validateOrder(input: CreateOrderInput) {
   if (!orderStatuses.includes(status)) return { error: "訂單狀態不正確。" };
   if (!orderMethods.includes(orderMethod)) return { error: "請選擇下單方式。" };
   if (!paymentMethods.includes(paymentMethod)) return { error: "付款方式不正確。" };
-  if (!reconciliationStatuses.includes(reconciliationStatus)) return { error: "查帳狀態不正確。" };
+  if (!reconciliationStatuses.includes(reconciliationStatus)) return { error: "付款狀態不正確。" };
   if (!deliveryMethods.includes(deliveryMethod)) return { error: "配送方式不正確。" };
   if (!customerId || !uuidPattern.test(customerId)) return { error: "請先選擇一位已建立的客戶。" };
   if (!Array.isArray(input.items) || input.items.length === 0) return { error: "請至少加入一項商品。" };

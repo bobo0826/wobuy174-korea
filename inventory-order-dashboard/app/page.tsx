@@ -130,13 +130,9 @@ type InventoryAdjustment = {
   products: { name: string; sku: string } | null;
 };
 
-const products: Array<Product & { id: number }> = [
-  { id: 1, name: "雲朵感純棉四季被", country: "韓國", category: "棉被", specification: "奶油白／單人", sku: "KB-174-CR", cost: 880, staffPrice: 1280, retailPrice: 1680, available: 32, reserved: 6, incoming: 48, safety: 12, tone: "#E9E1D5" },
-  { id: 2, name: "霧面日常隨行杯", country: "日本", category: "3COIN", specification: "淺灰／500ml", sku: "JP-042-GR", cost: 290, staffPrice: 450, retailPrice: 590, available: 8, reserved: 4, incoming: 0, safety: 10, tone: "#DFE4E0" },
-  { id: 3, name: "刺繡小熊收納化妝包", country: "韓國", category: "美妝", specification: "燕麥／小尺寸", sku: "KR-108-OT", cost: 180, staffPrice: 320, retailPrice: 420, available: 24, reserved: 3, incoming: 30, safety: 8, tone: "#EADAD0" },
-  { id: 4, name: "韓國蝴蝶結棉襪組", country: "韓國", category: "潮牌", specification: "粉霧／兩雙入", sku: "KR-330-PK", cost: 138, staffPrice: 250, retailPrice: 330, available: 57, reserved: 9, incoming: 0, safety: 20, tone: "#E6DCE3" },
-  { id: 5, name: "透明桌面收納盒", country: "日本", category: "3COIN", specification: "中尺寸", sku: "JP-152-MD", cost: 270, staffPrice: 430, retailPrice: 560, available: 17, reserved: 2, incoming: 24, safety: 8, tone: "#DCE4E8" },
-];
+// 商品清單只顯示資料庫內建立或匯入的實際商品，不再混入預設示範資料。
+const products: Array<Product & { id: number }> = [];
+const blankProduct: Product = { id: "", name: "", country: "", category: "", specification: "", sku: "", cost: 0, staffPrice: 0, retailPrice: 0, available: 0, reserved: 0, incoming: 0, safety: 0, tone: "#E9E1D5" };
 
 const productTones = ["#E9E1D5", "#DFE4E0", "#EADAD0", "#E6DCE3", "#DCE4E8"];
 const toProduct = (record: StoredProduct): Product => ({
@@ -1062,10 +1058,10 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
   const [addProductId, setAddProductId] = useState(String(storedProducts[2]?.id ?? storedProducts[0]?.id ?? ""));
   const [orderDate, setOrderDate] = useState(taipeiToday);
   const [orderNumber, setOrderNumber] = useState(() => firstOrderNumberForDate(taipeiToday()));
-  const [status, setStatus] = useState("待確認");
+  const [status, setStatus] = useState("預購中");
   const [note, setNote] = useState("");
   const [payment, setPayment] = useState("銀行轉帳");
-  const [reconciliation, setReconciliation] = useState("待查帳");
+  const [reconciliation, setReconciliation] = useState("未付款");
   const [delivery, setDelivery] = useState<"pickup" | "myship">("myship");
   const [modal, setModal] = useState<"confirm" | "deduct" | null>(null);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
@@ -1201,6 +1197,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
     setSavingOrder(true);
     setOrderError("");
     try {
+      const statusForCreation = status === "已出貨" ? "已到貨" : status;
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1208,7 +1205,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
           orderNumber,
           customerId: selectedCustomerId,
           orderDate,
-          status: "已確認",
+          status: statusForCreation,
           orderMethod: orderMethod === "social" ? "社群下單" : "員工下單",
           paymentMethod: payment,
           reconciliationStatus: reconciliation,
@@ -1228,8 +1225,16 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
       if (!response.ok) throw new Error(result.message ?? "無法建立訂單。請稍後再試。");
       setOrderNumber(result.order.order_number);
       setSavedOrderId(result.order.id);
-      setStatus("已確認");
+      setStatus(result.order.status);
       setOrderConfirmed(true);
+      if (status === "已出貨") {
+        const completeResponse = await fetch(`/api/orders/${result.order.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "complete" }) });
+        const completeResult = await completeResponse.json();
+        if (!completeResponse.ok) throw new Error(completeResult.message ?? "無法完成訂單並扣除庫存。請稍後再試。");
+        confirmOrder(lines);
+        setStatus(completeResult.order.status);
+        setStockDeducted(true);
+      }
       setModal(null);
     } catch (reason) {
       setOrderError(reason instanceof Error ? reason.message : "無法建立訂單。請稍後再試。");
@@ -1275,7 +1280,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
           <div className="mt-5 grid grid-cols-2 gap-4">
             <label className="text-sm font-semibold text-[#58534C]">訂單編號<input value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label>
             <label className="text-sm font-semibold text-[#58534C]">訂單日期<input type="date" value={orderDate} onChange={(event) => changeOrderDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label>
-            <label className="text-sm font-semibold text-[#58534C]">訂單狀態<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>待確認</option><option>已確認</option><option>已出貨</option></select></label>
+            <label className="text-sm font-semibold text-[#58534C]">訂單狀態<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>預購中</option><option>已到貨</option><option>已出貨</option></select></label>
             <label className="text-sm font-semibold text-[#58534C]">備註<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="輸入訂單備註" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /></label>
           </div>
           <div className="mt-5 border-t border-[#F0EDE8] pt-5"><p className="text-sm font-semibold text-[#58534C]">下單方式</p><p className="mt-1 text-xs text-[#938D84]">下單方式會套用商品預設價格，仍可逐筆調整單價。</p><div className="mt-3 grid grid-cols-2 gap-3"><button onClick={() => changeOrderMethod("social")} className={`rounded-xl border p-4 text-left ${orderMethod === "social" ? "border-[#86A28E] bg-[#EEF5EF]" : "border-[#E6E1DB] bg-[#FCFBF9]"}`}><b className="block text-sm">社群下單</b><small className="mt-1 block text-xs text-[#6F806F]">套用一般售價</small></button><button onClick={() => changeOrderMethod("staff")} className={`rounded-xl border p-4 text-left ${orderMethod === "staff" ? "border-[#86A28E] bg-[#EEF5EF]" : "border-[#E6E1DB] bg-[#FCFBF9]"}`}><b className="block text-sm">員工下單</b><small className="mt-1 block text-xs text-[#6F806F]">套用員工價</small></button></div></div>
@@ -1296,7 +1301,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
           <p className="mt-3 text-xs text-[#938D84]">將數量減少至 0 時，該商品會自動從訂單中移除。</p>
         </Card>
 
-        <Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PAYMENT & DELIVERY</p><h2 className="mt-1 text-lg font-semibold">付款與配送</h2><div className="mt-5 grid grid-cols-2 gap-4"><label className="text-sm font-semibold text-[#58534C]">付款方式<select value={payment} onChange={(event) => setPayment(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal"><option>銀行轉帳</option><option>信用卡</option><option>現金</option></select></label>{payment === "銀行轉帳" && <label className="text-sm font-semibold text-[#58534C]">查帳狀態<select value={reconciliation} onChange={(event) => setReconciliation(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal"><option>待查帳</option><option>已查帳</option><option>查帳異常</option></select></label>}<label className={`text-sm font-semibold text-[#58534C] ${payment === "銀行轉帳" ? "col-span-2" : ""}`}>配送方式<select value={delivery} onChange={(event) => setDelivery(event.target.value as "pickup" | "myship")} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal"><option value="pickup">門市自取</option><option value="myship">賣貨便</option></select></label></div>{payment === "銀行轉帳" && <small className="mt-2 block text-xs leading-5 text-[#938D84]">銀行轉帳訂單需完成查帳後再確認訂單。</small>}</Card>
+        <Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PAYMENT & DELIVERY</p><h2 className="mt-1 text-lg font-semibold">付款與配送</h2><div className="mt-5 grid grid-cols-2 gap-4"><label className="text-sm font-semibold text-[#58534C]">付款方式<select value={payment} onChange={(event) => setPayment(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal"><option>銀行轉帳</option><option>信用卡</option><option>現金</option></select></label><label className="text-sm font-semibold text-[#58534C]">付款狀態<select value={reconciliation} onChange={(event) => setReconciliation(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal"><option>未付款</option><option>已付款</option></select></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">配送方式<select value={delivery} onChange={(event) => setDelivery(event.target.value as "pickup" | "myship")} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal"><option value="pickup">門市自取</option><option value="myship">賣貨便</option></select></label></div></Card>
       </div>
 
       <aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6 xl:sticky xl:top-6">
@@ -1328,7 +1333,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [createdOrder, setCreatedOrder] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<Product>(products[0]);
+  const [selectedProduct, setSelectedProduct] = useState<Product>(blankProduct);
   const [databaseProducts, setDatabaseProducts] = useState<Product[]>([]);
   const [stock, setStock] = useState<Record<string, number>>(() => Object.fromEntries(products.map(product => [String(product.id), product.available])));
   const refreshProducts = async () => {
@@ -1368,7 +1373,7 @@ export default function Home() {
     return () => { active = false; };
   }, [currentUser]);
   const go = (next: View) => { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const openProduct = (productOrId: Product | number | string) => { setSelectedProduct(typeof productOrId === "object" ? productOrId : [...databaseProducts, ...products].find((product) => String(product.id) === String(productOrId)) ?? products[0]); go("product"); };
+  const openProduct = (productOrId: Product | number | string) => { setSelectedProduct(typeof productOrId === "object" ? productOrId : databaseProducts.find((product) => String(product.id) === String(productOrId)) ?? blankProduct); go("product"); };
   const addDatabaseProducts = (incoming: Product[]) => setDatabaseProducts((previous) => [...incoming, ...previous.filter((product) => !incoming.some((item) => item.id === product.id))]);
   const updateDatabaseProduct = (updated: Product) => {
     setDatabaseProducts((previous) => previous.map((product) => String(product.id) === String(updated.id) ? updated : product));
@@ -1398,8 +1403,8 @@ export default function Home() {
     window.location.assign("/login");
   };
   if (!authReady || !currentUser) return <main className="flex min-h-screen items-center justify-center bg-[#F8F7F4] px-5 text-[#6F6960]"><p className="rounded-xl border border-[#E9E5DF] bg-white px-5 py-4 text-sm font-semibold">正在確認登入狀態…</p></main>;
-  const catalog = [...databaseProducts, ...products];
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <Orders created={createdOrder} go={go}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={() => go("newProduct")} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} onUpdated={updateDatabaseProduct}/> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchase catalog={databaseProducts} back={() => go("purchases")} openSuppliers={() => go("suppliers")} onCreated={refreshProducts}/> : view === "purchases" ? <PurchasesPage go={go} onInventoryChanged={refreshProducts}/> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
+  const catalog = databaseProducts;
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <Orders created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={() => go("newProduct")} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} onUpdated={updateDatabaseProduct}/> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchase catalog={databaseProducts} back={() => go("purchases")} openSuppliers={() => go("suppliers")} onCreated={refreshProducts}/> : view === "purchases" ? <PurchasesPage go={go} onInventoryChanged={refreshProducts}/> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
   const isProductsView = view === "products" || view === "product" || view === "newProduct" || view === "importProducts";
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
   const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";

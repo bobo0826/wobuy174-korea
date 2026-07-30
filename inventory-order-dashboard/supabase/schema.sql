@@ -47,10 +47,10 @@ create table if not exists orders (
   order_number text not null unique,
   customer_id uuid references customers(id) on delete set null,
   order_date date not null default current_date,
-  status text not null default '待確認' check (status in ('待確認', '已確認', '已出貨', '已取消')),
+  status text not null default '預購中' check (status in ('預購中', '已到貨', '已出貨', '已取消')),
   order_method text not null check (order_method in ('社群下單', '員工下單')),
   payment_method text not null default '銀行轉帳',
-  reconciliation_status text not null default '待查帳',
+  reconciliation_status text not null default '未付款',
   delivery_method text not null default '門市自取',
   delivery_fee integer not null default 0 check (delivery_fee >= 0),
   note text not null default '',
@@ -161,6 +161,49 @@ begin
   select id, available_stock
   from public.products
   where id = p_product_id;
+end;
+$$;
+
+-- Deleting a shipped order safely restores stock and keeps an adjustment record.
+create or replace function public.delete_order_and_restore_stock(
+  p_order_id uuid,
+  p_performed_by text default ''
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+begin
+  select * into v_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception '找不到訂單';
+  end if;
+
+  if v_order.status = '已出貨' then
+    for v_item in
+      select product_id, sum(quantity)::integer as quantity
+      from public.order_items
+      where order_id = p_order_id and product_id is not null
+      group by product_id
+    loop
+      perform public.apply_inventory_adjustment(
+        v_item.product_id,
+        v_item.quantity,
+        '刪除訂單回補庫存',
+        '訂單 ' || v_order.order_number,
+        coalesce(trim(p_performed_by), '')
+      );
+    end loop;
+  end if;
+
+  delete from public.orders where id = p_order_id;
 end;
 $$;
 
