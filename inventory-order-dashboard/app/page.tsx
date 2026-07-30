@@ -43,6 +43,7 @@ type Product = {
   country: string;
   category: string;
   specification: string;
+  note: string;
   sku: string;
   cost: number;
   staffPrice: number;
@@ -63,6 +64,7 @@ type StoredProduct = {
   country: string;
   category: string;
   specification: string;
+  note: string;
   cost: number;
   staff_price: number;
   retail_price: number;
@@ -132,7 +134,7 @@ type InventoryAdjustment = {
 
 // 商品清單只顯示資料庫內建立或匯入的實際商品，不再混入預設示範資料。
 const products: Array<Product & { id: number }> = [];
-const blankProduct: Product = { id: "", name: "", country: "", category: "", specification: "", sku: "", cost: 0, staffPrice: 0, retailPrice: 0, available: 0, reserved: 0, incoming: 0, safety: 0, tone: "#E9E1D5" };
+const blankProduct: Product = { id: "", name: "", country: "", category: "", specification: "", note: "", sku: "", cost: 0, staffPrice: 0, retailPrice: 0, available: 0, reserved: 0, incoming: 0, safety: 0, tone: "#E9E1D5" };
 
 const productTones = ["#E9E1D5", "#DFE4E0", "#EADAD0", "#E6DCE3", "#DCE4E8"];
 const toProduct = (record: StoredProduct): Product => ({
@@ -141,6 +143,7 @@ const toProduct = (record: StoredProduct): Product => ({
   country: record.country,
   category: record.category,
   specification: record.specification,
+  note: record.note ?? "",
   sku: record.sku,
   cost: record.cost,
   staffPrice: record.staff_price,
@@ -280,21 +283,21 @@ function Products({ catalog, openProduct, openNewProduct, openImportProducts, de
     {error && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{error}</Card>}
     <Card className="overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-[#F0EDE8] p-5 sm:p-6"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><Search value={query} onChange={setQuery} placeholder="搜尋商品名稱、商品編號或條碼" /><span className="text-xs text-[#807A71]">顯示 {visibleProducts.length} 項商品</span></div><div className="grid w-full gap-2 sm:max-w-[497px] sm:grid-cols-3"><select aria-label="國家篩選" value={countryFilter} onChange={(event) => { setCountryFilter(event.target.value); setCategoryFilter("全部商品種類"); }} className={selectClass}><option>全部國家</option>{countries.map((country) => <option key={country}>{country}</option>)}</select><select aria-label="商品種類篩選" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className={selectClass}><option>全部商品種類</option>{categoryOptions.map((category) => <option key={category}>{category}</option>)}</select><select aria-label="商品狀態篩選" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={selectClass}><option>全部狀態</option><option>正常庫存</option><option>低庫存</option></select></div></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[990px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">商品</th><th className="px-3 py-3">商品編號</th><th className="px-3 py-3">種類</th><th className="px-3 py-3">一般售價</th><th className="px-3 py-3">可售庫存</th><th className="px-3 py-3">狀態</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{visibleProducts.length ? visibleProducts.map((product) => <tr key={product.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4"><button onClick={() => openProduct(product)} className="flex items-center gap-3 text-left"><ProductTile product={product}/><span><b className="block text-[#4A4640]">{product.name}</b><small className="block pt-1 text-xs text-[#938D84]">{product.specification}</small></span></button></td><td className="px-3 py-4 font-mono text-xs text-[#6E695F]">{product.sku}</td><td className="px-3 py-4 text-[#625D55]">{product.country} · {product.category}</td><td className="px-3 py-4 font-medium">{currency(product.retailPrice)}</td><td className={`px-3 py-4 font-semibold ${product.available <= product.safety ? "text-[#A66932]" : "text-[#476B51]"}`}>{product.available}</td><td className="px-3 py-4"><Pill tone={product.available <= product.safety ? "orange" : "green"}>{product.available <= product.safety ? "低庫存" : "已上架"}</Pill></td><td className="px-6 py-4"><div className="flex items-center justify-end gap-4"><button onClick={() => openProduct(product)} className="text-sm font-semibold text-[#5E7665]">查看商品</button>{typeof product.id === "string" && <button onClick={() => { void removeProduct(product); }} disabled={deletingId === product.id} className="text-sm font-semibold text-[#A35F37] disabled:cursor-not-allowed disabled:opacity-45">{deletingId === product.id ? "刪除中…" : "刪除"}</button>}</div></td></tr>) : <tr><td colSpan={7} className="px-6 py-10 text-center text-sm text-[#8D877E]">找不到符合條件的商品。</td></tr>}</tbody></table></div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[990px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">商品</th><th className="px-3 py-3">商品編號</th><th className="px-3 py-3">種類</th><th className="px-3 py-3">一般售價</th><th className="px-3 py-3">可售庫存</th><th className="px-3 py-3">狀態</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{visibleProducts.length ? visibleProducts.map((product) => <tr key={product.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4"><button onClick={() => openProduct(product)} className="text-left"><b className="block text-[#4A4640]">{product.name}</b><small className="block pt-1 text-xs text-[#938D84]">{product.specification}</small></button></td><td className="px-3 py-4 font-mono text-xs text-[#6E695F]">{product.sku}</td><td className="px-3 py-4 text-[#625D55]">{product.country} · {product.category}</td><td className="px-3 py-4 font-medium">{currency(product.retailPrice)}</td><td className={`px-3 py-4 font-semibold ${product.available <= product.safety ? "text-[#A66932]" : "text-[#476B51]"}`}>{product.available}</td><td className="px-3 py-4"><Pill tone={product.available <= product.safety ? "orange" : "green"}>{product.available <= product.safety ? "低庫存" : "已上架"}</Pill></td><td className="px-6 py-4"><div className="flex items-center justify-end gap-4"><button onClick={() => openProduct(product)} className="text-sm font-semibold text-[#5E7665]">查看商品</button>{typeof product.id === "string" && <button onClick={() => { void removeProduct(product); }} disabled={deletingId === product.id} className="text-sm font-semibold text-[#A35F37] disabled:cursor-not-allowed disabled:opacity-45">{deletingId === product.id ? "刪除中…" : "刪除"}</button>}</div></td></tr>) : <tr><td colSpan={7} className="px-6 py-10 text-center text-sm text-[#8D877E]">找不到符合條件的商品。</td></tr>}</tbody></table></div>
     </Card>
   </>;
 }
 
-function NewProduct({ back, onCreated }: { back: () => void; onCreated: (product: Product) => void }) {
+function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onCreated: (product: Product) => void; initialProduct?: Product | null }) {
   const [saved, setSaved] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [country, setCountry] = useState("");
-  const [category, setCategory] = useState("");
+  const [country, setCountry] = useState(initialProduct?.country ?? "");
+  const [category, setCategory] = useState(initialProduct?.category ?? "");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [supplierId, setSupplierId] = useState("");
-  const [form, setForm] = useState({ sku: "", name: "", specification: "", cost: "0", staffPrice: "0", retailPrice: "0", availableStock: "0", safetyStock: "0" });
+  const [supplierId, setSupplierId] = useState(initialProduct?.supplierId ?? "");
+  const [form, setForm] = useState({ sku: initialProduct?.sku ? `${initialProduct.sku}-COPY` : "", name: initialProduct?.name ?? "", specification: initialProduct?.specification ?? "", note: initialProduct?.note ?? "", cost: String(initialProduct?.cost ?? 0), staffPrice: String(initialProduct?.staffPrice ?? 0), retailPrice: String(initialProduct?.retailPrice ?? 0), availableStock: String(initialProduct?.available ?? 0), safetyStock: String(initialProduct?.safety ?? 0) });
   const inputClass = "mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]";
   const categoryOptions = productCategoriesByCountry[country] ?? [];
   const updateForm = (field: keyof typeof form, value: string) => setForm((previous) => ({ ...previous, [field]: value }));
@@ -335,8 +338,8 @@ function NewProduct({ back, onCreated }: { back: () => void; onCreated: (product
   };
 
   return <>
-    <Header eyebrow="NEW PRODUCT" title="新增商品" description="建立商品基本資料、售價與初始庫存。"><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header>
-    {saved && <Card className="mb-5 border-[#D9E5DB] bg-[#EEF5EF] p-5"><b className="block text-[#34563D]">商品已建立</b><small className="mt-1 block text-sm text-[#57735D]">商品資料已儲存至商品資料庫。{syncNotice && ` ${syncNotice}`}</small></Card>}
+    <Header eyebrow={initialProduct ? "DUPLICATE PRODUCT" : "NEW PRODUCT"} title={initialProduct ? "複製商品" : "新增商品"} description={initialProduct ? "已帶入原商品資料；請確認商品編號與內容後儲存。" : "建立商品基本資料、售價與初始庫存。"}><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header>
+    {saved && <Card className="mb-5 border-[#D9E5DB] bg-[#EEF5EF] p-5"><b className="block text-[#34563D]">{initialProduct ? "商品複本已建立" : "商品已建立"}</b><small className="mt-1 block text-sm text-[#57735D]">商品資料已儲存至商品資料庫。{syncNotice && ` ${syncNotice}`}</small></Card>}
     {saveError && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-5"><b className="block text-[#965723]">商品尚未儲存</b><small className="mt-1 block text-sm text-[#A36B3C]">{saveError}</small></Card>}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
       <div className="space-y-5">
@@ -348,8 +351,9 @@ function NewProduct({ back, onCreated }: { back: () => void; onCreated: (product
             <label className="text-sm font-semibold text-[#58534C]">商品名稱<input value={form.name} onChange={(event) => updateForm("name", event.target.value)} placeholder="例如：雲朵感純棉四季被" className={inputClass} /></label>
             <label className="text-sm font-semibold text-[#58534C]">國家<select value={country} onChange={(event) => { setCountry(event.target.value); setCategory(""); }} className={inputClass}><option value="">請選擇國家</option><option>韓國</option><option>日本</option><option>大陸</option><option>台灣</option><option>其他</option></select></label>
             <label className="text-sm font-semibold text-[#58534C]">商品種類<select value={category} onChange={(event) => setCategory(event.target.value)} disabled={!country} className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}><option value="">{country ? "請選擇商品種類" : "請先選擇國家"}</option>{categoryOptions.map((option) => <option key={option}>{option}</option>)}</select></label>
-            <label className="col-span-2 text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass}><option value="">尚未指定供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select><small className="mt-2 block font-normal text-xs text-[#938D84]">供應商可在之後從商品頁面新增或更換。</small></label>
+            <label className="col-span-2 text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass}><option value="">尚未指定供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select><small className="mt-2 block font-normal text-xs text-[#938D84]">供應商可先在供應商管理頁建立，再於新增商品時選取。</small></label>
             <label className="col-span-2 text-sm font-semibold text-[#58534C]">商品規格<input value={form.specification} onChange={(event) => updateForm("specification", event.target.value)} placeholder="例如：奶油白／單人" className={inputClass} /></label>
+            <label className="col-span-2 text-sm font-semibold text-[#58534C]">備註<textarea value={form.note} onChange={(event) => updateForm("note", event.target.value)} placeholder="例如：限定款、預購商品或採購注意事項" className="mt-2 min-h-24 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /></label>
           </div>
         </Card>
         <Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><label className="text-sm font-semibold text-[#58534C]">商品成本<input type="number" min="0" value={form.cost} onChange={(event) => updateForm("cost", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">員工價<input type="number" min="0" value={form.staffPrice} onChange={(event) => updateForm("staffPrice", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">一般售價<input type="number" min="0" value={form.retailPrice} onChange={(event) => updateForm("retailPrice", event.target.value)} className={inputClass} /></label></div></Card>
@@ -366,6 +370,7 @@ type ImportRow = {
   country: string;
   category: string;
   specification: string;
+  note: string;
   cost: string;
   staffPrice: string;
   retailPrice: string;
@@ -373,13 +378,14 @@ type ImportRow = {
   safetyStock: string;
 };
 
-const importTemplateHeaders = ["商品編號", "商品名稱", "國家", "商品種類", "商品規格", "商品成本", "員工價", "一般售價", "可售庫存", "安全庫存"];
+const importTemplateHeaders = ["商品編號", "商品名稱", "國家", "商品種類", "商品規格", "備註", "商品成本", "員工價", "一般售價", "可售庫存", "安全庫存"];
 const importHeaderKeys: Record<string, keyof ImportRow> = {
   "商品編號": "sku", sku: "sku",
   "商品名稱": "name", name: "name",
   "國家": "country", country: "country",
   "商品種類": "category", category: "category",
   "商品規格": "specification", specification: "specification",
+  "備註": "note", note: "note",
   "商品成本": "cost", cost: "cost",
   "員工價": "staffPrice", staffprice: "staffPrice",
   "一般售價": "retailPrice", retailprice: "retailPrice",
@@ -410,7 +416,7 @@ function ImportProducts({ back, onImported }: { back: () => void; onImported: (p
   const [importing, setImporting] = useState(false);
 
   const downloadTemplate = () => {
-    const sample = ["KR-001", "範例韓國商品", "韓國", "美妝", "粉色／單入", "200", "300", "450", "10", "3"];
+    const sample = ["KR-001", "範例韓國商品", "韓國", "美妝", "粉色／單入", "夏季限定", "200", "300", "450", "10", "3"];
     const csv = `\uFEFF${importTemplateHeaders.join(",")}\n${sample.join(",")}\n`;
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
@@ -435,7 +441,7 @@ function ImportProducts({ back, onImported }: { back: () => void; onImported: (p
     }
     const importedRows = lines.slice(1).map((line) => {
       const values = parseCsvLine(line);
-      const row: ImportRow = { sku: "", name: "", country: "", category: "", specification: "", cost: "0", staffPrice: "0", retailPrice: "0", availableStock: "0", safetyStock: "0" };
+      const row: ImportRow = { sku: "", name: "", country: "", category: "", specification: "", note: "", cost: "0", staffPrice: "0", retailPrice: "0", availableStock: "0", safetyStock: "0" };
       keys.forEach((key, index) => { if (key) row[key] = values[index] ?? ""; });
       return row;
     }).filter((row) => row.sku || row.name);
@@ -624,10 +630,10 @@ function LegacyProductPage({ product, stock, back, openStock }: { product: Produ
   return <><Header eyebrow="PRODUCT DETAIL" title={product.name} description={`商品編號：${product.sku}。完整管理商品資料、價格與庫存。`}><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><div className="flex items-start gap-4"><ProductTile product={product}/><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT PROFILE</p><h2 className="mt-1 text-xl font-semibold">{product.name}</h2><p className="mt-1 text-sm text-[#807A72]">{product.country} · {product.category} · {product.specification}</p></div><Pill tone="green">已上架</Pill></div><div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">{basic.map(([label, value]) => <div key={label} className="bg-white p-4"><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-2 text-sm font-semibold text-[#48433C]">{value}</p></div>)}</div></Card><Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">員工價僅供內部員工訂購時使用；一般售價會套用於新建立的客戶訂單。</p></Card></div><aside className="space-y-5"><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存資訊</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["實際在庫", String(stock + product.reserved)], ["已保留", String(product.reserved)], ["可售庫存", String(stock)], ["到貨中", String(product.incoming)], ["安全庫存", String(product.safety)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b className={label === "可售庫存" ? "text-[#45634C]" : "text-[#45413B]"}>{value}</b></div>)}</div><Secondary onClick={openStock} className="mt-5 w-full">調整庫存</Secondary></Card><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">RECENT ACTIVITY</p><h2 className="mt-1 text-lg font-semibold">最近異動</h2><div className="mt-5 space-y-4 text-sm">{[["今天 10:42", "訂單確認", "可售庫存 − 1"], ["昨天 16:20", "入庫完成", "實際在庫 + 24"], ["07.18 11:08", "庫存調整", "盤點差異 − 1"]].map(([time, action, change]) => <div key={time} className="border-l border-[#D7E4D9] pl-3"><p className="text-xs text-[#938D84]">{time}</p><p className="mt-1 font-semibold text-[#4A4640]">{action}</p><p className="mt-1 text-xs text-[#6C776D]">{change}</p></div>)}</div></Card></aside></div></>;
 }
 
-function ProductPage({ product, stock, back, openStock, onUpdated }: { product: Product; stock: number; back: () => void; openStock: () => void; onUpdated: (product: Product) => void }) {
-  const basic = [["商品編號", product.sku], ["商品名稱", product.name], ["國家", product.country], ["商品種類", product.category], ["商品規格", product.specification], ["供應商", product.supplierName || "尚未指定供應商"]];
+function ProductPage({ product, stock, back, openStock, copyProduct }: { product: Product; stock: number; back: () => void; openStock: () => void; copyProduct: () => void }) {
+  const basic = [["商品編號", product.sku], ["商品名稱", product.name], ["國家", product.country], ["商品種類", product.category], ["商品規格", product.specification], ["供應商", product.supplierName || "尚未指定供應商"], ["備註", product.note || "—"]];
   const price = [["商品成本", currency(product.cost)], ["員工價", currency(product.staffPrice)], ["一般售價", currency(product.retailPrice)]];
-  return <><Header eyebrow="PRODUCT DETAIL" title={product.name} description={`商品編號：${product.sku}。完整管理商品資料、價格、供應商與庫存。`}><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><div className="flex items-start gap-4"><ProductTile product={product}/><div className="min-w-0 flex-1"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT PROFILE</p><h2 className="mt-1 text-xl font-semibold">{product.name}</h2><p className="mt-1 text-sm text-[#807A72]">{product.country} · {product.category} · {product.specification}</p></div><Pill tone="green">已上架</Pill></div><div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">{basic.map(([label, value]) => <div key={label} className="bg-white p-4"><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-2 text-sm font-semibold text-[#48433C]">{value}</p></div>)}</div></Card><Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">員工價僅供內部員工訂購時使用；一般售價會套用於新建立的客戶訂單。</p></Card></div><aside className="space-y-5"><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存資訊</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["實際在庫", String(stock + product.reserved)], ["已保留", String(product.reserved)], ["可售庫存", String(stock)], ["到貨中", String(product.incoming)], ["安全庫存", String(product.safety)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b className={label === "可售庫存" ? "text-[#45634C]" : "text-[#45413B]"}>{value}</b></div>)}</div><Secondary onClick={openStock} className="mt-5 w-full">調整庫存</Secondary></Card></aside></div></>;
+  return <><Header eyebrow="PRODUCT DETAIL" title={product.name} description={`商品編號：${product.sku}。完整管理商品資料、價格、供應商與庫存。`}><Secondary onClick={back}>← 返回商品資料庫</Secondary><Primary onClick={copyProduct}>複製商品</Primary></Header><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><div className="flex items-start gap-4"><ProductTile product={product}/><div className="min-w-0 flex-1"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT PROFILE</p><h2 className="mt-1 text-xl font-semibold">{product.name}</h2><p className="mt-1 text-sm text-[#807A72]">{product.country} · {product.category} · {product.specification}</p></div><Pill tone="green">已上架</Pill></div><div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">{basic.map(([label, value]) => <div key={label} className={`bg-white p-4 ${label === "備註" ? "sm:col-span-2" : ""}`}><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#48433C]">{value}</p></div>)}</div></Card><Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">員工價僅供內部員工訂購時使用；一般售價會套用於新建立的客戶訂單。</p></Card></div><aside className="space-y-5"><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存資訊</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["實際在庫", String(stock + product.reserved)], ["已保留", String(product.reserved)], ["可售庫存", String(stock)], ["到貨中", String(product.incoming)], ["安全庫存", String(product.safety)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b className={label === "可售庫存" ? "text-[#45634C]" : "text-[#45413B]"}>{value}</b></div>)}</div><Secondary onClick={openStock} className="mt-5 w-full">調整庫存</Secondary></Card></aside></div></>;
 }
 
 function LegacyInventoryManagement({ go }: { go: (view: View) => void }) {
@@ -1276,7 +1282,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
           <div className="flex justify-between border-t border-[#F0EDE8] pt-4 text-base font-semibold text-[#292824]"><span>訂單總額</span><span>{currency(total)}</span></div>
           <div className="flex justify-between text-sm font-semibold text-[#45634C]"><span>淨利</span><span>{currency(netProfit)}</span></div>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-2"><Primary onClick={() => setModal("confirm")} className="w-full" disabled={!selected.length || !selectedCustomerId || orderConfirmed || savingOrder}>確認訂單</Primary><Primary onClick={() => setModal("deduct")} className="w-full bg-[#5D7B64] hover:bg-[#4A6650]" disabled={!orderConfirmed || stockDeducted || savingOrder}>訂單完成（扣庫存）</Primary><Secondary onClick={() => { window.location.href = "/shipping-slip"; }} className="col-span-2 w-full">出貨單列印</Secondary></div>
+        <div className="mt-5 grid grid-cols-2 gap-2"><Primary onClick={() => setModal("confirm")} className="w-full" disabled={!selected.length || !selectedCustomerId || orderConfirmed || savingOrder}>確認訂單</Primary><Primary onClick={() => setModal("deduct")} className="w-full bg-[#5D7B64] hover:bg-[#4A6650]" disabled={!orderConfirmed || stockDeducted || savingOrder}>訂單完成（扣庫存）</Primary></div>
       </aside>
     </div>
 
@@ -1294,6 +1300,7 @@ export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const [createdOrder, setCreatedOrder] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product>(blankProduct);
+  const [productDraft, setProductDraft] = useState<Product | null>(null);
   const [databaseProducts, setDatabaseProducts] = useState<Product[]>([]);
   const [stock, setStock] = useState<Record<string, number>>(() => Object.fromEntries(products.map(product => [String(product.id), product.available])));
   const refreshProducts = async () => {
@@ -1364,7 +1371,9 @@ export default function Home() {
   };
   if (!authReady || !currentUser) return <main className="flex min-h-screen items-center justify-center bg-[#F8F7F4] px-5 text-[#6F6960]"><p className="rounded-xl border border-[#E9E5DF] bg-white px-5 py-4 text-sm font-semibold">正在確認登入狀態…</p></main>;
   const catalog = databaseProducts;
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <Orders created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={() => go("newProduct")} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} onUpdated={updateDatabaseProduct}/> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchase catalog={databaseProducts} back={() => go("purchases")} openSuppliers={() => go("suppliers")} onCreated={refreshProducts}/> : view === "purchases" ? <PurchasesPage go={go} onInventoryChanged={refreshProducts}/> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
+  const openNewProduct = () => { setProductDraft(null); go("newProduct"); };
+  const copyProduct = (product: Product) => { setProductDraft(product); go("newProduct"); };
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <Orders created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)}/> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchase catalog={databaseProducts} back={() => go("purchases")} openSuppliers={() => go("suppliers")} onCreated={refreshProducts}/> : view === "purchases" ? <PurchasesPage go={go} onInventoryChanged={refreshProducts}/> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
   const isProductsView = view === "products" || view === "product" || view === "newProduct" || view === "importProducts";
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
   const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";

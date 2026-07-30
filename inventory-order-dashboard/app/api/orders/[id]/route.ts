@@ -74,6 +74,21 @@ async function completeOrder(id: string, update: Record<string, string | number>
   return completed;
 }
 
+export async function GET(request: NextRequest, { params }: Context) {
+  try {
+    const auth = await requireSignedIn(request);
+    if (!auth.context) return auth.response!;
+    const { id } = await params;
+    if (!uuidPattern.test(id)) return NextResponse.json({ message: "訂單資料不正確。" }, { status: 400 });
+    const { data: order, error } = await getSupabaseAdmin().from("orders").select(orderSelect).eq("id", id).maybeSingle();
+    if (error) throw error;
+    if (!order) return NextResponse.json({ message: "找不到這張訂單。" }, { status: 404 });
+    return withRefreshedSession(NextResponse.json({ order }), auth.context);
+  } catch (error) {
+    return NextResponse.json({ message: error instanceof Error ? error.message : "無法讀取訂單資料。" }, { status: 503 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: Context) {
   try {
     const auth = await requireSignedIn(request);

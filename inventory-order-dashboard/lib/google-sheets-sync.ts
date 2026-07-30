@@ -10,6 +10,7 @@ type ProductRecord = {
   country: string;
   category: string;
   specification: string;
+  note: string;
   cost: number;
   staff_price: number;
   retail_price: number;

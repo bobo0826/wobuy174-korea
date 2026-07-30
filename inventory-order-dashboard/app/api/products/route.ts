@@ -11,6 +11,7 @@ type ProductInput = {
   country?: unknown;
   category?: unknown;
   specification?: unknown;
+  note?: unknown;
   cost?: unknown;
   staffPrice?: unknown;
   retailPrice?: unknown;
@@ -34,6 +35,7 @@ function validateProduct(input: ProductInput) {
     country: text(input.country),
     category: text(input.category),
     specification: text(input.specification),
+    note: text(input.note),
     cost: nonNegativeInteger(input.cost),
     staff_price: nonNegativeInteger(input.staffPrice),
     retail_price: nonNegativeInteger(input.retailPrice),
