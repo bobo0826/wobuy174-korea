@@ -28,6 +28,17 @@ create table if not exists customers (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists suppliers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  country text not null default '',
+  transaction_method text not null default '',
+  moq text not null default '',
+  payment_method text not null default '轉帳' check (payment_method in ('現金', '轉帳', '信用卡')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists orders (
   id uuid primary key default gen_random_uuid(),
   order_number text not null unique,
@@ -91,6 +102,7 @@ create table if not exists purchase_order_items (
 );
 
 create index if not exists products_country_category_idx on products(country, category);
+create index if not exists suppliers_name_idx on suppliers(name);
 create index if not exists orders_customer_id_idx on orders(customer_id);
 create index if not exists order_items_order_id_idx on order_items(order_id);
 create index if not exists inventory_adjustments_product_id_idx on inventory_adjustments(product_id);
