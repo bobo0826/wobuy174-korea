@@ -625,50 +625,9 @@ function LegacyProductPage({ product, stock, back, openStock }: { product: Produ
 }
 
 function ProductPage({ product, stock, back, openStock, onUpdated }: { product: Product; stock: number; back: () => void; openStock: () => void; onUpdated: (product: Product) => void }) {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [supplierId, setSupplierId] = useState(product.supplierId ?? "");
-  const [savingSupplier, setSavingSupplier] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-  const basic = [["商品編號", product.sku], ["商品名稱", product.name], ["國家", product.country], ["商品種類", product.category], ["商品規格", product.specification]];
+  const basic = [["商品編號", product.sku], ["商品名稱", product.name], ["國家", product.country], ["商品種類", product.category], ["商品規格", product.specification], ["供應商", product.supplierName || "尚未指定供應商"]];
   const price = [["商品成本", currency(product.cost)], ["員工價", currency(product.staffPrice)], ["一般售價", currency(product.retailPrice)]];
-  const selectedSupplier = suppliers.find((supplier) => supplier.id === supplierId);
-
-  useEffect(() => { setSupplierId(product.supplierId ?? ""); setNotice(""); setError(""); }, [product.id, product.supplierId]);
-  useEffect(() => {
-    let active = true;
-    const loadSuppliers = async () => {
-      try {
-        const response = await fetch("/api/suppliers");
-        const result = await response.json();
-        if (response.ok && active) setSuppliers(result.suppliers ?? []);
-      } catch {
-        if (active) setError("無法載入供應商清單。");
-      }
-    };
-    void loadSuppliers();
-    return () => { active = false; };
-  }, []);
-
-  const saveSupplier = async () => {
-    if (typeof product.id !== "string") { setError("示範商品無法串聯供應商；請先建立為資料庫商品。"); return; }
-    setSavingSupplier(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch("/api/products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "linkSupplier", id: product.id, supplierId }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.message ?? "無法更新商品供應商。");
-      if (result.product) onUpdated(toProduct(result.product as StoredProduct));
-      setNotice(supplierId ? `已連結供應商：${selectedSupplier?.name ?? "供應商"}。` : "已取消供應商連結。");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "無法更新商品供應商。");
-    } finally {
-      setSavingSupplier(false);
-    }
-  };
-
-  return <><Header eyebrow="PRODUCT DETAIL" title={product.name} description={`商品編號：${product.sku}。完整管理商品資料、價格、供應商與庫存。`}><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><div className="flex items-start gap-4"><ProductTile product={product}/><div className="min-w-0 flex-1"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT PROFILE</p><h2 className="mt-1 text-xl font-semibold">{product.name}</h2><p className="mt-1 text-sm text-[#807A72]">{product.country} · {product.category} · {product.specification}</p></div><Pill tone="green">已上架</Pill></div><div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">{basic.map(([label, value]) => <div key={label} className="bg-white p-4"><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-2 text-sm font-semibold text-[#48433C]">{value}</p></div>)}<div className="bg-white p-4 sm:col-span-2"><p className="text-xs font-semibold text-[#938D84]">目前供應商</p><p className="mt-2 text-sm font-semibold text-[#48433C]">{selectedSupplier?.name ?? product.supplierName ?? "尚未連結供應商"}</p></div></div><div className="mt-5 rounded-xl bg-[#F8F6F2] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end"><label className="min-w-0 flex-1 text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} disabled={savingSupplier} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none disabled:opacity-50"><option value="">尚未指定供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select></label><Primary onClick={() => { void saveSupplier(); }} disabled={savingSupplier} className="shrink-0">{savingSupplier ? "儲存中…" : "儲存供應商"}</Primary></div><p className="mt-3 text-xs leading-5 text-[#8B847A]">連結後可從此商品快速確認主要採購來源。</p>{notice && <p className="mt-3 text-sm font-semibold text-[#45634C]">{notice}</p>}{error && <p className="mt-3 text-sm font-semibold text-[#A35F37]">{error}</p>}</div></Card><Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">員工價僅供內部員工訂購時使用；一般售價會套用於新建立的客戶訂單。</p></Card></div><aside className="space-y-5"><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存資訊</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["實際在庫", String(stock + product.reserved)], ["已保留", String(product.reserved)], ["可售庫存", String(stock)], ["到貨中", String(product.incoming)], ["安全庫存", String(product.safety)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b className={label === "可售庫存" ? "text-[#45634C]" : "text-[#45413B]"}>{value}</b></div>)}</div><Secondary onClick={openStock} className="mt-5 w-full">調整庫存</Secondary></Card></aside></div></>;
+  return <><Header eyebrow="PRODUCT DETAIL" title={product.name} description={`商品編號：${product.sku}。完整管理商品資料、價格、供應商與庫存。`}><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><div className="flex items-start gap-4"><ProductTile product={product}/><div className="min-w-0 flex-1"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT PROFILE</p><h2 className="mt-1 text-xl font-semibold">{product.name}</h2><p className="mt-1 text-sm text-[#807A72]">{product.country} · {product.category} · {product.specification}</p></div><Pill tone="green">已上架</Pill></div><div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">{basic.map(([label, value]) => <div key={label} className="bg-white p-4"><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-2 text-sm font-semibold text-[#48433C]">{value}</p></div>)}</div></Card><Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">員工價僅供內部員工訂購時使用；一般售價會套用於新建立的客戶訂單。</p></Card></div><aside className="space-y-5"><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存資訊</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["實際在庫", String(stock + product.reserved)], ["已保留", String(product.reserved)], ["可售庫存", String(stock)], ["到貨中", String(product.incoming)], ["安全庫存", String(product.safety)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b className={label === "可售庫存" ? "text-[#45634C]" : "text-[#45413B]"}>{value}</b></div>)}</div><Secondary onClick={openStock} className="mt-5 w-full">調整庫存</Secondary></Card></aside></div></>;
 }
 
 function LegacyInventoryManagement({ go }: { go: (view: View) => void }) {
@@ -1236,6 +1195,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
         setStockDeducted(true);
       }
       setModal(null);
+      back();
     } catch (reason) {
       setOrderError(reason instanceof Error ? reason.message : "無法建立訂單。請稍後再試。");
       setModal(null);
