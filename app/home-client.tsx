@@ -22,6 +22,7 @@ type KoreaType =
 
 type ProductVariant = {
   name: string;
+  code: string;
   price: string;
 };
 
@@ -511,8 +512,9 @@ function normalizeProductVariants(value: unknown): ProductVariant[] {
     if (!variant || typeof variant !== "object") return [];
     const record = variant as Record<string, unknown>;
     const name = typeof record.name === "string" ? record.name.trim() : "";
+    const code = typeof record.code === "string" ? record.code.trim().toUpperCase() : "";
     const price = typeof record.price === "string" ? record.price.trim() : "";
-    return name && price ? [{ name, price }] : [];
+    return name && price ? [{ name, code, price }] : [];
   });
 }
 
@@ -941,8 +943,8 @@ export function ProductCatalog({
                       {selectedVariants.map((variant, index) => {
                         const isSelected = selectedVariantIndex === index;
                         return (
-                          <button aria-pressed={isSelected} className={`flex items-center justify-between rounded-[4px] border px-3.5 py-3 text-left text-sm transition-colors ${isSelected ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#605B51]"}`} key={`${variant.name}-${variant.price}`} onClick={() => setSelectedVariantIndex(index)} type="button">
-                            <span className="font-semibold">{variant.name}</span>
+                          <button aria-pressed={isSelected} className={`flex items-center justify-between rounded-[4px] border px-3.5 py-3 text-left text-sm transition-colors ${isSelected ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#605B51]"}`} key={`${variant.name}-${variant.code}-${variant.price}`} onClick={() => setSelectedVariantIndex(index)} type="button">
+                            <span className="font-semibold"><span className="block">{variant.name}</span>{variant.code ? <span className={`mt-0.5 block text-[10px] font-medium tracking-[0.08em] ${isSelected ? "text-[#F5F5F5]/75" : "text-[#605B51]/55"}`}>{variant.code}</span> : null}</span>
                             <span className="font-semibold">NT$ {formatPrice(variant.price)}</span>
                           </button>
                         );
@@ -951,7 +953,7 @@ export function ProductCatalog({
                   </div>
                 )}
                 <dl className="mt-8 divide-y divide-[#D9D6D0] border-y border-[#D9D6D0] text-sm">
-                  <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">商品編號</dt><dd>{selectedProduct.code}</dd></div>
+                  <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">商品編號</dt><dd>{selectedVariant?.code || selectedProduct.code}</dd></div>
                   <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">收單時間</dt><dd>{selectedProduct.deadline}</dd></div>
                   <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">預計到貨</dt><dd>{selectedProduct.arrival}</dd></div>
                   <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">顏色</dt><dd className="whitespace-pre-line">{selectedProduct.colors}</dd></div>

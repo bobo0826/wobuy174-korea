@@ -9,6 +9,7 @@ type SheetProduct = Record<string, unknown>;
 
 type ProductVariant = {
   name: string;
+  code: string;
   price: string;
 };
 
@@ -111,8 +112,9 @@ function normalizeVariants(value: unknown): ProductVariant[] {
     if (!variant || typeof variant !== "object") return [];
     const record = variant as Record<string, unknown>;
     const name = typeof record.name === "string" ? record.name.trim() : "";
+    const code = typeof record.code === "string" ? record.code.trim().toUpperCase() : "";
     const price = typeof record.price === "string" ? record.price.trim() : "";
-    return name && price ? [{ name, price }] : [];
+    return name && price ? [{ name, code, price }] : [];
   });
 }
 
@@ -120,11 +122,12 @@ function parseVariants(value: string): ProductVariant[] {
   return value
     .split(/[|｜\n]+/)
     .map((item) => {
-      const separator = Math.max(item.indexOf("："), item.indexOf(":"));
-      if (separator < 1) return null;
-      const name = item.slice(0, separator).trim();
-      const price = item.slice(separator + 1).trim();
-      return name && price ? { name, price } : null;
+      const parts = item.split(/[：:]/).map((part) => part.trim());
+      if (parts.length < 2 || !parts[0]) return null;
+      if (parts.length === 2) return parts[1] ? { name: parts[0], code: "", price: parts[1] } : null;
+      const [name, code, ...priceParts] = parts;
+      const price = priceParts.join("：").trim();
+      return name && code && price ? { name, code: code.toUpperCase(), price } : null;
     })
     .filter((item): item is ProductVariant => Boolean(item));
 }

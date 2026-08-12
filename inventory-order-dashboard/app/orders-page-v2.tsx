@@ -12,7 +12,7 @@ type EditableLine = { productId: string; unitPrice: number; quantity: number };
 const currency = (value: number) => `NT$ ${value.toLocaleString("zh-TW")}`;
 const tones: Record<Tone, string> = { green: "bg-[#E7F0E8] text-[#477154]", orange: "bg-[#FAECDD] text-[#A66932]", blue: "bg-[#E5EEF2] text-[#4B6D79]", stone: "bg-[#F0EDE8] text-[#6F6960]" };
 const toneFor = (status: StoredOrder["status"]): Tone => status === "預購中" ? "orange" : status === "已到貨" ? "blue" : status === "已出貨" ? "green" : "stone";
-function Pill({ children, tone }: { children: React.ReactNode; tone: Tone }) { return <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${tones[tone]}`}>{children}</span>; }
+function Pill({ children, tone }: { children: React.ReactNode; tone: Tone }) { return <span className={`inline-flex min-h-6 items-center justify-center rounded-full px-2.5 py-1 text-center text-[11px] font-semibold leading-none ${tones[tone]}`}>{children}</span>; }
 const button = "inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665] disabled:cursor-not-allowed disabled:opacity-45";
 
 function OrderEditor({ order, onClose, onSaved }: { order: StoredOrder; onClose: () => void; onSaved: (order: StoredOrder) => void }) {

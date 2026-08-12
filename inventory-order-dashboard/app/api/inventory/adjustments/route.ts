@@ -44,14 +44,43 @@ export async function POST(request: NextRequest) {
     if (quantityChange === null) return NextResponse.json({ message: "異動數量必須為非零整數。" }, { status: 400 });
     if (!adjustmentReasons.includes(reason)) return NextResponse.json({ message: "異動原因不正確。" }, { status: 400 });
 
-    const { data, error } = await getSupabaseAdmin().rpc("apply_inventory_adjustment", {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.rpc("apply_inventory_adjustment", {
       p_product_id: productId,
       p_quantity_change: quantityChange,
       p_reason: reason,
       p_note: note,
       p_performed_by: auth.context.profile.displayName,
     });
-    if (error) throw error;
+    if (error) {
+      // 早期資料庫尚未安裝 RPC 時，仍可安全地完成單筆調整。
+      // 正常情況優先使用 RPC，以保有資料庫端的原子性保護。
+      const missingFunction = error.code === "PGRST202" || /apply_inventory_adjustment/i.test(error.message) && /(function|schema cache|could not find)/i.test(error.message);
+      if (!missingFunction) throw error;
+
+      const { data: product, error: productError } = await supabase
+        .from("products")
+        .select("id, available_stock")
+        .eq("id", productId)
+        .maybeSingle();
+      if (productError) throw productError;
+      if (!product) return NextResponse.json({ message: "找不到選擇的商品。" }, { status: 404 });
+      if (product.available_stock + quantityChange < 0) {
+        return NextResponse.json({ message: "扣除數量不可超過目前可售庫存。" }, { status: 400 });
+      }
+      const { error: updateError } = await supabase
+        .from("products")
+        .update({ available_stock: product.available_stock + quantityChange, updated_at: new Date().toISOString() })
+        .eq("id", productId);
+      if (updateError) throw updateError;
+      const { data: adjustment, error: adjustmentError } = await supabase
+        .from("inventory_adjustments")
+        .insert({ product_id: productId, quantity_change: quantityChange, reason, note, performed_by: auth.context.profile.displayName })
+        .select("id, product_id, quantity_change, reason, note, performed_by, created_at")
+        .single();
+      if (adjustmentError) throw adjustmentError;
+      return withRefreshedSession(NextResponse.json({ adjustment }, { status: 201 }), auth.context);
+    }
     const result = Array.isArray(data) ? data[0] : data;
     return withRefreshedSession(NextResponse.json({ adjustment: result }, { status: 201 }), auth.context);
   } catch (error) {
