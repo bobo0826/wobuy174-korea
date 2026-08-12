@@ -13,7 +13,8 @@ type PurchaseItemInput = {
 type PurchaseOrderInput = {
   purchaseNumber?: unknown;
   supplierId?: unknown;
-  expectedArrivalDate?: unknown;
+  orderDate?: unknown;
+  arrivalDate?: unknown;
   paymentTerms?: unknown;
   items?: unknown;
 };
@@ -51,11 +52,13 @@ async function nextPurchaseNumber(date: string) {
 
 function validatePurchaseOrder(input: PurchaseOrderInput) {
   const supplierId = text(input.supplierId);
-  const expectedArrivalDate = text(input.expectedArrivalDate);
+  const orderDate = text(input.orderDate) || taipeiDate();
+  const arrivalDate = text(input.arrivalDate);
   const requestedPurchaseNumber = text(input.purchaseNumber);
   const paymentTerms = text(input.paymentTerms);
   if (!uuidPattern.test(supplierId)) return { error: "請選擇已建立的供應商。" };
-  if (expectedArrivalDate && !datePattern.test(expectedArrivalDate)) return { error: "預計到貨日期格式不正確。" };
+  if (!datePattern.test(orderDate)) return { error: "下單時間格式不正確。" };
+  if (arrivalDate && !datePattern.test(arrivalDate)) return { error: "到貨時間格式不正確。" };
   if (requestedPurchaseNumber && !purchaseNumberPattern.test(requestedPurchaseNumber)) return { error: "採購單編號格式不正確。" };
   if (!Array.isArray(input.items) || input.items.length === 0) return { error: "請至少加入一項採購商品。" };
 
@@ -67,10 +70,10 @@ function validatePurchaseOrder(input: PurchaseOrderInput) {
   if (items.some((item) => !uuidPattern.test(item.productId) || item.unitCost === null || item.quantity === null)) return { error: "採購商品資料不完整。" };
   if (new Set(items.map((item) => item.productId)).size !== items.length) return { error: "同一個商品請合併為一筆採購明細。" };
 
-  return { purchase: { supplierId, expectedArrivalDate: expectedArrivalDate || null, requestedPurchaseNumber, paymentTerms, items: items as Array<{ productId: string; unitCost: number; quantity: number }> } };
+  return { purchase: { supplierId, orderDate, arrivalDate: arrivalDate || null, requestedPurchaseNumber, paymentTerms, items: items as Array<{ productId: string; unitCost: number; quantity: number }> } };
 }
 
-const purchaseSelect = "id, purchase_number, supplier_id, supplier_name, expected_arrival_date, payment_terms, status, total, received_at, created_at, updated_at, purchase_order_items(id, product_id, product_name, unit_cost, quantity, received_quantity)";
+export const purchaseSelect = "id, purchase_number, supplier_id, supplier_name, order_date, arrival_date, expected_arrival_date, payment_terms, status, total, received_at, created_at, updated_at, purchase_order_items(id, product_id, product_name, unit_cost, quantity, received_quantity)";
 
 export async function GET(request: NextRequest) {
   try {
@@ -115,7 +118,10 @@ export async function POST(request: NextRequest) {
         purchase_number: purchaseNumber,
         supplier_id: supplier.id,
         supplier_name: supplier.name,
-        expected_arrival_date: payload.expectedArrivalDate,
+        order_date: payload.orderDate,
+        arrival_date: payload.arrivalDate,
+        // 舊欄位同步保存，讓尚未更新的舊版頁面仍可正確顯示。
+        expected_arrival_date: payload.arrivalDate,
         payment_terms: payload.paymentTerms,
         status: "待收貨",
         total,

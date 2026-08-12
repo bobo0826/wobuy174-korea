@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await getSupabaseAdmin()
       .from("orders")
-      .select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity)")
+      .select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(id, name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity)")
       .order("created_at", { ascending: false });
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ orders: data }), auth.context);

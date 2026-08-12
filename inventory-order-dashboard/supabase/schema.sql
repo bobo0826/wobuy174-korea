@@ -89,6 +89,9 @@ create table if not exists purchase_orders (
   purchase_number text not null unique,
   supplier_id uuid references suppliers(id) on delete set null,
   supplier_name text not null,
+  order_date date not null default current_date,
+  arrival_date date,
+  -- 相容早期資料與 API；新功能請使用 order_date / arrival_date。
   expected_arrival_date date,
   payment_terms text not null default '',
   status text not null default '草稿' check (status in ('草稿', '已送出', '部分收貨', '待收貨', '已完成', '已取消')),
