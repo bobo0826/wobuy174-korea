@@ -7,12 +7,18 @@ export const runtime = "nodejs";
 
 type SheetProduct = Record<string, unknown>;
 
+type ProductVariant = {
+  name: string;
+  price: string;
+};
+
 type ExistingProduct = {
   code: string;
   details: string | null;
   specs: string | null;
   image_urls: string[] | null;
   sort_order: number | null;
+  variants: unknown;
 };
 
 const categoryAliases: Record<string, string> = {
@@ -98,6 +104,39 @@ function toSortOrder(value: string, fallback = 0) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function normalizeVariants(value: unknown): ProductVariant[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((variant) => {
+    if (!variant || typeof variant !== "object") return [];
+    const record = variant as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const price = typeof record.price === "string" ? record.price.trim() : "";
+    return name && price ? [{ name, price }] : [];
+  });
+}
+
+function parseVariants(value: string): ProductVariant[] {
+  return value
+    .split(/[|｜\n]+/)
+    .map((item) => {
+      const separator = Math.max(item.indexOf("："), item.indexOf(":"));
+      if (separator < 1) return null;
+      const name = item.slice(0, separator).trim();
+      const price = item.slice(separator + 1).trim();
+      return name && price ? { name, price } : null;
+    })
+    .filter((item): item is ProductVariant => Boolean(item));
+}
+
+function lowestVariantPrice(variants: ProductVariant[]) {
+  return [...variants].sort((first, second) => {
+    const firstValue = Number(first.price.replace(/[^\d.]/g, ""));
+    const secondValue = Number(second.price.replace(/[^\d.]/g, ""));
+    return (Number.isFinite(firstValue) ? firstValue : Number.POSITIVE_INFINITY) - (Number.isFinite(secondValue) ? secondValue : Number.POSITIVE_INFINITY);
+  })[0]?.price ?? "";
+}
+
 function isValidSecret(providedSecret: string | null) {
   const expectedSecret = process.env.GOOGLE_SHEETS_SYNC_SECRET;
   if (!expectedSecret || !providedSecret) return false;
@@ -111,7 +150,10 @@ function isValidSecret(providedSecret: string | null) {
 function toProductRecord(product: SheetProduct, existing?: ExistingProduct) {
   const code = getValue(product, "商品編號", "code").toUpperCase();
   const name = getValue(product, "品名", "name");
-  const price = getValue(product, "優惠價", "價格", "price");
+  const price = getValue(product, "優惠價", "基本優惠價", "價格", "price");
+  const variantsValue = getValue(product, "子分類規格價格", "子分類規格", "variants");
+  const variants = variantsValue ? parseVariants(variantsValue) : normalizeVariants(existing?.variants);
+  const effectivePrice = price || lowestVariantPrice(variants);
   const originalPrice = getValue(product, "原價", "original_price");
   const statusValue = getValue(product, "貨況", "status");
   const country = normalizeCountry(getValue(product, "國別", "country") || "KOREA");
@@ -131,8 +173,8 @@ function toProductRecord(product: SheetProduct, existing?: ExistingProduct) {
     categories.push(country === "JAPAN" ? "japan" : country === "KOREA" ? "korea" : "other");
   }
 
-  if (!code || !name || !price) {
-    throw new Error("每列都必須有商品編號、品名與優惠價。");
+  if (!code || !name || !effectivePrice) {
+    throw new Error("每列都必須有商品編號、品名與優惠價，或填寫子分類規格價格。");
   }
 
   const koreaType = koreaTypeAliases[
@@ -144,7 +186,8 @@ function toProductRecord(product: SheetProduct, existing?: ExistingProduct) {
   return {
     code,
     name,
-    price,
+    price: effectivePrice,
+    variants,
     original_price: originalPrice || null,
     status: validStatuses.has(statusValue) ? statusValue : "預購",
     country,
@@ -206,7 +249,7 @@ export async function POST(request: Request) {
   });
   const { data: existingProducts, error: existingError } = await supabase
     .from("products")
-    .select("code, details, specs, image_urls, sort_order")
+    .select("code, details, specs, image_urls, sort_order, variants")
     .in("code", codes);
 
   if (existingError) {
@@ -234,7 +277,7 @@ export async function POST(request: Request) {
     .upsert(records, { onConflict: "code" });
 
   if (upsertError) {
-    const schemaHint = upsertError.message.includes("original_price") || upsertError.message.includes("colors") || upsertError.message.includes("sizes") || upsertError.message.includes("sort_order")
+    const schemaHint = upsertError.message.includes("original_price") || upsertError.message.includes("colors") || upsertError.message.includes("sizes") || upsertError.message.includes("sort_order") || upsertError.message.includes("variants")
       ? "請先在 Supabase SQL Editor 重新執行 supabase/schema.sql。"
       : "";
     return NextResponse.json(

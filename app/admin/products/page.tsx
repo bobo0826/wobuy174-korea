@@ -34,6 +34,7 @@ type ManagedProduct = {
   sort_order: number | null;
   categories: string[] | null;
   bedding_type: string | null;
+  variants: unknown;
   image_urls: string[] | null;
   published: boolean;
 };
@@ -46,6 +47,15 @@ function storagePathsFromUrls(imageUrls: string[]) {
       return index === -1 ? "" : decodeURIComponent(url.slice(index + marker.length));
     })
     .filter(Boolean);
+}
+
+function variantCount(value: unknown) {
+  if (!Array.isArray(value)) return 0;
+  return value.filter((variant) => {
+    if (!variant || typeof variant !== "object") return false;
+    const record = variant as Record<string, unknown>;
+    return typeof record.name === "string" && Boolean(record.name.trim()) && typeof record.price === "string" && Boolean(record.price.trim());
+  }).length;
 }
 
 export default function AdminProductsPage() {
@@ -266,6 +276,7 @@ export default function AdminProductsPage() {
                   .map((filter) => filter.label);
                 const beddingTypeLabel = beddingTypeFilters.find((filter) => filter.id === product.bedding_type)?.label;
                 if (beddingTypeLabel) labels.push(beddingTypeLabel);
+                const productVariantCount = variantCount(product.variants);
                 return (
                   <tr className="align-middle" key={product.id}>
                     <td className="px-4 py-3">
@@ -277,7 +288,8 @@ export default function AdminProductsPage() {
                         <div className="min-w-0">
                           <p className="text-[10px] font-medium tracking-[0.1em] text-[#605B51]/65">{product.code}</p>
                           <p className="mt-1 line-clamp-1 font-semibold">{product.name}</p>
-                          <p className="mt-1 font-semibold text-[#A81515]">NT$ {product.price.replace(/^NT\$\s*/i, "")}</p>
+                          <p className="mt-1 font-semibold text-[#A81515]">NT$ {product.price.replace(/^NT\$\s*/i, "")}{productVariantCount ? <span className="ml-0.5 text-xs font-medium">起</span> : null}</p>
+                          {productVariantCount ? <p className="mt-1 text-[11px] text-[#605B51]/65">{productVariantCount} 種子分類規格</p> : null}
                         </div>
                       </div>
                     </td>

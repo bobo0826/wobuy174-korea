@@ -20,10 +20,16 @@ type KoreaType =
   | "dutyFree"
   | "socks";
 
+type ProductVariant = {
+  name: string;
+  price: string;
+};
+
 type Product = {
   id: string;
   name: string;
   price: string;
+  variants?: ProductVariant[];
   originalPrice?: string;
   code: string;
   deadline: string;
@@ -59,6 +65,7 @@ type StoredProduct = {
   korea_type: string | null;
   details: string | null;
   specs: string | null;
+  variants: unknown;
 };
 
 export const lineCommunityUrl =
@@ -497,6 +504,18 @@ const koreaTypes: { id: KoreaType; label: string }[] = [
   { id: "socks", label: "純棉襪子" },
 ];
 
+function normalizeProductVariants(value: unknown): ProductVariant[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((variant) => {
+    if (!variant || typeof variant !== "object") return [];
+    const record = variant as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const price = typeof record.price === "string" ? record.price.trim() : "";
+    return name && price ? [{ name, price }] : [];
+  });
+}
+
 function storedProductToProduct(product: StoredProduct): Product {
   const status = ["現貨", "預購", "連線中", "已收單"].includes(product.status)
     ? (product.status as Product["status"])
@@ -512,6 +531,7 @@ function storedProductToProduct(product: StoredProduct): Product {
     id: product.id,
     name: product.name,
     price: product.price,
+    variants: normalizeProductVariants(product.variants),
     originalPrice: product.original_price ?? undefined,
     code: product.code,
     deadline: product.deadline ?? "請洽 LINE@",
@@ -536,6 +556,18 @@ function storedProductToProduct(product: StoredProduct): Product {
 
 function formatPrice(price: string) {
   return price.replace(/^NT\$\s*/i, "").trim();
+}
+
+function lowestVariantPrice(variants: ProductVariant[]) {
+  return [...variants].sort((first, second) => {
+    const firstValue = Number(first.price.replace(/[^\d.]/g, ""));
+    const secondValue = Number(second.price.replace(/[^\d.]/g, ""));
+    return (Number.isFinite(firstValue) ? firstValue : Number.POSITIVE_INFINITY) - (Number.isFinite(secondValue) ? secondValue : Number.POSITIVE_INFINITY);
+  })[0]?.price ?? "";
+}
+
+function productStartingPrice(product: Product) {
+  return product.variants?.length ? lowestVariantPrice(product.variants) : product.price;
 }
 
 function Arrow({ className = "" }: { className?: string }) {
@@ -578,6 +610,7 @@ export function ProductCatalog({
   const [activeKoreaType, setActiveKoreaType] = useState<"all" | KoreaType>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(products);
   const [remoteCatalogLoaded, setRemoteCatalogLoaded] = useState(false);
@@ -632,6 +665,9 @@ export function ProductCatalog({
   const galleryImages = selectedProduct
     ? (selectedProduct.images?.length ? selectedProduct.images : [selectedProduct.image]).slice(0, 3)
     : [];
+  const selectedVariants = selectedProduct?.variants ?? [];
+  const selectedVariant = selectedVariants[selectedVariantIndex];
+  const selectedProductPrice = selectedVariant?.price ?? (selectedProduct ? productStartingPrice(selectedProduct) : "");
 
   const scrollToProducts = () => {
     document.getElementById("products")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -653,6 +689,7 @@ export function ProductCatalog({
   const openProduct = (product: Product) => {
     setSelectedProduct(product);
     setActiveImageIndex(0);
+    setSelectedVariantIndex(0);
   };
 
   const slideGallery = (direction: -1 | 1) => {
@@ -777,7 +814,7 @@ export function ProductCatalog({
                 <p className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-[12px] font-semibold leading-5 tracking-[-0.015em] text-[#605B51] sm:mt-3 sm:text-sm sm:leading-6">
                   {product.name}
                 </p>
-                <p className="mt-1 text-[13px] font-semibold leading-5 tracking-[-0.02em] text-[#A81515] sm:text-sm">NT$ {formatPrice(product.price)}</p>
+                <p className="mt-1 text-[13px] font-semibold leading-5 tracking-[-0.02em] text-[#A81515] sm:text-sm">NT$ {formatPrice(productStartingPrice(product))}{product.variants?.length ? <span className="ml-0.5 text-[10px] font-medium sm:text-xs">起</span> : null}</p>
               </button>
             ))}
           </div>
@@ -894,8 +931,25 @@ export function ProductCatalog({
                 </div>
                 <h2 className="mt-6 text-2xl font-semibold leading-tight tracking-[-0.04em] sm:text-3xl">{selectedProduct.name}</h2>
                 <div className="mt-3">
-                  <span className="text-lg font-bold text-[#C94A45]">優惠價 NT$ {formatPrice(selectedProduct.price)}<span className="ml-1 align-baseline text-[11px] font-medium">起</span></span>
+                  <span className="text-lg font-bold text-[#C94A45]">優惠價 NT$ {formatPrice(selectedProductPrice)}</span>
                 </div>
+                {selectedVariants.length > 0 && (
+                  <div className="mt-6 border-y border-[#D9D6D0] py-5">
+                    <p className="text-sm font-semibold">子分類規格</p>
+                    <p className="mt-1 text-xs leading-5 text-[#605B51]/65">請選擇想詢問的規格，價格會依選擇更新。</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {selectedVariants.map((variant, index) => {
+                        const isSelected = selectedVariantIndex === index;
+                        return (
+                          <button aria-pressed={isSelected} className={`flex items-center justify-between rounded-[4px] border px-3.5 py-3 text-left text-sm transition-colors ${isSelected ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#605B51]"}`} key={`${variant.name}-${variant.price}`} onClick={() => setSelectedVariantIndex(index)} type="button">
+                            <span className="font-semibold">{variant.name}</span>
+                            <span className="font-semibold">NT$ {formatPrice(variant.price)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <dl className="mt-8 divide-y divide-[#D9D6D0] border-y border-[#D9D6D0] text-sm">
                   <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">商品編號</dt><dd>{selectedProduct.code}</dd></div>
                   <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">收單時間</dt><dd>{selectedProduct.deadline}</dd></div>

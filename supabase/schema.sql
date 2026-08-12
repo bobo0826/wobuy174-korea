@@ -18,6 +18,7 @@ create table if not exists public.products (
   arrival text,
   colors text,
   sizes text,
+  variants jsonb not null default '[]'::jsonb,
   details text,
   specs text,
   image_urls text[] not null default '{}',
@@ -30,6 +31,7 @@ create table if not exists public.products (
 alter table public.products add column if not exists original_price text;
 alter table public.products add column if not exists colors text;
 alter table public.products add column if not exists sizes text;
+alter table public.products add column if not exists variants jsonb not null default '[]'::jsonb;
 alter table public.products add column if not exists sort_order integer not null default 0;
 
 create table if not exists public.admin_users (

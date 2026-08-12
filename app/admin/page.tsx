@@ -76,10 +76,16 @@ const beddingTypeOptions = [
 
 type CsvRow = Record<string, string>;
 
+type ProductVariant = {
+  name: string;
+  price: string;
+};
+
 type ProductDraft = {
   code: string;
   name: string;
   price: string;
+  variants: ProductVariant[];
   originalPrice: string;
   sortOrder: string;
   status: string;
@@ -114,6 +120,7 @@ type ManagedProduct = {
   sizes: string | null;
   details: string | null;
   specs: string | null;
+  variants: unknown;
   image_urls: string[] | null;
   published: boolean;
 };
@@ -122,6 +129,7 @@ const emptyDraft: ProductDraft = {
   code: "",
   name: "",
   price: "",
+  variants: [],
   originalPrice: "",
   sortOrder: "",
   status: "預購",
@@ -194,6 +202,39 @@ function toSortOrder(value: string, fallback = 0) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function normalizeVariants(value: unknown): ProductVariant[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((variant) => {
+    if (!variant || typeof variant !== "object") return [];
+    const record = variant as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const price = typeof record.price === "string" ? record.price.trim() : "";
+    return name && price ? [{ name, price }] : [];
+  });
+}
+
+function parseVariants(value: string): ProductVariant[] {
+  return value
+    .split(/[|｜\n]+/)
+    .map((item) => {
+      const separator = Math.max(item.indexOf("："), item.indexOf(":"));
+      if (separator < 1) return null;
+      const name = item.slice(0, separator).trim();
+      const price = item.slice(separator + 1).trim();
+      return name && price ? { name, price } : null;
+    })
+    .filter((item): item is ProductVariant => Boolean(item));
+}
+
+function lowestVariantPrice(variants: ProductVariant[]) {
+  return [...variants].sort((first, second) => {
+    const firstValue = Number(first.price.replace(/[^\d.]/g, ""));
+    const secondValue = Number(second.price.replace(/[^\d.]/g, ""));
+    return (Number.isFinite(firstValue) ? firstValue : Number.POSITIVE_INFINITY) - (Number.isFinite(secondValue) ? secondValue : Number.POSITIVE_INFINITY);
+  })[0]?.price ?? "";
+}
+
 function optionClass(selected: boolean) {
   return `rounded-full border px-3 py-2 text-sm font-medium transition-colors ${
     selected
@@ -207,7 +248,8 @@ function toDraft(row: CsvRow): ProductDraft {
   return {
     code: getValue(row, "商品編號", "code").toUpperCase(),
     name: getValue(row, "品名", "name"),
-    price: getValue(row, "價格", "優惠價", "price"),
+    price: getValue(row, "價格", "優惠價", "基本優惠價", "price"),
+    variants: parseVariants(getValue(row, "子分類規格價格", "子分類規格", "variants")),
     originalPrice: getValue(row, "原價", "original_price"),
     sortOrder: getValue(row, "排序", "sort_order"),
     status: getValue(row, "貨況", "status") || "預購",
@@ -228,10 +270,12 @@ function toDraft(row: CsvRow): ProductDraft {
 }
 
 function toRecord(draft: ProductDraft, imageUrls: string[], fallbackSortOrder = 0) {
+  const variants = normalizeVariants(draft.variants);
   return {
     code: draft.code.trim().toUpperCase(),
     name: draft.name.trim(),
-    price: draft.price.trim(),
+    price: draft.price.trim() || lowestVariantPrice(variants),
+    variants,
     original_price: draft.originalPrice.trim() || null,
     sort_order: toSortOrder(draft.sortOrder, fallbackSortOrder),
     status: ["現貨", "預購", "連線中", "已收單"].includes(draft.status)
@@ -259,6 +303,7 @@ function toDraftFromProduct(product: ManagedProduct): ProductDraft {
     code: product.code,
     name: product.name,
     price: product.price,
+    variants: normalizeVariants(product.variants),
     originalPrice: product.original_price ?? "",
     sortOrder: String(product.sort_order ?? 0),
     status: product.status,
@@ -308,8 +353,15 @@ async function saveProduct(
   draft: ProductDraft,
   imageFiles: File[],
 ) {
-  if (!draft.code.trim() || !draft.name.trim() || !draft.price.trim()) {
-    throw new Error("商品編號、品名與價格為必填欄位。");
+  const variants = normalizeVariants(draft.variants);
+  const hasIncompleteVariant = draft.variants.some((variant) =>
+    Boolean(variant.name.trim()) !== Boolean(variant.price.trim()),
+  );
+  if (!draft.code.trim() || !draft.name.trim() || (!draft.price.trim() && !variants.length)) {
+    throw new Error("商品編號、品名與基本優惠價或子分類規格價格為必填欄位。");
+  }
+  if (hasIncompleteVariant) {
+    throw new Error("每個子分類規格都需要填寫規格名稱與優惠價。");
   }
   if (!toList(draft.categories, categoryAliases).length) {
     throw new Error("請至少選擇一個主分類。");
@@ -328,7 +380,12 @@ async function saveProduct(
   const { error } = await supabase
     .from("products")
     .upsert(toRecord({ ...draft, code }, imageUrls, existing?.sort_order ?? 0), { onConflict: "code" });
-  if (error) throw error;
+  if (error) {
+    if (error.message.includes("variants")) {
+      throw new Error("請先在 Supabase SQL Editor 執行「子分類規格」資料庫更新後再儲存商品。");
+    }
+    throw error;
+  }
 }
 
 export default function AdminPage() {
@@ -420,9 +477,9 @@ export default function AdminPage() {
     setIsBusy(true);
     setBatchResult("");
     const rows = parseCsv(await csvFile.text()).map(toDraft);
-    const validRows = rows.filter((row) => row.code && row.name && row.price);
+    const validRows = rows.filter((row) => row.code && row.name && (row.price || row.variants.length));
     if (!validRows.length) {
-      setBatchResult("找不到可匯入資料，請確認 CSV 包含商品編號、品名與價格。 ");
+      setBatchResult("找不到可匯入資料，請確認 CSV 包含商品編號、品名與基本優惠價或子分類規格價格。");
       setIsBusy(false);
       return;
     }
@@ -499,6 +556,29 @@ export default function AdminPage() {
         beddingType: isSelected && category === "bedding" ? "" : current.beddingType,
       };
     });
+  };
+
+  const addVariant = () => {
+    setDraft((current) => ({
+      ...current,
+      variants: [...current.variants, { name: "", price: "" }],
+    }));
+  };
+
+  const updateVariant = (index: number, field: keyof ProductVariant, value: string) => {
+    setDraft((current) => ({
+      ...current,
+      variants: current.variants.map((variant, variantIndex) =>
+        variantIndex === index ? { ...variant, [field]: value } : variant,
+      ),
+    }));
+  };
+
+  const removeVariant = (index: number) => {
+    setDraft((current) => ({
+      ...current,
+      variants: current.variants.filter((_, variantIndex) => variantIndex !== index),
+    }));
   };
 
   if (!isSupabaseConfigured) {
@@ -579,7 +659,7 @@ export default function AdminPage() {
               ["商品編號", "code", "例如 KR-400"],
               ["品名", "name", "商品名稱"],
               ["原價", "originalPrice", "例如 NT$ 890"],
-              ["優惠價", "price", "例如 NT$ 690"],
+              ["基本優惠價", "price", "未設定子分類規格時使用，例如 NT$ 690"],
               ["商品排序", "sortOrder", "數字越小越前面；未填為 0"],
               ["收單日", "deadline", "例如 08/15"],
               ["預計到貨", "arrival", "依商品頁或客服通知"],
@@ -588,6 +668,24 @@ export default function AdminPage() {
             ].map(([label, key, placeholder]) => (
               <label className="block text-sm font-medium" key={key}>{label}<input className={inputClass} placeholder={placeholder} value={draft[key as keyof ProductDraft] as string} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} /></label>
             ))}
+            <fieldset className="rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4]/45 p-4 md:col-span-2 sm:p-5">
+              <legend className="text-sm font-semibold">子分類規格與價格</legend>
+              <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+                <p className="max-w-2xl text-xs leading-5 text-[#605B51]/65">例如「單人／雙人」、「粉色／藍色」有不同價格時，在此新增。前台會讓客人選擇規格並顯示對應優惠價。</p>
+                <button className="rounded-full border border-[#605B51] px-3 py-2 text-xs font-semibold transition-colors hover:bg-[#605B51] hover:text-[#F5F5F5]" onClick={addVariant} type="button">＋ 新增規格</button>
+              </div>
+              {draft.variants.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  {draft.variants.map((variant, index) => (
+                    <div className="grid gap-3 rounded-[4px] border border-[#D9D6D0] bg-[#FAF7F0] p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" key={`variant-${index}`}>
+                      <label className="block text-sm font-medium">規格名稱<input className={inputClass} placeholder="例如 單人 S" value={variant.name} onChange={(event) => updateVariant(index, "name", event.target.value)} /></label>
+                      <label className="block text-sm font-medium">優惠價<input className={inputClass} placeholder="例如 NT$ 1,350" value={variant.price} onChange={(event) => updateVariant(index, "price", event.target.value)} /></label>
+                      <button className="border-b border-[#A81515] pb-1 text-left text-sm font-medium text-[#A81515] sm:mb-2 sm:text-center" onClick={() => removeVariant(index)} type="button">刪除</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </fieldset>
             <fieldset className="md:col-span-2">
               <legend className="text-sm font-medium">主分類</legend>
               <p className="mt-2 text-xs leading-5 text-[#605B51]/65">可複選「熱門商品」與其他主分類；其餘分類請依商品選擇。</p>
