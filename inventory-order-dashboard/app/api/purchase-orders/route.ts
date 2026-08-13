@@ -31,6 +31,14 @@ const nonNegativeInteger = (value: unknown) => {
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 ? number : null;
 };
+const errorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
+};
 
 function taipeiDate() {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -88,7 +96,7 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ purchaseOrders: data ?? [] }), auth.context);
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "無法讀取採購單。" }, { status: 503 });
+    return NextResponse.json({ message: errorMessage(error, "無法讀取採購單。") }, { status: 503 });
   }
 }
 
@@ -110,7 +118,7 @@ export async function POST(request: NextRequest) {
     if ((storedProducts ?? []).length !== productIds.length) return NextResponse.json({ message: "部分商品已不存在，請重新選擇。" }, { status: 400 });
     const productsById = new Map((storedProducts ?? []).map((product) => [product.id, product]));
     const total = payload.items.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
-    const purchaseNumber = payload.requestedPurchaseNumber || await nextPurchaseNumber(taipeiDate());
+    const purchaseNumber = payload.requestedPurchaseNumber || await nextPurchaseNumber(payload.orderDate);
 
     const { data: purchaseOrder, error: purchaseOrderError } = await supabase
       .from("purchase_orders")
@@ -156,6 +164,6 @@ export async function POST(request: NextRequest) {
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ purchaseOrder: data }, { status: 201 }), auth.context);
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "無法建立採購單。" }, { status: 500 });
+    return NextResponse.json({ message: errorMessage(error, "無法建立採購單。") }, { status: 500 });
   }
 }
