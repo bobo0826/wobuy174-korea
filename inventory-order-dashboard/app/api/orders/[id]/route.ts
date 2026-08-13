@@ -81,12 +81,44 @@ async function updateOrder(id: string, input: UpdateOrderInput) {
   return data;
 }
 
+async function updateShippedOrderPayment(id: string, input: UpdateOrderInput) {
+  const paymentMethod = text(input.paymentMethod);
+  const paymentStatus = text(input.paymentStatus);
+  const note = text(input.note);
+  if (!paymentMethods.includes(paymentMethod) || !paymentStatuses.includes(paymentStatus)) {
+    throw new Error("付款資料不正確。");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: current, error: currentError } = await supabase
+    .from("orders")
+    .select("id, status")
+    .eq("id", id)
+    .single();
+  if (currentError || !current) throw new Error("找不到訂單。");
+  if (current.status !== "已出貨") throw new Error("這張訂單尚未出貨，請使用完整修改功能。");
+
+  const { data, error } = await supabase
+    .from("orders")
+    .update({
+      payment_method: paymentMethod,
+      reconciliation_status: paymentStatus,
+      note,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select(orderSelect)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function GET(request: NextRequest, { params }: Context) {
   try { const auth = await requireSignedIn(request); if (!auth.context) return auth.response!; const { id } = await params; if (!uuidPattern.test(id)) return NextResponse.json({ message: "訂單資料不正確。" }, { status: 400 }); const { data, error } = await getSupabaseAdmin().from("orders").select(orderSelect).eq("id", id).maybeSingle(); if (error) throw error; if (!data) return NextResponse.json({ message: "找不到這張訂單。" }, { status: 404 }); return withRefreshedSession(NextResponse.json({ order: data }), auth.context); } catch (error) { return NextResponse.json({ message: error instanceof Error ? error.message : "無法讀取訂單資料。" }, { status: 503 }); }
 }
 
 export async function PATCH(request: NextRequest, { params }: Context) {
-  try { const auth = await requireSignedIn(request); if (!auth.context) return auth.response!; const { id } = await params; if (!uuidPattern.test(id)) return NextResponse.json({ message: "訂單資料不正確。" }, { status: 400 }); const body = await request.json() as UpdateOrderInput; if (body.action === "complete") return withRefreshedSession(NextResponse.json({ order: await completeOrder(id) }), auth.context); if (body.action === "update") return withRefreshedSession(NextResponse.json({ order: await updateOrder(id, body) }), auth.context); return NextResponse.json({ message: "不支援的訂單操作。" }, { status: 400 }); } catch (error) { return NextResponse.json({ message: error instanceof Error ? error.message : "無法更新訂單。" }, { status: 500 }); }
+  try { const auth = await requireSignedIn(request); if (!auth.context) return auth.response!; const { id } = await params; if (!uuidPattern.test(id)) return NextResponse.json({ message: "訂單資料不正確。" }, { status: 400 }); const body = await request.json() as UpdateOrderInput; if (body.action === "complete") return withRefreshedSession(NextResponse.json({ order: await completeOrder(id) }), auth.context); if (body.action === "update") return withRefreshedSession(NextResponse.json({ order: await updateOrder(id, body) }), auth.context); if (body.action === "updatePayment") return withRefreshedSession(NextResponse.json({ order: await updateShippedOrderPayment(id, body) }), auth.context); return NextResponse.json({ message: "不支援的訂單操作。" }, { status: 400 }); } catch (error) { return NextResponse.json({ message: error instanceof Error ? error.message : "無法更新訂單。" }, { status: 500 }); }
 }
 
 export async function DELETE(request: NextRequest, { params }: Context) {
