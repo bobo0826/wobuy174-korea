@@ -20,11 +20,11 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await getSupabaseAdmin()
       .from("inventory_adjustments")
-      .select("id, product_id, quantity_change, reason, note, performed_by, created_at, products(name, sku)")
+      .select("id, product_id, quantity_change, reason, note, created_at, products(name, sku)")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) throw error;
-    return withRefreshedSession(NextResponse.json({ adjustments: data ?? [] }), auth.context);
+    return withRefreshedSession(NextResponse.json({ adjustments: (data ?? []).map((adjustment) => ({ ...adjustment, performed_by: "" })) }), auth.context);
   } catch (error) {
     return NextResponse.json({ message: error instanceof Error ? error.message : "無法讀取庫存異動。" }, { status: 503 });
   }
@@ -75,11 +75,11 @@ export async function POST(request: NextRequest) {
       if (updateError) throw updateError;
       const { data: adjustment, error: adjustmentError } = await supabase
         .from("inventory_adjustments")
-        .insert({ product_id: productId, quantity_change: quantityChange, reason, note, performed_by: auth.context.profile.displayName })
-        .select("id, product_id, quantity_change, reason, note, performed_by, created_at")
+        .insert({ product_id: productId, quantity_change: quantityChange, reason, note })
+        .select("id, product_id, quantity_change, reason, note, created_at")
         .single();
       if (adjustmentError) throw adjustmentError;
-      return withRefreshedSession(NextResponse.json({ adjustment }, { status: 201 }), auth.context);
+      return withRefreshedSession(NextResponse.json({ adjustment: { ...adjustment, performed_by: auth.context.profile.displayName } }, { status: 201 }), auth.context);
     }
     const result = Array.isArray(data) ? data[0] : data;
     return withRefreshedSession(NextResponse.json({ adjustment: result }, { status: 201 }), auth.context);

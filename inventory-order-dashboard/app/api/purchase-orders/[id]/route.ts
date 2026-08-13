@@ -21,6 +21,15 @@ const nonNegativeInteger = (value: unknown) => {
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 ? number : null;
 };
+const errorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
+};
+const missingDatabaseFunction = (error: { code?: string; message?: string } | null) => Boolean(error && (error.code === "PGRST202" || /receive_purchase_order/i.test(error.message ?? "") && /(function|schema cache|could not find)/i.test(error.message ?? "")));
 
 function validateUpdate(input: UpdatePurchaseInput) {
   const supplierId = text(input.supplierId);
@@ -87,6 +96,50 @@ async function updatePurchaseOrder(id: string, input: UpdatePurchaseInput) {
   return data;
 }
 
+async function receivePurchaseOrderFallback(id: string, items: Array<{ item_id: string; quantity: number }>) {
+  const supabase = getSupabaseAdmin();
+  const { data: order, error: orderError } = await supabase
+    .from("purchase_orders")
+    .select("id, purchase_number, status, purchase_order_items(id, product_id, product_name, quantity, received_quantity)")
+    .eq("id", id)
+    .single();
+  if (orderError || !order) throw new Error("找不到採購單。");
+  if (order.status === "已完成" || order.status === "已取消") throw new Error("這張採購單目前無法收貨。");
+
+  const linesById = new Map((order.purchase_order_items ?? []).map((line) => [line.id, line]));
+  const requested = new Map(items.map((item) => [item.item_id, item.quantity]));
+  const productIds = items.map((item) => linesById.get(item.item_id)?.product_id).filter((productId): productId is string => Boolean(productId));
+  const { data: products, error: productsError } = await supabase.from("products").select("id, available_stock, incoming_stock").in("id", productIds);
+  if (productsError) throw productsError;
+  const productsById = new Map((products ?? []).map((product) => [product.id, product]));
+
+  for (const item of items) {
+    const line = linesById.get(item.item_id);
+    if (!line) throw new Error("採購明細不屬於這張採購單。");
+    if (!line.product_id) throw new Error(`${line.product_name} 未連結商品，無法入庫。`);
+    const remaining = line.quantity - line.received_quantity;
+    if (item.quantity > remaining) throw new Error(`${line.product_name} 的到貨數量超過尚待到貨數量。`);
+    const product = productsById.get(line.product_id);
+    if (!product) throw new Error(`${line.product_name} 已不存在，無法入庫。`);
+
+    const { error: lineError } = await supabase.from("purchase_order_items").update({ received_quantity: line.received_quantity + item.quantity }).eq("id", line.id);
+    if (lineError) throw lineError;
+    const { error: productError } = await supabase.from("products").update({ available_stock: product.available_stock + item.quantity, incoming_stock: Math.max(0, product.incoming_stock - item.quantity), updated_at: new Date().toISOString() }).eq("id", line.product_id);
+    if (productError) throw productError;
+    const { error: adjustmentError } = await supabase.from("inventory_adjustments").insert({ product_id: line.product_id, quantity_change: item.quantity, reason: "採購收貨", note: `採購單 ${order.purchase_number}` });
+    if (adjustmentError) throw adjustmentError;
+  }
+
+  const updatedLines = (order.purchase_order_items ?? []).map((line) => ({ ...line, received_quantity: line.received_quantity + (requested.get(line.id) ?? 0) }));
+  const isComplete = updatedLines.every((line) => line.received_quantity >= line.quantity);
+  const { error: headerError } = await supabase.from("purchase_orders").update({ status: isComplete ? "已完成" : "部分收貨", updated_at: new Date().toISOString() }).eq("id", id);
+  if (headerError) throw headerError;
+
+  const { data, error } = await supabase.from("purchase_orders").select(purchaseSelect).eq("id", id).single();
+  if (error) throw error;
+  return data;
+}
+
 export async function PATCH(request: NextRequest, { params }: Context) {
   try {
     const auth = await requireSignedIn(request);
@@ -103,11 +156,14 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     const items: Array<{ item_id: string; quantity: number | null }> = (body.items as Array<{ itemId?: unknown; quantity?: unknown }>).map((item) => ({ item_id: typeof item.itemId === "string" ? item.itemId : "", quantity: positiveInteger(item.quantity) }));
     if (!items.length || items.some((item) => !uuidPattern.test(item.item_id) || item.quantity === null)) return NextResponse.json({ message: "請填寫正確的收貨數量。" }, { status: 400 });
     const { error: receiptError } = await supabase.rpc("receive_purchase_order", { p_purchase_order_id: id, p_items: items, p_performed_by: auth.context.profile.displayName });
-    if (receiptError) throw receiptError;
-    const { data, error } = await supabase.from("purchase_orders").select(purchaseSelect).eq("id", id).single();
-    if (error) throw error;
-    return withRefreshedSession(NextResponse.json({ purchaseOrder: data }), auth.context);
+    if (receiptError && !missingDatabaseFunction(receiptError)) throw receiptError;
+    const purchaseOrder = receiptError ? await receivePurchaseOrderFallback(id, items as Array<{ item_id: string; quantity: number }>) : await (async () => {
+      const { data, error } = await supabase.from("purchase_orders").select(purchaseSelect).eq("id", id).single();
+      if (error) throw error;
+      return data;
+    })();
+    return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "無法完成採購單操作。" }, { status: 500 });
+    return NextResponse.json({ message: errorMessage(error, "無法完成採購單操作。") }, { status: 500 });
   }
 }

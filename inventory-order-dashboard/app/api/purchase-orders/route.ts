@@ -81,7 +81,8 @@ function validatePurchaseOrder(input: PurchaseOrderInput) {
   return { purchase: { supplierId, orderDate, arrivalDate: arrivalDate || null, requestedPurchaseNumber, paymentTerms, items: items as Array<{ productId: string; unitCost: number; quantity: number }> } };
 }
 
-export const purchaseSelect = "id, purchase_number, supplier_id, supplier_name, order_date, arrival_date, expected_arrival_date, payment_terms, status, total, received_at, created_at, updated_at, purchase_order_items(id, product_id, product_name, unit_cost, quantity, received_quantity)";
+// received_at 是後期才加入的欄位；先不列入讀取，避免既有資料庫因缺欄位而無法使用採購流程。
+export const purchaseSelect = "id, purchase_number, supplier_id, supplier_name, order_date, arrival_date, expected_arrival_date, payment_terms, status, total, created_at, updated_at, purchase_order_items(id, product_id, product_name, unit_cost, quantity, received_quantity)";
 
 export async function GET(request: NextRequest) {
   try {
