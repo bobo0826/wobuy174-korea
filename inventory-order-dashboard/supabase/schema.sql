@@ -48,7 +48,7 @@ create table if not exists orders (
   order_number text not null unique,
   customer_id uuid references customers(id) on delete set null,
   order_date date not null default current_date,
-  status text not null default '預購中' check (status in ('預購中', '已到貨', '已出貨', '已取消')),
+  status text not null default '預購中' check (status in ('預購中', '未出貨', '已出貨', '已取消')),
   order_method text not null check (order_method in ('社群下單', '員工下單')),
   payment_method text not null default '銀行轉帳',
   reconciliation_status text not null default '未付款',

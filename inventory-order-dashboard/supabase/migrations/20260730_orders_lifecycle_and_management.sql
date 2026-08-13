@@ -4,13 +4,14 @@ alter table public.orders drop constraint if exists orders_status_check;
 update public.orders
 set status = case
   when status in ('待確認', '已確認', '備貨中') then '預購中'
+  when status = '已到貨' then '未出貨'
   when status = '已出貨' then '已出貨'
   else '已取消'
 end;
 
 alter table public.orders
   add constraint orders_status_check
-  check (status in ('預購中', '已到貨', '已出貨', '已取消'));
+  check (status in ('預購中', '未出貨', '已出貨', '已取消'));
 alter table public.orders alter column status set default '預購中';
 
 -- A single payment-status field is used for cash, transfer, and card orders.
