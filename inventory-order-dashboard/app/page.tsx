@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Dashboard } from "./dashboard-summary";
+import { FinancePage } from "./finance-page";
 import { OrdersV2 } from "./orders-page-v2";
 
 type View =
@@ -12,6 +13,7 @@ type View =
   | "inventory"
   | "stock"
   | "purchases"
+  | "finance"
   | "reports"
   | "settings"
   | "customers"
@@ -176,8 +178,9 @@ const nav: { id: Exclude<View, "create" | "product">; label: string; no: string 
   { id: "inventory", label: "庫存管理", no: "05" },
   { id: "stock", label: "庫存總覽", no: "06" },
   { id: "purchases", label: "採購與供應商", no: "07" },
-  { id: "reports", label: "報表中心", no: "08" },
-  { id: "settings", label: "系統設定", no: "09" },
+  { id: "finance", label: "收支管理", no: "08" },
+  { id: "reports", label: "報表中心", no: "09" },
+  { id: "settings", label: "系統設定", no: "10" },
 ];
 
 const currency = (value: number) => `NT$ ${value.toLocaleString("zh-TW")}`;
@@ -1453,7 +1456,7 @@ export default function Home() {
   const catalog = databaseProducts;
   const openNewProduct = () => { setProductDraft(null); go("newProduct"); };
   const copyProduct = (product: Product) => { setProductDraft(product); go("newProduct"); };
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)}/> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseV2 key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPage product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)}/> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseV2 key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverview catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
   const isProductsView = view === "products" || view === "product" || view === "newProduct" || view === "importProducts";
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
   const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";
