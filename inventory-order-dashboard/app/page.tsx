@@ -164,7 +164,7 @@ const toProduct = (record: StoredProduct): Product => ({
 
 const productCategoriesByCountry: Record<string, string[]> = {
   "韓國": ["棉被", "美妝", "藥局", "潮牌", "專櫃", "食品", "文創", "大創", "娃娃", "批發", "其他"],
-  "日本": ["3COIN", "藥妝", "三麗鷗", "吉伊卡哇", "專櫃", "其他"],
+  "日本": ["3COIN", "藥妝", "三麗鷗", "吉伊卡哇", "專櫃", "批發", "其他"],
   "大陸": ["其他"],
   "台灣": ["其他"],
   "其他": ["其他"],
