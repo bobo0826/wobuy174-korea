@@ -20,6 +20,11 @@ type ProductInput = {
   supplierId?: unknown;
 };
 
+type ProductUpdateInput = ProductInput & {
+  id?: unknown;
+  changeNote?: unknown;
+};
+
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const nonNegativeInteger = (value: unknown) => {
@@ -58,6 +63,24 @@ function validateProduct(input: ProductInput) {
 
   return { product };
 }
+
+function validateProductUpdate(input: ProductUpdateInput) {
+  const supplierId = text(input.supplierId);
+  const product = {
+    sku: text(input.sku), name: text(input.name), country: text(input.country), category: text(input.category), specification: text(input.specification), note: text(input.note),
+    cost: nonNegativeInteger(input.cost), staff_price: nonNegativeInteger(input.staffPrice), retail_price: nonNegativeInteger(input.retailPrice), safety_stock: nonNegativeInteger(input.safetyStock), supplier_id: supplierId || null,
+  };
+  if (!product.sku || !product.name || !product.country || !product.category) return { error: "請完整填寫商品編號、名稱、國家與商品種類。" };
+  if (supplierId && !uuidPattern.test(supplierId)) return { error: "供應商資料不正確。" };
+  if ([product.cost, product.staff_price, product.retail_price, product.safety_stock].some((value) => value === null)) return { error: "價格與安全庫存必須為零或正整數。" };
+  return { product, changeNote: text(input.changeNote) };
+}
+
+const changeSnapshot = (product: Record<string, unknown>) => ({ sku: product.sku, name: product.name, country: product.country, category: product.category, specification: product.specification, note: product.note, cost: product.cost, staff_price: product.staff_price, retail_price: product.retail_price, safety_stock: product.safety_stock, supplier_id: product.supplier_id });
+const historyTableMissing = (error: unknown) => {
+  const message = error instanceof Error ? error.message : typeof error === "object" && error !== null && "message" in error ? String((error as { message?: unknown }).message ?? "") : "";
+  return (typeof error === "object" && error !== null && (error as { code?: string }).code === "PGRST205") || /product_change_logs/i.test(message) && /(schema cache|does not exist|could not find)/i.test(message);
+};
 
 const productSelect = "*, suppliers(name)";
 
@@ -118,6 +141,34 @@ export async function PATCH(request: NextRequest) {
     if (!auth.context) return auth.response!;
     const body = await request.json();
     const id = text(body.id);
+
+    if (body.action === "update") {
+      if (!uuidPattern.test(id)) return NextResponse.json({ message: "商品資料不正確。" }, { status: 400 });
+      const validation = validateProductUpdate(body);
+      if ("error" in validation) return NextResponse.json(validation, { status: 400 });
+      const supabase = getSupabaseAdmin();
+      const { error: historyCheckError } = await supabase.from("product_change_logs").select("id").limit(1);
+      if (historyCheckError) throw historyCheckError;
+      const { data: previous, error: previousError } = await supabase.from("products").select(productSelect).eq("id", id).single();
+      if (previousError || !previous) return NextResponse.json({ message: "找不到商品資料。" }, { status: 404 });
+      if (validation.product.supplier_id) {
+        const { data: supplier, error: supplierError } = await supabase.from("suppliers").select("id").eq("id", validation.product.supplier_id).maybeSingle();
+        if (supplierError) throw supplierError;
+        if (!supplier) return NextResponse.json({ message: "找不到選擇的供應商。" }, { status: 400 });
+      }
+      const before = changeSnapshot(previous as Record<string, unknown>);
+      const after = changeSnapshot(validation.product as Record<string, unknown>);
+      const changedFields = Object.keys(after).filter((field) => before[field as keyof typeof before] !== after[field as keyof typeof after]);
+      const { data, error } = await supabase.from("products").update({ ...validation.product, updated_at: new Date().toISOString() }).eq("id", id).select(productSelect).single();
+      if (error) throw error;
+      if (changedFields.length || validation.changeNote) {
+        const { error: logError } = await supabase.from("product_change_logs").insert({ product_id: id, change_note: validation.changeNote, changed_by: auth.context.profile.displayName, changes: { changedFields, before, after } });
+        if (logError) throw logError;
+      }
+      const sync = await syncProductToGoogleSheet(data);
+      return withRefreshedSession(NextResponse.json({ product: data, sync }, { status: 200 }), auth.context);
+    }
+
     const supplierId = text(body.supplierId);
     if (body.action !== "linkSupplier" || !uuidPattern.test(id)) return NextResponse.json({ message: "商品資料不正確。" }, { status: 400 });
     if (supplierId && !uuidPattern.test(supplierId)) return NextResponse.json({ message: "供應商資料不正確。" }, { status: 400 });
@@ -137,6 +188,7 @@ export async function PATCH(request: NextRequest) {
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ product: data }), auth.context);
   } catch (error) {
+    if (historyTableMissing(error)) return NextResponse.json({ message: "商品異動紀錄資料庫尚未建立。請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
     return NextResponse.json({ message: error instanceof Error ? error.message : "無法更新商品供應商。" }, { status: 500 });
   }
 }
