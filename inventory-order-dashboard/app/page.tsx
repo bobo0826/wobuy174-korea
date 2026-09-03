@@ -107,6 +107,7 @@ type PurchaseOrderItem = {
   product_id: string | null;
   product_name: string;
   unit_cost: number;
+  local_unit_cost: number;
   quantity: number;
   received_quantity: number;
 };
@@ -121,6 +122,8 @@ type PurchaseOrder = {
   // 保留給已存在的採購單資料使用；新介面改顯示到貨時間。
   expected_arrival_date?: string | null;
   payment_terms: string;
+  currency_code: string;
+  shipping_fee: number;
   status: "草稿" | "已送出" | "部分收貨" | "待收貨" | "已完成" | "已取消";
   total: number;
   received_at: string | null;
@@ -196,6 +199,14 @@ const nav: { id: Exclude<View, "create" | "product">; label: string; no: string 
 ];
 
 const currency = (value: number) => `NT$ ${value.toLocaleString("zh-TW")}`;
+const localCurrencyOptions = [
+  { code: "KRW", label: "韓元 KRW" },
+  { code: "JPY", label: "日圓 JPY" },
+  { code: "CNY", label: "人民幣 CNY" },
+  { code: "USD", label: "美元 USD" },
+  { code: "TWD", label: "新台幣 TWD" },
+];
+const localCurrency = (value: number, code: string) => `${code} ${value.toLocaleString("zh-TW", { maximumFractionDigits: 2 })}`;
 const taipeiToday = () => {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
@@ -1224,6 +1235,145 @@ function NewPurchaseV2({ catalog, initialPurchase, back, openSuppliers, onSaved 
   return <><Header eyebrow={editing ? "EDIT PURCHASE ORDER" : "NEW PURCHASE ORDER"} title={editing ? "修改採購單" : "建立採購單"} description="建立或修改採購單只會列為到貨中；確認實際到貨並入庫後，才會增加可售庫存。"><Secondary onClick={back}>← 返回採購與供應商</Secondary></Header>{error && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{error}</Card>}<div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE INFORMATION</p><h2 className="mt-2 text-xl font-semibold">採購資訊</h2><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-[#575149]">採購單編號<input value={purchaseNumber} readOnly={!editing} onChange={(event) => setPurchaseNumber(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none read-only:bg-[#F4F1EC]" /></label><label className="text-sm font-semibold text-[#575149]">下單時間<input type="date" value={orderDate} onChange={(event) => setOrderDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#575149]">到貨時間<input type="date" value={arrivalDate} onChange={(event) => setArrivalDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#575149]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option value="">請選擇供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select>{!suppliers.length && <button onClick={openSuppliers} className="mt-2 text-xs font-semibold text-[#5E7665]">＋ 先建立供應商</button>}</label><label className="text-sm font-semibold text-[#575149] sm:col-span-2">交易方式／付款條件<input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} placeholder="例如：轉帳全額付款、貨到付款" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label></div></Card><Card className="overflow-hidden"><div className="border-b border-[#F0EDE8] p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ITEMS</p><h2 className="mt-2 text-xl font-semibold">採購商品</h2><div className="mt-4"><ProductSearchAdd products={unselected} onAdd={(product) => addProduct(String(product.id))} placeholder="搜尋貨號、商品名稱或分類後加入採購單" /></div></div><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">貨號</th><th className="px-3 py-3">商品名稱</th><th className="px-3 py-3">分類</th><th className="px-3 py-3">採購成本</th><th className="px-3 py-3">數量</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{selected.length ? selected.map((product) => { const id = String(product.id); return <tr key={id}><td className="px-6 py-4 font-mono text-xs text-[#6E695F]">{product.sku}</td><td className="px-3 py-4"><b>{product.name}</b><small className="mt-1 block text-xs text-[#938D84]">{product.specification}</small></td><td className="px-3 py-4 text-[#726C63]">{product.country} · {product.category}</td><td className="px-3 py-4"><input type="number" min="0" value={unitCosts[id] ?? product.cost} onChange={(event) => setUnitCosts((previous) => ({ ...previous, [id]: Math.max(0, Number(event.target.value) || 0) }))} className="h-9 w-24 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm outline-none" /></td><td className="px-3 py-4"><input type="number" min="1" value={lines[id]} onChange={(event) => { const quantity = Math.max(0, Number(event.target.value) || 0); if (!quantity) removeProduct(id); else setLines((previous) => ({ ...previous, [id]: quantity })); }} className="h-9 w-20 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm outline-none" /></td><td className="px-6 py-4 text-right"><button onClick={() => removeProduct(id)} className="text-sm font-semibold text-[#A35F37]">移除</button></td></tr>; }) : <tr><td colSpan={6} className="px-6 py-10 text-center text-[#8D877E]">請用貨號選擇要採購的商品。</td></tr>}</tbody></table></div></Card></div><aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE SUMMARY</p><h2 className="mt-2 text-xl font-semibold">採購摘要</h2><p className="mt-2 text-sm text-[#807A72]">供應商：{suppliers.find((supplier) => supplier.id === supplierId)?.name ?? "尚未選擇"}</p><div className="mt-5 space-y-3 border-y border-[#F0EDE8] py-5">{selected.length ? selected.map((product) => <div key={product.id} className="flex justify-between gap-3 text-sm"><span><b className="block">{product.name}</b><small className="mt-1 block text-xs text-[#938D84]">{product.sku} · × {lines[String(product.id)]}</small></span><b>{currency((unitCosts[String(product.id)] ?? product.cost) * lines[String(product.id)])}</b></div>) : <p className="text-sm text-[#938D84]">尚未選擇採購商品。</p>}</div><div className="mt-5 flex justify-between text-base font-semibold"><span>採購總額</span><b>{currency(total)}</b></div><Primary onClick={() => { void save(); }} disabled={saving || !supplierId || !selected.length} className="mt-6 w-full">{saving ? "儲存中…" : editing ? "儲存採購單修改" : "建立採購單"}</Primary></aside></div></>;
 }
 
+function NewPurchaseForeignCosts({ catalog, initialPurchase, back, openSuppliers, onSaved }: { catalog: Product[]; initialPurchase: PurchaseOrder | null; back: () => void; openSuppliers: () => void; onSaved: () => Promise<void> }) {
+  const editing = Boolean(initialPurchase);
+  const initialLines = Object.fromEntries((initialPurchase?.purchase_order_items ?? []).filter((item) => item.product_id).map((item) => [String(item.product_id), item.quantity]));
+  const initialCosts = Object.fromEntries((initialPurchase?.purchase_order_items ?? []).filter((item) => item.product_id).map((item) => [String(item.product_id), item.unit_cost]));
+  const initialLocalCosts = Object.fromEntries((initialPurchase?.purchase_order_items ?? []).filter((item) => item.product_id).map((item) => [String(item.product_id), item.local_unit_cost ?? 0]));
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierId, setSupplierId] = useState(initialPurchase?.supplier_id ?? "");
+  const [purchaseNumber, setPurchaseNumber] = useState(initialPurchase?.purchase_number ?? "產生中…");
+  const [orderDate, setOrderDate] = useState(initialPurchase?.order_date ?? taipeiToday());
+  const [arrivalDate, setArrivalDate] = useState(initialPurchase?.arrival_date ?? initialPurchase?.expected_arrival_date ?? "");
+  const [paymentTerms, setPaymentTerms] = useState(initialPurchase?.payment_terms ?? "貨到付款");
+  const [currencyCode, setCurrencyCode] = useState(initialPurchase?.currency_code || "KRW");
+  const [shippingFee, setShippingFee] = useState(String(initialPurchase?.shipping_fee ?? 0));
+  const [lines, setLines] = useState<Record<string, number>>(initialLines);
+  const [unitCosts, setUnitCosts] = useState<Record<string, number>>(initialCosts);
+  const [localUnitCosts, setLocalUnitCosts] = useState<Record<string, number>>(initialLocalCosts);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inputClass = "mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none";
+  const currencyLabel = localCurrencyOptions.find((currencyOption) => currencyOption.code === currencyCode)?.label ?? currencyCode;
+
+  useEffect(() => {
+    setUnitCosts((previous) => ({ ...Object.fromEntries(catalog.map((product) => [String(product.id), product.cost])), ...previous }));
+  }, [catalog]);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const supplierResponse = await fetch("/api/suppliers");
+        const supplierResult = await supplierResponse.json();
+        if (active && supplierResponse.ok) {
+          setSuppliers(supplierResult.suppliers ?? []);
+          setSupplierId((current) => current || supplierResult.suppliers?.[0]?.id || "");
+        }
+      } catch {
+        if (active) setError("無法載入供應商資料。請稍後再試。");
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (editing) return;
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/purchase-orders?nextFor=${orderDate}`);
+        const result = await response.json();
+        if (active && response.ok) setPurchaseNumber(result.purchaseNumber ?? "自動產生");
+        else if (active) setError(result.message ?? "無法產生採購單編號。");
+      } catch {
+        if (active) setError("無法產生採購單編號。請稍後再試。");
+      }
+    })();
+    return () => { active = false; };
+  }, [editing, orderDate]);
+
+  const selected = catalog.filter((product) => (lines[String(product.id)] ?? 0) > 0);
+  const localProductTotal = selected.reduce((sum, product) => sum + (localUnitCosts[String(product.id)] ?? 0) * (lines[String(product.id)] ?? 0), 0);
+  const taiwanCostTotal = selected.reduce((sum, product) => sum + (unitCosts[String(product.id)] ?? product.cost) * (lines[String(product.id)] ?? 0), 0);
+  const shippingAmount = Math.max(0, Number(shippingFee) || 0);
+  const localTotal = localProductTotal + shippingAmount;
+  const addProduct = (productId: string) => {
+    if (!productId || lines[productId]) return;
+    setLines((previous) => ({ ...previous, [productId]: 1 }));
+    setLocalUnitCosts((previous) => ({ ...previous, [productId]: previous[productId] ?? 0 }));
+  };
+  const removeProduct = (id: string) => setLines((previous) => {
+    const next = { ...previous };
+    delete next[id];
+    return next;
+  });
+  const save = async () => {
+    if (!supplierId || !selected.length) {
+      setError(!supplierId ? "請選擇供應商。" : "請至少選擇一項採購商品。");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const body = {
+        purchaseNumber: purchaseNumber.startsWith("PO-") ? purchaseNumber : "",
+        supplierId,
+        orderDate,
+        arrivalDate,
+        paymentTerms,
+        currencyCode,
+        shippingFee: shippingAmount,
+        items: selected.map((product) => ({
+          productId: String(product.id),
+          unitCost: unitCosts[String(product.id)] ?? product.cost,
+          localUnitCost: Math.max(0, localUnitCosts[String(product.id)] ?? 0),
+          quantity: lines[String(product.id)],
+        })),
+      };
+      const response = await fetch(editing ? `/api/purchase-orders/${initialPurchase!.id}` : "/api/purchase-orders", {
+        method: editing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editing ? { action: "update", ...body } : body),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法儲存採購單。");
+      await onSaved();
+      back();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法儲存採購單。");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const unselected = catalog.filter((product) => !lines[String(product.id)]);
+
+  return <>
+    <Header eyebrow={editing ? "EDIT PURCHASE ORDER" : "NEW PURCHASE ORDER"} title={editing ? "修改採購單" : "建立採購單"} description="採購單可同時記錄台幣成本、當地貨幣成本與運費；確認實際到貨並入庫後，才會增加可售庫存。"><Secondary onClick={back}>← 返回採購與供應商</Secondary></Header>
+    {error && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{error}</Card>}
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
+      <div className="space-y-5">
+        <Card className="p-5 sm:p-6">
+          <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE INFORMATION</p>
+          <h2 className="mt-2 text-xl font-semibold">採購資訊</h2>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-semibold text-[#575149]">採購單編號<input value={purchaseNumber} readOnly={!editing} onChange={(event) => setPurchaseNumber(event.target.value)} className={`${inputClass} read-only:bg-[#F4F1EC]`} /></label>
+            <label className="text-sm font-semibold text-[#575149]">下單時間<input type="date" value={orderDate} onChange={(event) => setOrderDate(event.target.value)} className={inputClass} /></label>
+            <label className="text-sm font-semibold text-[#575149]">到貨時間<input type="date" value={arrivalDate} onChange={(event) => setArrivalDate(event.target.value)} className={inputClass} /></label>
+            <label className="text-sm font-semibold text-[#575149]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass}><option value="">請選擇供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select>{!suppliers.length && <button onClick={openSuppliers} className="mt-2 text-xs font-semibold text-[#5E7665]">＋ 先建立供應商</button>}</label>
+            <label className="text-sm font-semibold text-[#575149]">當地幣別<select value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)} className={inputClass}>{localCurrencyOptions.map((currencyOption) => <option key={currencyOption.code} value={currencyOption.code}>{currencyOption.label}</option>)}</select></label>
+            <label className="text-sm font-semibold text-[#575149]">運費（{currencyCode}）<input type="number" min="0" step="0.01" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} className={inputClass} /></label>
+            <label className="text-sm font-semibold text-[#575149] sm:col-span-2">交易方式／付款條件<input value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} placeholder="例如：轉帳全額付款、貨到付款" className={inputClass} /></label>
+          </div>
+        </Card>
+        <Card className="overflow-hidden">
+          <div className="border-b border-[#F0EDE8] p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ITEMS</p><h2 className="mt-2 text-xl font-semibold">採購商品</h2><div className="mt-4"><ProductSearchAdd products={unselected} onAdd={(product) => addProduct(String(product.id))} placeholder="搜尋貨號、商品名稱或分類後加入採購單" /></div></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">貨號</th><th className="px-3 py-3">商品名稱</th><th className="px-3 py-3">分類</th><th className="px-3 py-3">台幣成本</th><th className="px-3 py-3">當地貨幣成本（{currencyCode}）</th><th className="px-3 py-3">數量</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{selected.length ? selected.map((product) => { const id = String(product.id); return <tr key={id}><td className="px-6 py-4 font-mono text-xs text-[#6E695F]">{product.sku}</td><td className="px-3 py-4"><b>{product.name}</b><small className="mt-1 block text-xs text-[#938D84]">{product.specification}</small></td><td className="px-3 py-4 text-[#726C63]">{product.country} · {product.category}</td><td className="px-3 py-4"><input aria-label={`${product.name} 台幣成本`} type="number" min="0" value={unitCosts[id] ?? product.cost} onChange={(event) => setUnitCosts((previous) => ({ ...previous, [id]: Math.max(0, Number(event.target.value) || 0) }))} className="h-9 w-24 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm outline-none" /></td><td className="px-3 py-4"><input aria-label={`${product.name} 當地貨幣成本`} type="number" min="0" step="0.01" value={localUnitCosts[id] ?? 0} onChange={(event) => setLocalUnitCosts((previous) => ({ ...previous, [id]: Math.max(0, Number(event.target.value) || 0) }))} className="h-9 w-32 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm outline-none" /></td><td className="px-3 py-4"><input aria-label={`${product.name} 數量`} type="number" min="1" value={lines[id]} onChange={(event) => { const quantity = Math.max(0, Number(event.target.value) || 0); if (!quantity) removeProduct(id); else setLines((previous) => ({ ...previous, [id]: quantity })); }} className="h-9 w-20 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm outline-none" /></td><td className="px-6 py-4 text-right"><button onClick={() => removeProduct(id)} className="text-sm font-semibold text-[#A35F37]">移除</button></td></tr>; }) : <tr><td colSpan={7} className="px-6 py-10 text-center text-[#8D877E]">請用貨號選擇要採購的商品。</td></tr>}</tbody></table></div>
+        </Card>
+      </div>
+      <aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE SUMMARY</p><h2 className="mt-2 text-xl font-semibold">採購摘要</h2><p className="mt-2 text-sm text-[#807A72]">供應商：{suppliers.find((supplier) => supplier.id === supplierId)?.name ?? "尚未選擇"}</p><p className="mt-1 text-sm text-[#807A72]">當地幣別：{currencyLabel}</p><div className="mt-5 space-y-3 border-y border-[#F0EDE8] py-5">{selected.length ? selected.map((product) => <div key={product.id} className="flex justify-between gap-3 text-sm"><span><b className="block">{product.name}</b><small className="mt-1 block text-xs text-[#938D84]">{product.sku} · × {lines[String(product.id)]}</small></span><b>{localCurrency((localUnitCosts[String(product.id)] ?? 0) * lines[String(product.id)], currencyCode)}</b></div>) : <p className="text-sm text-[#938D84]">尚未選擇採購商品。</p>}</div><div className="space-y-3 py-5 text-sm"><div className="flex justify-between"><span>當地商品成本</span><b>{localCurrency(localProductTotal, currencyCode)}</b></div><div className="flex justify-between"><span>運費</span><b>{localCurrency(shippingAmount, currencyCode)}</b></div><div className="flex justify-between border-t border-[#F0EDE8] pt-4 text-base font-semibold"><span>當地採購總額</span><b>{localCurrency(localTotal, currencyCode)}</b></div><div className="flex justify-between text-xs text-[#807A72]"><span>台幣商品成本</span><b>{currency(taiwanCostTotal)}</b></div></div><Primary onClick={() => { void save(); }} disabled={saving || !supplierId || !selected.length} className="mt-2 w-full">{saving ? "儲存中…" : editing ? "儲存採購單修改" : "建立採購單"}</Primary></aside>
+    </div>
+  </>;
+}
+
 function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { catalog: Product[]; stock: Record<string, number>; confirmOrder: (lines: Record<string, number>) => void; back: () => void; openCustomers: () => void }) {
   const storedProducts = catalog.filter((product) => typeof product.id === "string");
   const [lines, setLines] = useState<Record<string, number>>(() => Object.fromEntries(storedProducts.slice(0, 2).map((product) => [String(product.id), 1])));
@@ -1573,7 +1723,7 @@ export default function Home() {
   const openNewProduct = () => { setProductDraft(null); go("newProduct"); };
   const copyProduct = (product: Product) => { setProductDraft(product); go("newProduct"); };
   const openEditProduct = (product: Product) => { setEditingProduct(product); go("editProduct"); };
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPageV2 product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)} editProduct={() => openEditProduct(selectedProduct)}/> : view === "editProduct" ? <EditProductPage product={editingProduct ?? selectedProduct} back={() => go("product")} onUpdated={(product) => { updateDatabaseProduct(product); setEditingProduct(product); go("product"); }} /> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseV2 key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverviewV2 catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPageV2 product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)} editProduct={() => openEditProduct(selectedProduct)}/> : view === "editProduct" ? <EditProductPage product={editingProduct ?? selectedProduct} back={() => go("product")} onUpdated={(product) => { updateDatabaseProduct(product); setEditingProduct(product); go("product"); }} /> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseForeignCosts key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverviewV2 catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
   const isProductsView = view === "products" || view === "product" || view === "editProduct" || view === "newProduct" || view === "importProducts";
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
   const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";

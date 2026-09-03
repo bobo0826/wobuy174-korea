@@ -6,8 +6,8 @@ import { purchaseSelect } from "../route";
 export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
-type PurchaseItemInput = { productId?: unknown; unitCost?: unknown; quantity?: unknown };
-type UpdatePurchaseInput = { action?: unknown; purchaseNumber?: unknown; supplierId?: unknown; orderDate?: unknown; arrivalDate?: unknown; paymentTerms?: unknown; items?: unknown };
+type PurchaseItemInput = { productId?: unknown; unitCost?: unknown; localUnitCost?: unknown; quantity?: unknown };
+type UpdatePurchaseInput = { action?: unknown; purchaseNumber?: unknown; supplierId?: unknown; orderDate?: unknown; arrivalDate?: unknown; paymentTerms?: unknown; currencyCode?: unknown; shippingFee?: unknown; items?: unknown };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -21,6 +21,11 @@ const nonNegativeInteger = (value: unknown) => {
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 ? number : null;
 };
+const nonNegativeAmount = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+};
+const currencyCodes = new Set(["TWD", "KRW", "JPY", "CNY", "USD"]);
 const errorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "object" && error !== null && "message" in error) {
@@ -30,6 +35,10 @@ const errorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 const missingDatabaseFunction = (error: { code?: string; message?: string } | null) => Boolean(error && (error.code === "PGRST202" || /receive_purchase_order/i.test(error.message ?? "") && /(function|schema cache|could not find)/i.test(error.message ?? "")));
+const foreignCostColumnsMissing = (error: unknown) => {
+  const message = error instanceof Error ? error.message : typeof error === "object" && error !== null && "message" in error ? String((error as { message?: unknown }).message ?? "") : "";
+  return /currency_code|shipping_fee|local_unit_cost/i.test(message) && /(schema cache|does not exist|could not find)/i.test(message);
+};
 
 function validateUpdate(input: UpdatePurchaseInput) {
   const supplierId = text(input.supplierId);
@@ -37,15 +46,19 @@ function validateUpdate(input: UpdatePurchaseInput) {
   const orderDate = text(input.orderDate);
   const arrivalDate = text(input.arrivalDate);
   const paymentTerms = text(input.paymentTerms);
+  const currencyCode = text(input.currencyCode) || "TWD";
+  const shippingFee = nonNegativeAmount(input.shippingFee);
   if (!uuidPattern.test(supplierId)) return { error: "請選擇已建立的供應商。" };
   if (!purchaseNumberPattern.test(purchaseNumber)) return { error: "採購單編號格式不正確。" };
   if (!datePattern.test(orderDate)) return { error: "下單時間格式不正確。" };
   if (arrivalDate && !datePattern.test(arrivalDate)) return { error: "到貨時間格式不正確。" };
+  if (!currencyCodes.has(currencyCode)) return { error: "當地幣別不正確。" };
+  if (shippingFee === null) return { error: "運費必須為零或正數。" };
   if (!Array.isArray(input.items) || !input.items.length) return { error: "請至少加入一項採購商品。" };
-  const items = (input.items as PurchaseItemInput[]).map((item) => ({ productId: text(item.productId), unitCost: nonNegativeInteger(item.unitCost), quantity: positiveInteger(item.quantity) }));
-  if (items.some((item) => !uuidPattern.test(item.productId) || item.unitCost === null || item.quantity === null)) return { error: "採購商品資料不完整。" };
+  const items = (input.items as PurchaseItemInput[]).map((item) => ({ productId: text(item.productId), unitCost: nonNegativeInteger(item.unitCost), localUnitCost: nonNegativeAmount(item.localUnitCost), quantity: positiveInteger(item.quantity) }));
+  if (items.some((item) => !uuidPattern.test(item.productId) || item.unitCost === null || item.localUnitCost === null || item.quantity === null)) return { error: "採購商品資料不完整。" };
   if (new Set(items.map((item) => item.productId)).size !== items.length) return { error: "同一商品請合併為一筆採購明細。" };
-  return { payload: { supplierId, purchaseNumber, orderDate, arrivalDate: arrivalDate || null, paymentTerms, items: items as Array<{ productId: string; unitCost: number; quantity: number }> } };
+  return { payload: { supplierId, purchaseNumber, orderDate, arrivalDate: arrivalDate || null, paymentTerms, currencyCode, shippingFee, items: items as Array<{ productId: string; unitCost: number; localUnitCost: number; quantity: number }> } };
 }
 
 async function updatePurchaseOrder(id: string, input: UpdatePurchaseInput) {
@@ -85,11 +98,11 @@ async function updatePurchaseOrder(id: string, input: UpdatePurchaseInput) {
   }
 
   const total = payload.items.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
-  const { error: headerError } = await supabase.from("purchase_orders").update({ purchase_number: payload.purchaseNumber, supplier_id: supplier.id, supplier_name: supplier.name, order_date: payload.orderDate, arrival_date: payload.arrivalDate, expected_arrival_date: payload.arrivalDate, payment_terms: payload.paymentTerms, total, updated_at: new Date().toISOString() }).eq("id", id);
+  const { error: headerError } = await supabase.from("purchase_orders").update({ purchase_number: payload.purchaseNumber, supplier_id: supplier.id, supplier_name: supplier.name, order_date: payload.orderDate, arrival_date: payload.arrivalDate, expected_arrival_date: payload.arrivalDate, payment_terms: payload.paymentTerms, currency_code: payload.currencyCode, shipping_fee: payload.shippingFee, total, updated_at: new Date().toISOString() }).eq("id", id);
   if (headerError) throw headerError;
   const { error: deleteError } = await supabase.from("purchase_order_items").delete().eq("purchase_order_id", id);
   if (deleteError) throw deleteError;
-  const { error: itemError } = await supabase.from("purchase_order_items").insert(payload.items.map((item) => ({ purchase_order_id: id, product_id: item.productId, product_name: productsById.get(item.productId)?.name ?? "", unit_cost: item.unitCost, quantity: item.quantity })));
+  const { error: itemError } = await supabase.from("purchase_order_items").insert(payload.items.map((item) => ({ purchase_order_id: id, product_id: item.productId, product_name: productsById.get(item.productId)?.name ?? "", unit_cost: item.unitCost, local_unit_cost: item.localUnitCost, quantity: item.quantity })));
   if (itemError) throw itemError;
   const { data, error } = await supabase.from("purchase_orders").select(purchaseSelect).eq("id", id).single();
   if (error) throw error;
@@ -164,6 +177,7 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     })();
     return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
   } catch (error) {
+    if (foreignCostColumnsMissing(error)) return NextResponse.json({ message: "採購的當地幣別、成本與運費欄位尚未建立。請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
     return NextResponse.json({ message: errorMessage(error, "無法完成採購單操作。") }, { status: 500 });
   }
 }

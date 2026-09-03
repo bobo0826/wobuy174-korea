@@ -103,6 +103,8 @@ create table if not exists purchase_orders (
   -- 相容早期資料與 API；新功能請使用 order_date / arrival_date。
   expected_arrival_date date,
   payment_terms text not null default '',
+  currency_code text not null default 'TWD' check (currency_code in ('TWD', 'KRW', 'JPY', 'CNY', 'USD')),
+  shipping_fee numeric(14,2) not null default 0 check (shipping_fee >= 0),
   status text not null default '草稿' check (status in ('草稿', '已送出', '部分收貨', '待收貨', '已完成', '已取消')),
   total integer not null default 0 check (total >= 0),
   received_at timestamptz,
@@ -116,6 +118,7 @@ create table if not exists purchase_order_items (
   product_id uuid references products(id) on delete set null,
   product_name text not null,
   unit_cost integer not null check (unit_cost >= 0),
+  local_unit_cost numeric(14,2) not null default 0 check (local_unit_cost >= 0),
   quantity integer not null check (quantity > 0),
   received_quantity integer not null default 0 check (received_quantity >= 0 and received_quantity <= quantity),
   created_at timestamptz not null default now()

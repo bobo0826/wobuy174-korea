@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 type PurchaseItemInput = {
   productId?: unknown;
   unitCost?: unknown;
+  localUnitCost?: unknown;
   quantity?: unknown;
 };
 
@@ -16,6 +17,8 @@ type PurchaseOrderInput = {
   orderDate?: unknown;
   arrivalDate?: unknown;
   paymentTerms?: unknown;
+  currencyCode?: unknown;
+  shippingFee?: unknown;
   items?: unknown;
 };
 
@@ -31,6 +34,11 @@ const nonNegativeInteger = (value: unknown) => {
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 ? number : null;
 };
+const nonNegativeAmount = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+};
+const currencyCodes = new Set(["TWD", "KRW", "JPY", "CNY", "USD"]);
 const errorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "object" && error !== null && "message" in error) {
@@ -64,25 +72,35 @@ function validatePurchaseOrder(input: PurchaseOrderInput) {
   const arrivalDate = text(input.arrivalDate);
   const requestedPurchaseNumber = text(input.purchaseNumber);
   const paymentTerms = text(input.paymentTerms);
+  const currencyCode = text(input.currencyCode) || "TWD";
+  const shippingFee = nonNegativeAmount(input.shippingFee);
   if (!uuidPattern.test(supplierId)) return { error: "請選擇已建立的供應商。" };
   if (!datePattern.test(orderDate)) return { error: "下單時間格式不正確。" };
   if (arrivalDate && !datePattern.test(arrivalDate)) return { error: "到貨時間格式不正確。" };
   if (requestedPurchaseNumber && !purchaseNumberPattern.test(requestedPurchaseNumber)) return { error: "採購單編號格式不正確。" };
+  if (!currencyCodes.has(currencyCode)) return { error: "當地幣別不正確。" };
+  if (shippingFee === null) return { error: "運費必須為零或正數。" };
   if (!Array.isArray(input.items) || input.items.length === 0) return { error: "請至少加入一項採購商品。" };
 
   const items = (input.items as PurchaseItemInput[]).map((item) => ({
     productId: text(item.productId),
     unitCost: nonNegativeInteger(item.unitCost),
+    localUnitCost: nonNegativeAmount(item.localUnitCost),
     quantity: positiveInteger(item.quantity),
   }));
-  if (items.some((item) => !uuidPattern.test(item.productId) || item.unitCost === null || item.quantity === null)) return { error: "採購商品資料不完整。" };
+  if (items.some((item) => !uuidPattern.test(item.productId) || item.unitCost === null || item.localUnitCost === null || item.quantity === null)) return { error: "採購商品資料不完整。" };
   if (new Set(items.map((item) => item.productId)).size !== items.length) return { error: "同一個商品請合併為一筆採購明細。" };
 
-  return { purchase: { supplierId, orderDate, arrivalDate: arrivalDate || null, requestedPurchaseNumber, paymentTerms, items: items as Array<{ productId: string; unitCost: number; quantity: number }> } };
+  return { purchase: { supplierId, orderDate, arrivalDate: arrivalDate || null, requestedPurchaseNumber, paymentTerms, currencyCode, shippingFee, items: items as Array<{ productId: string; unitCost: number; localUnitCost: number; quantity: number }> } };
 }
 
 // received_at 是後期才加入的欄位；先不列入讀取，避免既有資料庫因缺欄位而無法使用採購流程。
-export const purchaseSelect = "id, purchase_number, supplier_id, supplier_name, order_date, arrival_date, expected_arrival_date, payment_terms, status, total, created_at, updated_at, purchase_order_items(id, product_id, product_name, unit_cost, quantity, received_quantity)";
+export const purchaseSelect = "id, purchase_number, supplier_id, supplier_name, order_date, arrival_date, expected_arrival_date, payment_terms, currency_code, shipping_fee, status, total, created_at, updated_at, purchase_order_items(id, product_id, product_name, unit_cost, local_unit_cost, quantity, received_quantity)";
+
+const foreignCostColumnsMissing = (error: unknown) => {
+  const message = error instanceof Error ? error.message : typeof error === "object" && error !== null && "message" in error ? String((error as { message?: unknown }).message ?? "") : "";
+  return /currency_code|shipping_fee|local_unit_cost/i.test(message) && /(schema cache|does not exist|could not find)/i.test(message);
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -97,6 +115,7 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ purchaseOrders: data ?? [] }), auth.context);
   } catch (error) {
+    if (foreignCostColumnsMissing(error)) return NextResponse.json({ message: "採購的當地幣別、成本與運費欄位尚未建立。請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
     return NextResponse.json({ message: errorMessage(error, "無法讀取採購單。") }, { status: 503 });
   }
 }
@@ -132,6 +151,8 @@ export async function POST(request: NextRequest) {
         // 舊欄位同步保存，讓尚未更新的舊版頁面仍可正確顯示。
         expected_arrival_date: payload.arrivalDate,
         payment_terms: payload.paymentTerms,
+        currency_code: payload.currencyCode,
+        shipping_fee: payload.shippingFee,
         status: "待收貨",
         total,
       })
@@ -147,6 +168,7 @@ export async function POST(request: NextRequest) {
       product_id: item.productId,
       product_name: productsById.get(item.productId)?.name ?? "",
       unit_cost: item.unitCost,
+      local_unit_cost: item.localUnitCost,
       quantity: item.quantity,
     })));
     if (itemsError) {
@@ -165,6 +187,7 @@ export async function POST(request: NextRequest) {
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ purchaseOrder: data }, { status: 201 }), auth.context);
   } catch (error) {
+    if (foreignCostColumnsMissing(error)) return NextResponse.json({ message: "採購的當地幣別、成本與運費欄位尚未建立。請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
     return NextResponse.json({ message: errorMessage(error, "無法建立採購單。") }, { status: 500 });
   }
 }
