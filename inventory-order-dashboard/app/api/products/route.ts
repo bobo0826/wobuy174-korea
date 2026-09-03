@@ -66,9 +66,19 @@ export async function GET(request: NextRequest) {
     const auth = await requireSignedIn(request);
     if (!auth.context) return auth.response!;
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase.from("products").select(productSelect).order("created_at", { ascending: false });
+    const [{ data, error }, { data: soldItems, error: soldItemsError }] = await Promise.all([
+      supabase.from("products").select(productSelect).order("created_at", { ascending: false }),
+      supabase.from("order_items").select("product_id, quantity, orders!inner(status)").eq("orders.status", "已出貨"),
+    ]);
     if (error) throw error;
-    return withRefreshedSession(NextResponse.json({ products: data }), auth.context);
+    if (soldItemsError) throw soldItemsError;
+
+    const soldByProduct = (soldItems ?? []).reduce<Record<string, number>>((totals, item) => {
+      if (item.product_id) totals[item.product_id] = (totals[item.product_id] ?? 0) + item.quantity;
+      return totals;
+    }, {});
+    const products = (data ?? []).map((product) => ({ ...product, sold_stock: soldByProduct[product.id] ?? 0 }));
+    return withRefreshedSession(NextResponse.json({ products }), auth.context);
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "無法讀取商品資料。" },
