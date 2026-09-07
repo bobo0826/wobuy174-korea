@@ -113,7 +113,7 @@ async function receivePurchaseOrderFallback(id: string, items: Array<{ item_id: 
   const supabase = getSupabaseAdmin();
   const { data: order, error: orderError } = await supabase
     .from("purchase_orders")
-    .select("id, purchase_number, status, purchase_order_items(id, product_id, product_name, quantity, received_quantity)")
+    .select("id, purchase_number, status, purchase_order_items(id, product_id, product_name, unit_cost, quantity, received_quantity)")
     .eq("id", id)
     .single();
   if (orderError || !order) throw new Error("找不到採購單。");
@@ -137,7 +137,7 @@ async function receivePurchaseOrderFallback(id: string, items: Array<{ item_id: 
 
     const { error: lineError } = await supabase.from("purchase_order_items").update({ received_quantity: line.received_quantity + item.quantity }).eq("id", line.id);
     if (lineError) throw lineError;
-    const { error: productError } = await supabase.from("products").update({ available_stock: product.available_stock + item.quantity, incoming_stock: Math.max(0, product.incoming_stock - item.quantity), updated_at: new Date().toISOString() }).eq("id", line.product_id);
+    const { error: productError } = await supabase.from("products").update({ available_stock: product.available_stock + item.quantity, incoming_stock: Math.max(0, product.incoming_stock - item.quantity), cost: line.unit_cost, updated_at: new Date().toISOString() }).eq("id", line.product_id);
     if (productError) throw productError;
     const { error: adjustmentError } = await supabase.from("inventory_adjustments").insert({ product_id: line.product_id, quantity_change: item.quantity, reason: "採購收貨", note: `採購單 ${order.purchase_number}` });
     if (adjustmentError) throw adjustmentError;
@@ -151,6 +151,24 @@ async function receivePurchaseOrderFallback(id: string, items: Array<{ item_id: 
   const { data, error } = await supabase.from("purchase_orders").select(purchaseSelect).eq("id", id).single();
   if (error) throw error;
   return data;
+}
+
+async function syncLatestCostsForReceivedItems(itemIds: string[]) {
+  const supabase = getSupabaseAdmin();
+  const { data: receivedItems, error } = await supabase
+    .from("purchase_order_items")
+    .select("id, product_id, unit_cost")
+    .in("id", itemIds);
+  if (error) throw error;
+
+  for (const item of receivedItems ?? []) {
+    if (!item.product_id) continue;
+    const { error: productError } = await supabase
+      .from("products")
+      .update({ cost: item.unit_cost, updated_at: new Date().toISOString() })
+      .eq("id", item.product_id);
+    if (productError) throw productError;
+  }
 }
 
 export async function PATCH(request: NextRequest, { params }: Context) {
@@ -175,6 +193,7 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       if (error) throw error;
       return data;
     })();
+    await syncLatestCostsForReceivedItems(items.map((item) => item.item_id));
     return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
   } catch (error) {
     if (foreignCostColumnsMissing(error)) return NextResponse.json({ message: "採購的當地幣別、成本與運費欄位尚未建立。請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });

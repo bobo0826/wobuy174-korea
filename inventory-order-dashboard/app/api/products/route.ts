@@ -76,12 +76,6 @@ function validateProductUpdate(input: ProductUpdateInput) {
   return { product, changeNote: text(input.changeNote) };
 }
 
-const changeSnapshot = (product: Record<string, unknown>) => ({ sku: product.sku, name: product.name, country: product.country, category: product.category, specification: product.specification, note: product.note, cost: product.cost, staff_price: product.staff_price, retail_price: product.retail_price, safety_stock: product.safety_stock, supplier_id: product.supplier_id });
-const historyTableMissing = (error: unknown) => {
-  const message = error instanceof Error ? error.message : typeof error === "object" && error !== null && "message" in error ? String((error as { message?: unknown }).message ?? "") : "";
-  return (typeof error === "object" && error !== null && (error as { code?: string }).code === "PGRST205") || /product_change_logs/i.test(message) && /(schema cache|does not exist|could not find)/i.test(message);
-};
-
 const productSelect = "*, suppliers(name)";
 
 export async function GET(request: NextRequest) {
@@ -147,24 +141,14 @@ export async function PATCH(request: NextRequest) {
       const validation = validateProductUpdate(body);
       if ("error" in validation) return NextResponse.json(validation, { status: 400 });
       const supabase = getSupabaseAdmin();
-      const { error: historyCheckError } = await supabase.from("product_change_logs").select("id").limit(1);
-      if (historyCheckError) throw historyCheckError;
-      const { data: previous, error: previousError } = await supabase.from("products").select(productSelect).eq("id", id).single();
-      if (previousError || !previous) return NextResponse.json({ message: "找不到商品資料。" }, { status: 404 });
       if (validation.product.supplier_id) {
         const { data: supplier, error: supplierError } = await supabase.from("suppliers").select("id").eq("id", validation.product.supplier_id).maybeSingle();
         if (supplierError) throw supplierError;
         if (!supplier) return NextResponse.json({ message: "找不到選擇的供應商。" }, { status: 400 });
       }
-      const before = changeSnapshot(previous as Record<string, unknown>);
-      const after = changeSnapshot(validation.product as Record<string, unknown>);
-      const changedFields = Object.keys(after).filter((field) => before[field as keyof typeof before] !== after[field as keyof typeof after]);
       const { data, error } = await supabase.from("products").update({ ...validation.product, updated_at: new Date().toISOString() }).eq("id", id).select(productSelect).single();
       if (error) throw error;
-      if (changedFields.length || validation.changeNote) {
-        const { error: logError } = await supabase.from("product_change_logs").insert({ product_id: id, change_note: validation.changeNote, changed_by: auth.context.profile.displayName, changes: { changedFields, before, after } });
-        if (logError) throw logError;
-      }
+      if (!data) return NextResponse.json({ message: "找不到商品資料。" }, { status: 404 });
       const sync = await syncProductToGoogleSheet(data);
       return withRefreshedSession(NextResponse.json({ product: data, sync }, { status: 200 }), auth.context);
     }
@@ -188,7 +172,6 @@ export async function PATCH(request: NextRequest) {
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ product: data }), auth.context);
   } catch (error) {
-    if (historyTableMissing(error)) return NextResponse.json({ message: "商品異動紀錄資料庫尚未建立。請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
     return NextResponse.json({ message: error instanceof Error ? error.message : "無法更新商品供應商。" }, { status: 500 });
   }
 }

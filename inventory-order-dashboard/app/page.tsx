@@ -151,6 +151,21 @@ type ProductChangeLog = {
   created_at: string;
 };
 
+type ReceiptCostEntry = {
+  id: string;
+  unit_cost: number;
+  local_unit_cost: number;
+  quantity: number;
+  received_quantity: number;
+  created_at: string;
+  purchase_orders: {
+    purchase_number: string;
+    order_date: string | null;
+    arrival_date: string | null;
+    currency_code: string;
+  } | null;
+};
+
 // 商品清單只顯示資料庫內建立或匯入的實際商品，不再混入預設示範資料。
 const products: Array<Product & { id: number }> = [];
 const blankProduct: Product = { id: "", name: "", country: "", category: "", specification: "", note: "", sku: "", cost: 0, staffPrice: 0, retailPrice: 0, available: 0, reserved: 0, incoming: 0, sold: 0, safety: 0, tone: "#E9E1D5" };
@@ -393,7 +408,7 @@ function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onC
             <label className="col-span-2 text-sm font-semibold text-[#58534C]">備註<textarea value={form.note} onChange={(event) => updateForm("note", event.target.value)} placeholder="例如：限定款、預購商品或採購注意事項" className="mt-2 min-h-24 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /></label>
           </div>
         </Card>
-        <Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><label className="text-sm font-semibold text-[#58534C]">商品成本<input type="number" min="0" value={form.cost} onChange={(event) => updateForm("cost", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">員工價<input type="number" min="0" value={form.staffPrice} onChange={(event) => updateForm("staffPrice", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">一般售價<input type="number" min="0" value={form.retailPrice} onChange={(event) => updateForm("retailPrice", event.target.value)} className={inputClass} /></label></div></Card>
+        <Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><label className="text-sm font-semibold text-[#58534C]">最新成本<input type="number" min="0" value={form.cost} onChange={(event) => updateForm("cost", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">員工價<input type="number" min="0" value={form.staffPrice} onChange={(event) => updateForm("staffPrice", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">一般售價<input type="number" min="0" value={form.retailPrice} onChange={(event) => updateForm("retailPrice", event.target.value)} className={inputClass} /></label></div></Card>
       </div>
       <aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6 xl:sticky xl:top-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">初始庫存</h2><label className="mt-5 block text-sm font-semibold text-[#58534C]">可售庫存<input type="number" min="0" value={form.availableStock} onChange={(event) => updateForm("availableStock", event.target.value)} className={inputClass} /></label><label className="mt-4 block text-sm font-semibold text-[#58534C]">安全庫存<input type="number" min="0" value={form.safetyStock} onChange={(event) => updateForm("safetyStock", event.target.value)} className={inputClass} /></label><p className="mt-5 rounded-xl bg-[#F8F6F2] p-4 text-xs leading-5 text-[#746D63]">建立後可從庫存管理頁面持續調整進貨、保留與可售數量。</p><Primary onClick={saveProduct} disabled={saving} className="mt-5 w-full">{saving ? "儲存中…" : "儲存商品"}</Primary></aside>
     </div>
@@ -415,7 +430,7 @@ type ImportRow = {
   safetyStock: string;
 };
 
-const importTemplateHeaders = ["商品編號", "商品名稱", "國家", "商品種類", "商品規格", "備註", "商品成本", "員工價", "一般售價", "可售庫存", "安全庫存"];
+const importTemplateHeaders = ["商品編號", "商品名稱", "國家", "商品種類", "商品規格", "備註", "最新成本", "員工價", "一般售價", "可售庫存", "安全庫存"];
 const importHeaderKeys: Record<string, keyof ImportRow> = {
   "商品編號": "sku", sku: "sku",
   "商品名稱": "name", name: "name",
@@ -423,7 +438,7 @@ const importHeaderKeys: Record<string, keyof ImportRow> = {
   "商品種類": "category", category: "category",
   "商品規格": "specification", specification: "specification",
   "備註": "note", note: "note",
-  "商品成本": "cost", cost: "cost",
+  "最新成本": "cost", "商品成本": "cost", cost: "cost",
   "員工價": "staffPrice", staffprice: "staffPrice",
   "一般售價": "retailPrice", retailprice: "retailPrice",
   "可售庫存": "availableStock", availablestock: "availableStock",
@@ -701,6 +716,89 @@ function ProductPageV2({ product, stock, back, openStock, copyProduct, editProdu
   const basic = [["商品編號", product.sku], ["商品名稱", product.name], ["國家", product.country], ["商品種類", product.category], ["商品規格", product.specification], ["供應商", product.supplierName || "尚未指定供應商"], ["備註", product.note || "—"]];
   const price = [["商品成本", currency(product.cost)], ["員工價", currency(product.staffPrice)], ["一般售價", currency(product.retailPrice)]];
   return <><Header eyebrow="PRODUCT DETAIL" title={product.name} description={`商品編號：${product.sku}。完整管理商品資料、價格、供應商與庫存。`}><Secondary onClick={back}>← 返回商品資料庫</Secondary><Secondary onClick={editProduct}>修改商品</Secondary><Primary onClick={copyProduct}>複製商品</Primary></Header><div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><div className="flex items-start gap-4"><ProductTile product={product}/><div className="min-w-0 flex-1"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT PROFILE</p><h2 className="mt-1 text-xl font-semibold">{product.name}</h2><p className="mt-1 text-sm text-[#807A72]">{product.country} · {product.category} · {product.specification}</p></div><Pill tone="green">已上架</Pill></div><div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">{basic.map(([label, value]) => <div key={label} className={`bg-white p-4 ${label === "備註" ? "sm:col-span-2" : ""}`}><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#48433C]">{value}</p></div>)}</div></Card><Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">價格異動會在下方歷程中保留修改時間、前後價格與本次備註。</p></Card><Card className="overflow-hidden"><div className="border-b border-[#F0EDE8] p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CHANGE HISTORY</p><h2 className="mt-1 text-lg font-semibold">商品與價格異動紀錄</h2></div>{historyLoading ? <p className="p-6 text-sm text-[#8D877E]">載入異動紀錄中…</p> : historyError ? <p className="p-6 text-sm font-semibold text-[#A35F37]">{historyError}</p> : history.length ? <div className="divide-y divide-[#F0EDE8]">{history.map((entry) => { const fields = entry.changes?.changedFields ?? []; const before = entry.changes?.before ?? {}; const after = entry.changes?.after ?? {}; return <div key={entry.id} className="p-5 sm:p-6"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><b className="text-sm text-[#4A4640]">{new Date(entry.created_at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</b><small className="text-xs text-[#8D877E]">修改人：{entry.changed_by || "系統使用者"}</small></div>{entry.change_note && <p className="mt-3 rounded-xl bg-[#F8F6F2] px-3 py-2 text-sm leading-6 text-[#625D55]">本次備註：{entry.change_note}</p>}<div className="mt-3 flex flex-wrap gap-2">{fields.length ? fields.map((field) => <span key={field} className="rounded-lg border border-[#E9E5DF] bg-white px-2.5 py-1.5 text-xs text-[#625D55]"><b>{productFieldLabels[field] ?? field}</b>　{productChangeValue(field, before[field])} → {productChangeValue(field, after[field])}</span>) : <span className="text-xs text-[#938D84]">已留下修改備註，商品資料未變更。</span>}</div></div>; })}</div> : <p className="p-6 text-sm leading-6 text-[#8D877E]">尚無異動紀錄。按「修改商品」儲存後，這裡會保留每次價格與資料變動。</p>}</Card></div><aside className="space-y-5"><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存資訊</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["實際在庫", String(stock + product.reserved)], ["已保留", String(product.reserved)], ["可售庫存", String(stock)], ["到貨中", String(product.incoming)], ["安全庫存", String(product.safety)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b className={label === "可售庫存" ? "text-[#45634C]" : "text-[#45413B]"}>{value}</b></div>)}</div><Secondary onClick={openStock} className="mt-5 w-full">調整庫存</Secondary></Card></aside></div></>;
+}
+
+function ProductPageCostV3({ product, stock, back, openStock, copyProduct, editProduct }: { product: Product; stock: number; back: () => void; openStock: () => void; copyProduct: () => void; editProduct: () => void }) {
+  const [receiptCosts, setReceiptCosts] = useState<ReceiptCostEntry[]>([]);
+  const [receiptCostsLoading, setReceiptCostsLoading] = useState(true);
+  const [receiptCostsError, setReceiptCostsError] = useState("");
+
+  useEffect(() => {
+    if (typeof product.id !== "string") {
+      setReceiptCosts([]);
+      setReceiptCostsLoading(false);
+      return;
+    }
+    let active = true;
+    const loadReceiptCosts = async () => {
+      setReceiptCostsLoading(true);
+      setReceiptCostsError("");
+      try {
+        const response = await fetch(`/api/products/${encodeURIComponent(product.id)}/receipt-costs`);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message ?? "無法讀取入庫成本。 ");
+        if (active) setReceiptCosts(result.receiptCosts ?? []);
+      } catch (reason) {
+        if (active) setReceiptCostsError(reason instanceof Error ? reason.message : "無法讀取入庫成本。 ");
+      } finally {
+        if (active) setReceiptCostsLoading(false);
+      }
+    };
+    void loadReceiptCosts();
+    return () => { active = false; };
+  }, [product.id]);
+
+  const basic = [["商品編號", product.sku], ["商品名稱", product.name], ["國家", product.country], ["商品種類", product.category], ["商品規格", product.specification], ["供應商", product.supplierName || "尚未指定供應商"], ["備註", product.note || "—"]];
+  const price = [["最新成本", currency(product.cost)], ["員工價", currency(product.staffPrice)], ["一般售價", currency(product.retailPrice)]];
+  const dateLabel = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value)) : "—";
+
+  return <>
+    <Header eyebrow="PRODUCT DETAIL" title={product.name} description={`商品編號：${product.sku}。管理商品資料、最新成本、入庫成本與庫存。`}><Secondary onClick={back}>← 返回商品資料庫</Secondary><Secondary onClick={editProduct}>修改商品</Secondary><Primary onClick={copyProduct}>複製商品</Primary></Header>
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+      <div className="space-y-5">
+        <Card className="p-5 sm:p-6"><div className="flex items-start gap-4"><ProductTile product={product}/><div className="min-w-0 flex-1"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT PROFILE</p><h2 className="mt-1 text-xl font-semibold">{product.name}</h2><p className="mt-1 text-sm text-[#807A72]">{product.country} · {product.category} · {product.specification}</p></div><Pill tone="green">已上架</Pill></div><div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">{basic.map(([label, value]) => <div key={label} className={`bg-white p-4 ${label === "備註" ? "sm:col-span-2" : ""}`}><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#48433C]">{value}</p></div>)}</div></Card>
+        <Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">確認採購單到貨並入庫後，系統會將該筆台幣單件成本更新為最新成本。</p></Card>
+        <Card className="overflow-hidden"><div className="border-b border-[#F0EDE8] p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">RECEIPT COSTS</p><h2 className="mt-1 text-lg font-semibold">每次入庫成本</h2></div>{receiptCostsLoading ? <p className="p-6 text-sm text-[#8D877E]">載入入庫成本中…</p> : receiptCostsError ? <p className="p-6 text-sm font-semibold text-[#A35F37]">{receiptCostsError}</p> : receiptCosts.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">採購單</th><th className="px-3 py-3">到貨／下單日期</th><th className="px-3 py-3">入庫數量</th><th className="px-3 py-3">台幣單件成本</th><th className="px-6 py-3">當地貨幣成本</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{receiptCosts.map((entry) => { const purchase = entry.purchase_orders; const localCost = Number(entry.local_unit_cost) || 0; return <tr key={entry.id}><td className="px-6 py-4 font-semibold text-[#4A4640]">{purchase?.purchase_number ?? "—"}</td><td className="px-3 py-4 text-[#625D55]">{dateLabel(purchase?.arrival_date ?? purchase?.order_date)}</td><td className="px-3 py-4 text-[#625D55]">{entry.received_quantity} 件</td><td className="px-3 py-4 font-semibold text-[#4A4640]">{currency(Number(entry.unit_cost) || 0)}</td><td className="px-6 py-4 text-[#625D55]">{localCost > 0 ? localCurrency(localCost, purchase?.currency_code || "TWD") : "—"}</td></tr>; })}</tbody></table></div> : <p className="p-6 text-sm leading-6 text-[#8D877E]">尚無已入庫資料。確認採購單到貨並入庫後，成本會顯示在這裡。</p>}</Card>
+      </div>
+      <aside className="space-y-5"><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存資訊</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["實際在庫", String(stock + product.reserved)], ["已保留", String(product.reserved)], ["可售庫存", String(stock)], ["到貨中", String(product.incoming)], ["安全庫存", String(product.safety)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b className={label === "可售庫存" ? "text-[#45634C]" : "text-[#45413B]"}>{value}</b></div>)}</div><Secondary onClick={openStock} className="mt-5 w-full">調整庫存</Secondary></Card></aside>
+    </div>
+  </>;
+}
+
+function EditProductCostV3({ product, back, onUpdated }: { product: Product; back: () => void; onUpdated: (product: Product) => void }) {
+  const [country, setCountry] = useState(product.country);
+  const [category, setCategory] = useState(product.category);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierId, setSupplierId] = useState(product.supplierId ?? "");
+  const [form, setForm] = useState({ sku: product.sku, name: product.name, specification: product.specification, note: product.note, cost: String(product.cost), staffPrice: String(product.staffPrice), retailPrice: String(product.retailPrice), safetyStock: String(product.safety) });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inputClass = "mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]";
+  const categoryOptions = productCategoriesByCountry[country] ?? [];
+  const updateForm = (field: keyof typeof form, value: string) => setForm((previous) => ({ ...previous, [field]: value }));
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/suppliers").then((response) => response.json().then((result) => { if (response.ok && active) setSuppliers(result.suppliers ?? []); })).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+  const save = async () => {
+    if (typeof product.id !== "string") { setError("只有已儲存到資料庫的商品可以修改。"); return; }
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "update", id: product.id, ...form, country, category, supplierId }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法儲存商品修改。");
+      onUpdated(toProduct(result.product as StoredProduct));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法儲存商品修改。");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <><Header eyebrow="EDIT PRODUCT" title="修改商品" description="調整商品資料、最新成本與售價。每次入庫成本會由採購到貨入庫自動帶入。"><Secondary onClick={back}>← 返回商品頁面</Secondary></Header>{error && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-5 text-sm font-semibold text-[#9B562A]">{error}</Card>}<div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">BASIC INFORMATION</p><h2 className="mt-1 text-lg font-semibold">商品基本資料</h2><div className="mt-5 grid grid-cols-2 gap-4"><label className="text-sm font-semibold text-[#58534C]">商品編號<input value={form.sku} onChange={(event) => updateForm("sku", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">商品名稱<input value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">國家<select value={country} onChange={(event) => { setCountry(event.target.value); setCategory(""); }} className={inputClass}><option>韓國</option><option>日本</option><option>大陸</option><option>台灣</option><option>其他</option></select></label><label className="text-sm font-semibold text-[#58534C]">商品種類<select value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass}><option value="">請選擇商品種類</option>{categoryOptions.map((option) => <option key={option}>{option}</option>)}</select></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass}><option value="">尚未指定供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">商品規格<input value={form.specification} onChange={(event) => updateForm("specification", event.target.value)} className={inputClass} /></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">商品備註<textarea value={form.note} onChange={(event) => updateForm("note", event.target.value)} className="mt-2 min-h-24 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-3 text-sm font-normal outline-none" /></label></div></Card><Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><label className="text-sm font-semibold text-[#58534C]">最新成本<input type="number" min="0" value={form.cost} onChange={(event) => updateForm("cost", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">員工價<input type="number" min="0" value={form.staffPrice} onChange={(event) => updateForm("staffPrice", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">一般售價<input type="number" min="0" value={form.retailPrice} onChange={(event) => updateForm("retailPrice", event.target.value)} className={inputClass} /></label></div></Card></div><aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6 xl:sticky xl:top-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存設定</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["可售庫存", String(product.available)], ["已保留", String(product.reserved)], ["到貨中", String(product.incoming)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b>{value}</b></div>)}</div><label className="mt-5 block text-sm font-semibold text-[#58534C]">安全庫存<input type="number" min="0" value={form.safetyStock} onChange={(event) => updateForm("safetyStock", event.target.value)} className={inputClass} /></label><p className="mt-5 rounded-xl bg-[#F8F6F2] p-4 text-xs leading-5 text-[#746D63]">可售庫存請從庫存總覽的「調整庫存」操作，才能保留正確的庫存異動紀錄。</p><Primary onClick={() => { void save(); }} disabled={saving} className="mt-5 w-full">{saving ? "儲存中…" : "儲存商品修改"}</Primary></aside></div></>;
 }
 
 function EditProductPage({ product, back, onUpdated }: { product: Product; back: () => void; onUpdated: (product: Product) => void }) {
@@ -1723,7 +1821,7 @@ export default function Home() {
   const openNewProduct = () => { setProductDraft(null); go("newProduct"); };
   const copyProduct = (product: Product) => { setProductDraft(product); go("newProduct"); };
   const openEditProduct = (product: Product) => { setEditingProduct(product); go("editProduct"); };
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPageV2 product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)} editProduct={() => openEditProduct(selectedProduct)}/> : view === "editProduct" ? <EditProductPage product={editingProduct ?? selectedProduct} back={() => go("product")} onUpdated={(product) => { updateDatabaseProduct(product); setEditingProduct(product); go("product"); }} /> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseForeignCosts key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverviewV2 catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPageCostV3 product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)} editProduct={() => openEditProduct(selectedProduct)}/> : view === "editProduct" ? <EditProductCostV3 product={editingProduct ?? selectedProduct} back={() => go("product")} onUpdated={(product) => { updateDatabaseProduct(product); setEditingProduct(product); go("product"); }} /> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseForeignCosts key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverviewV2 catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
   const isProductsView = view === "products" || view === "product" || view === "editProduct" || view === "newProduct" || view === "importProducts";
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
   const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";
