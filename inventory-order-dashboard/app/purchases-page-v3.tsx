@@ -50,11 +50,12 @@ const statusStyle: Record<PurchaseOrder["status"], string> = {
 };
 
 function canEdit(purchase: PurchaseOrder) {
-  return !["已完成", "已取消"].includes(purchase.status) && !purchase.purchase_order_items.some((item) => item.received_quantity > 0);
+  // 以實際收貨數量判斷。舊資料可能顯示「已完成」，但若已到貨數量為 0，仍應能回復並修改。
+  return purchase.status !== "已取消" && !purchase.purchase_order_items.some((item) => item.received_quantity > 0);
 }
 
 function canReceive(purchase: PurchaseOrder) {
-  return !["已完成", "已取消"].includes(purchase.status) && purchase.purchase_order_items.some((item) => item.received_quantity < item.quantity);
+  return purchase.status !== "已取消" && purchase.purchase_order_items.some((item) => item.received_quantity < item.quantity);
 }
 
 function canRevertReceipt(purchase: PurchaseOrder) {

@@ -68,7 +68,7 @@ async function updatePurchaseOrder(id: string, input: UpdatePurchaseInput) {
   const supabase = getSupabaseAdmin();
   const { data: current, error: currentError } = await supabase.from("purchase_orders").select("id, status, purchase_order_items(product_id, quantity, received_quantity)").eq("id", id).single();
   if (currentError || !current) throw new Error("找不到採購單。");
-  if (current.status === "已完成" || current.status === "已取消") throw new Error("已完成或已取消的採購單不可修改。");
+  if (current.status === "已取消") throw new Error("已取消的採購單不可修改。");
   if ((current.purchase_order_items ?? []).some((item) => item.received_quantity > 0)) throw new Error("採購單已有收貨紀錄，為維持庫存正確性不可再修改明細。");
 
   const { data: supplier, error: supplierError } = await supabase.from("suppliers").select("id, name").eq("id", payload.supplierId).single();
@@ -98,7 +98,8 @@ async function updatePurchaseOrder(id: string, input: UpdatePurchaseInput) {
   }
 
   const total = payload.items.reduce((sum, item) => sum + item.unitCost * item.quantity, 0);
-  const { error: headerError } = await supabase.from("purchase_orders").update({ purchase_number: payload.purchaseNumber, supplier_id: supplier.id, supplier_name: supplier.name, order_date: payload.orderDate, arrival_date: payload.arrivalDate, expected_arrival_date: payload.arrivalDate, payment_terms: payload.paymentTerms, currency_code: payload.currencyCode, shipping_fee: payload.shippingFee, total, updated_at: new Date().toISOString() }).eq("id", id);
+  // 沒有任何收貨數量時，一律回到待收貨，順便修正舊資料可能遺留的「已完成」狀態。
+  const { error: headerError } = await supabase.from("purchase_orders").update({ purchase_number: payload.purchaseNumber, supplier_id: supplier.id, supplier_name: supplier.name, order_date: payload.orderDate, arrival_date: payload.arrivalDate, expected_arrival_date: payload.arrivalDate, payment_terms: payload.paymentTerms, currency_code: payload.currencyCode, shipping_fee: payload.shippingFee, total, status: "待收貨", updated_at: new Date().toISOString() }).eq("id", id);
   if (headerError) throw headerError;
   const { error: deleteError } = await supabase.from("purchase_order_items").delete().eq("purchase_order_id", id);
   if (deleteError) throw deleteError;
@@ -211,7 +212,7 @@ async function revertPurchaseReceipt(id: string, performedBy: string) {
 
   const { error: headerError } = await supabase
     .from("purchase_orders")
-    .update({ status: "待收貨", received_at: null, updated_at: new Date().toISOString() })
+    .update({ status: "待收貨", updated_at: new Date().toISOString() })
     .eq("id", id);
   if (headerError) throw headerError;
 
