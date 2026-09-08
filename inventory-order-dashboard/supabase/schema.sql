@@ -6,6 +6,7 @@ create table if not exists products (
   name text not null,
   country text not null,
   category text not null,
+  subcategory text not null default '',
   specification text not null default '',
   note text not null default '',
   cost integer not null default 0 check (cost >= 0),
@@ -141,6 +142,7 @@ create table if not exists financial_transactions (
 );
 
 create index if not exists products_country_category_idx on products(country, category);
+create index if not exists products_country_category_subcategory_idx on products(country, category, subcategory);
 create index if not exists products_supplier_id_idx on products(supplier_id);
 create index if not exists suppliers_name_idx on suppliers(name);
 create index if not exists orders_customer_id_idx on orders(customer_id);

@@ -9,6 +9,7 @@ type ProductRecord = {
   name: string;
   country: string;
   category: string;
+  subcategory: string;
   specification: string;
   note: string;
   cost: number;

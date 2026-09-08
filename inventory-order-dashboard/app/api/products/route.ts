@@ -10,6 +10,7 @@ type ProductInput = {
   name?: unknown;
   country?: unknown;
   category?: unknown;
+  subcategory?: unknown;
   specification?: unknown;
   note?: unknown;
   cost?: unknown;
@@ -39,6 +40,7 @@ function validateProduct(input: ProductInput) {
     name: text(input.name),
     country: text(input.country),
     category: text(input.category),
+    subcategory: text(input.subcategory),
     specification: text(input.specification),
     note: text(input.note),
     cost: nonNegativeInteger(input.cost),
@@ -67,7 +69,7 @@ function validateProduct(input: ProductInput) {
 function validateProductUpdate(input: ProductUpdateInput) {
   const supplierId = text(input.supplierId);
   const product = {
-    sku: text(input.sku), name: text(input.name), country: text(input.country), category: text(input.category), specification: text(input.specification), note: text(input.note),
+    sku: text(input.sku), name: text(input.name), country: text(input.country), category: text(input.category), subcategory: text(input.subcategory), specification: text(input.specification), note: text(input.note),
     cost: nonNegativeInteger(input.cost), staff_price: nonNegativeInteger(input.staffPrice), retail_price: nonNegativeInteger(input.retailPrice), safety_stock: nonNegativeInteger(input.safetyStock), supplier_id: supplierId || null,
   };
   if (!product.sku || !product.name || !product.country || !product.category) return { error: "請完整填寫商品編號、名稱、國家與商品種類。" };
