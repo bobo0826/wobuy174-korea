@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { OrderEditor } from "./order-editor-v3";
 
 type Tone = "green" | "orange" | "blue" | "stone";
 type StoredProduct = { id: string; sku: string; name: string; country: string; category: string; specification: string; cost: number; staff_price: number; retail_price: number; available_stock: number };
@@ -15,7 +16,7 @@ const toneFor = (status: StoredOrder["status"]): Tone => status === "預購中" 
 function Pill({ children, tone }: { children: React.ReactNode; tone: Tone }) { return <span className={`inline-flex min-h-6 items-center justify-center rounded-full px-2.5 py-1 text-center text-[11px] font-semibold leading-none ${tones[tone]}`}>{children}</span>; }
 const button = "inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665] disabled:cursor-not-allowed disabled:opacity-45";
 
-function OrderEditor({ order, onClose, onSaved }: { order: StoredOrder; onClose: () => void; onSaved: (order: StoredOrder) => void }) {
+function LegacyOrderEditor({ order, onClose, onSaved }: { order: StoredOrder; onClose: () => void; onSaved: (order: StoredOrder) => void }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<StoredProduct[]>([]);
   const [customerId, setCustomerId] = useState(order.customers?.id ?? "");
