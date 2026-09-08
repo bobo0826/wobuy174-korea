@@ -153,6 +153,73 @@ async function receivePurchaseOrderFallback(id: string, items: Array<{ item_id: 
   return data;
 }
 
+async function revertPurchaseReceipt(id: string, performedBy: string) {
+  const supabase = getSupabaseAdmin();
+  const { data: order, error: orderError } = await supabase
+    .from("purchase_orders")
+    .select("id, purchase_number, status, purchase_order_items(id, product_id, product_name, received_quantity)")
+    .eq("id", id)
+    .single();
+  if (orderError || !order) throw new Error("找不到採購單。");
+  if (order.status === "已取消") throw new Error("已取消的採購單不可回復收貨。");
+
+  const receivedLines = (order.purchase_order_items ?? []).filter((line) => Number(line.received_quantity) > 0);
+  if (!receivedLines.length) throw new Error("這張採購單尚未收貨，不需要回復。");
+  if (receivedLines.some((line) => !line.product_id)) throw new Error("部分收貨商品已不存在，無法安全回復收貨。");
+
+  const quantityByProduct = new Map<string, number>();
+  for (const line of receivedLines) {
+    const productId = line.product_id as string;
+    quantityByProduct.set(productId, (quantityByProduct.get(productId) ?? 0) + Number(line.received_quantity));
+  }
+  const productIds = [...quantityByProduct.keys()];
+  const { data: products, error: productsError } = await supabase
+    .from("products")
+    .select("id, name, available_stock, incoming_stock")
+    .in("id", productIds);
+  if (productsError || (products ?? []).length !== productIds.length) throw new Error("部分商品已不存在，無法安全回復收貨。");
+
+  const productsById = new Map((products ?? []).map((product) => [product.id, product]));
+  for (const [productId, quantity] of quantityByProduct) {
+    const product = productsById.get(productId);
+    if (!product || Number(product.available_stock) < quantity) {
+      throw new Error(`${product?.name ?? "商品"} 的可售庫存不足，可能已有後續出貨或扣庫存；請先處理後續庫存紀錄。`);
+    }
+  }
+
+  // 先完成所有安全檢查，再把已入庫數量還原成「到貨中」。
+  for (const line of receivedLines) {
+    const { error } = await supabase.from("purchase_order_items").update({ received_quantity: 0 }).eq("id", line.id);
+    if (error) throw error;
+  }
+  for (const [productId, quantity] of quantityByProduct) {
+    const product = productsById.get(productId)!;
+    const { error } = await supabase
+      .from("products")
+      .update({ available_stock: Number(product.available_stock) - quantity, incoming_stock: Number(product.incoming_stock) + quantity, updated_at: new Date().toISOString() })
+      .eq("id", productId);
+    if (error) throw error;
+  }
+  const { error: adjustmentError } = await supabase.from("inventory_adjustments").insert([...quantityByProduct.entries()].map(([productId, quantity]) => ({
+    product_id: productId,
+    quantity_change: -quantity,
+    reason: "撤銷採購收貨",
+    note: `採購單 ${order.purchase_number} 回復至尚未收貨`,
+    performed_by: performedBy,
+  })));
+  if (adjustmentError) throw adjustmentError;
+
+  const { error: headerError } = await supabase
+    .from("purchase_orders")
+    .update({ status: "待收貨", received_at: null, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (headerError) throw headerError;
+
+  const { data, error } = await supabase.from("purchase_orders").select(purchaseSelect).eq("id", id).single();
+  if (error) throw error;
+  return data;
+}
+
 async function syncLatestCostsForReceivedItems(itemIds: string[]) {
   const supabase = getSupabaseAdmin();
   const { data: receivedItems, error } = await supabase
@@ -181,6 +248,10 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     const supabase = getSupabaseAdmin();
     if (body.action === "update") {
       const purchaseOrder = await updatePurchaseOrder(id, body);
+      return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
+    }
+    if (body.action === "revertReceipt") {
+      const purchaseOrder = await revertPurchaseReceipt(id, auth.context.profile.displayName);
       return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
     }
     if (body.action !== "receive" || !Array.isArray(body.items)) return NextResponse.json({ message: "不支援的採購單操作。" }, { status: 400 });
