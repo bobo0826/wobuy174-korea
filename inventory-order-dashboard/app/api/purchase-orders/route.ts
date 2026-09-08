@@ -111,7 +111,12 @@ export async function GET(request: NextRequest) {
       if (!datePattern.test(nextFor)) return NextResponse.json({ message: "日期格式不正確。" }, { status: 400 });
       return withRefreshedSession(NextResponse.json({ purchaseNumber: await nextPurchaseNumber(nextFor) }), auth.context);
     }
-    const { data, error } = await getSupabaseAdmin().from("purchase_orders").select(purchaseSelect).order("created_at", { ascending: false });
+    // 採購單以實際下單日期為準排序，最新下單的紀錄固定顯示在最前面。
+    const { data, error } = await getSupabaseAdmin()
+      .from("purchase_orders")
+      .select(purchaseSelect)
+      .order("order_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ purchaseOrders: data ?? [] }), auth.context);
   } catch (error) {

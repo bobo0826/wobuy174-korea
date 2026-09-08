@@ -36,6 +36,10 @@ type View = "purchases" | "newPurchase" | "suppliers";
 const twd = (value: number) => `NT$ ${Number(value || 0).toLocaleString("zh-TW")}`;
 const localMoney = (value: number, code: string) => new Intl.NumberFormat("zh-TW", { style: "currency", currency: code || "TWD", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(value || 0));
 const formatDate = (value: string | null | undefined) => value ? value.replaceAll("-", "/") : "未設定";
+const sortByOrderDate = (items: PurchaseOrder[]) => [...items].sort((left, right) => {
+  const dateOrder = (right.order_date ?? "").localeCompare(left.order_date ?? "");
+  return dateOrder || right.created_at.localeCompare(left.created_at);
+});
 const statusStyle: Record<PurchaseOrder["status"], string> = {
   "草稿": "bg-[#F0EDE8] text-[#6F6960]",
   "已送出": "bg-[#E5EEF2] text-[#4B6D79]",
@@ -69,7 +73,8 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
       const response = await fetch("/api/purchase-orders");
       const result = await response.json();
       if (!response.ok) throw new Error(result.message ?? "無法讀取採購單。");
-      setPurchases(result.purchaseOrders ?? []);
+      // 也在畫面端固定排序，確保重新整理或資料更新後仍以最新下單時間為首。
+      setPurchases(sortByOrderDate(result.purchaseOrders ?? []));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "無法讀取採購單。");
     } finally {
@@ -102,7 +107,7 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
       const response = await fetch(`/api/purchase-orders/${receipt.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "receive", items }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message ?? "無法確認到貨。");
-      setPurchases((previous) => previous.map((purchase) => purchase.id === receipt.id ? result.purchaseOrder : purchase));
+      setPurchases((previous) => sortByOrderDate(previous.map((purchase) => purchase.id === receipt.id ? result.purchaseOrder : purchase)));
       setReceipt(null);
       await onInventoryChanged();
     } catch (reason) {
@@ -126,8 +131,8 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
 
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
       <section className="overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
-        <div className="flex items-center justify-between border-b border-[#F0EDE8] p-5 sm:p-6">
-          <div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE ORDERS</p><h2 className="mt-2 text-xl font-semibold">採購單與到貨入庫</h2></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F0EDE8] p-5 sm:p-6">
+          <div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE ORDERS</p><h2 className="mt-2 text-xl font-semibold">採購單與到貨入庫</h2><p className="mt-1 text-xs text-[#938D84]">依下單時間排序（最新在前）</p></div>
           <button onClick={() => { void load(); }} className="text-sm font-semibold text-[#5E7665]">重新整理</button>
         </div>
         <div className="divide-y divide-[#F0EDE8]">
@@ -138,7 +143,7 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
                 <p className="mt-2 text-sm font-semibold text-[#5A554D]">{purchase.supplier_name}</p>
                 <p className="mt-1 text-xs text-[#938D84]">下單 {formatDate(purchase.order_date)}　·　到貨 {formatDate(purchase.arrival_date ?? purchase.expected_arrival_date)}　·　{purchase.payment_terms || "未設定交易方式"}</p>
               </button>
-              <div className="flex flex-wrap items-center gap-2 lg:justify-end"><span className="mr-1 text-sm font-semibold">{twd(purchase.total)}</span><button onClick={() => setSelected(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">查看採購單</button>{canEdit(purchase) && <button onClick={() => onEdit(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">修改採購單</button>}{canReceive(purchase) && <button onClick={() => openReceipt(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-3 text-sm font-semibold text-white">確認到貨並入庫</button>}</div>
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end"><span className="mr-1 text-sm font-semibold">{twd(purchase.total)}</span><button onClick={() => setSelected(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">查看採購單</button>{canEdit(purchase) && <button onClick={() => onEdit(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">修改內容</button>}{canReceive(purchase) && <button onClick={() => openReceipt(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-3 text-sm font-semibold text-white">確認到貨並入庫</button>}</div>
             </div>
             <p className="mt-4 rounded-xl bg-[#F8F6F2] px-4 py-3 text-xs text-[#706A61]">{purchase.purchase_order_items.map((item) => `${item.product_name}｜已到貨 ${item.received_quantity}/${item.quantity}`).join("　")}</p>
           </article>) : <p className="p-8 text-center text-sm text-[#8D877E]">尚無採購單。請先建立第一張採購單。</p>}
@@ -154,7 +159,7 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
         <div className="mt-6 overflow-x-auto rounded-2xl border border-[#E9E5DF]"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="px-5 py-3">商品</th><th className="px-3 py-3">台幣成本</th><th className="px-3 py-3">當地成本</th><th className="px-3 py-3">訂購</th><th className="px-3 py-3">已到貨</th><th className="px-5 py-3 text-right">尚待到貨</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{selected.purchase_order_items.map((item) => <tr key={item.id}><td className="px-5 py-4 font-semibold">{item.product_name}</td><td className="px-3 py-4">{twd(item.unit_cost)}</td><td className="px-3 py-4">{localMoney(item.local_unit_cost, selected.currency_code)}</td><td className="px-3 py-4">{item.quantity}</td><td className="px-3 py-4">{item.received_quantity}</td><td className="px-5 py-4 text-right font-semibold">{Math.max(0, item.quantity - item.received_quantity)}</td></tr>)}</tbody></table></div>
         <div className="mt-5 grid gap-3 rounded-2xl border border-[#E9E5DF] p-4 text-sm sm:grid-cols-3"><div><span className="text-[#807A72]">台幣商品成本</span><b className="mt-1 block">{twd(selected.total)}</b></div><div><span className="text-[#807A72]">當地運費</span><b className="mt-1 block">{localMoney(selected.shipping_fee, selected.currency_code)}</b></div><div><span className="text-[#807A72]">訂購總數</span><b className="mt-1 block">{selected.purchase_order_items.reduce((sum, item) => sum + item.quantity, 0)} 件</b></div></div>
         {!canEdit(selected) && selected.status !== "已完成" && selected.status !== "已取消" && <p className="mt-4 text-sm text-[#807A72]">這張採購單已有到貨紀錄，為維持庫存正確性，商品明細不可再修改。</p>}
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button onClick={() => setSelected(null)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">關閉</button>{canEdit(selected) && <button onClick={() => { onEdit(selected); setSelected(null); }} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">修改採購單</button>}{canReceive(selected) && <button onClick={() => openReceipt(selected)} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-4 text-sm font-semibold text-white">確認到貨並入庫</button>}</div>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button onClick={() => setSelected(null)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">關閉</button>{canEdit(selected) && <button onClick={() => { onEdit(selected); setSelected(null); }} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">修改內容</button>}{canReceive(selected) && <button onClick={() => openReceipt(selected)} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-4 text-sm font-semibold text-white">確認到貨並入庫</button>}</div>
       </div>
     </div>}
 
