@@ -342,8 +342,6 @@ function Products({ catalog, openProduct, openNewProduct, openImportProducts, de
 }
 
 function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onCreated: (product: Product) => void; initialProduct?: Product | null }) {
-  const [saved, setSaved] = useState(false);
-  const [syncNotice, setSyncNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [country, setCountry] = useState(initialProduct?.country ?? "");
@@ -371,18 +369,15 @@ function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onC
   const saveProduct = async () => {
     setSaving(true);
     setSaveError("");
-    setSaved(false);
-    setSyncNotice("");
 
     try {
       const response = await fetch("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, country, category, supplierId }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? result.message ?? "無法儲存商品。");
-      if (result.product) onCreated(toProduct(result.product as StoredProduct));
-      setSaved(true);
-      if (result.sync?.status === "synced") setSyncNotice("商品已同步至 Google 試算表。");
-      if (result.sync?.status === "disabled") setSyncNotice("商品已儲存；Google 試算表同步尚未設定。");
-      if (result.sync?.status === "failed") setSyncNotice(`商品已儲存；${result.sync.message}`);
+      if (!result.product) throw new Error("商品已送出但未取得建立結果，請重新整理商品資料庫確認。");
+      onCreated(toProduct(result.product as StoredProduct));
+      // 成功建立後直接回到清單，方便接續建立或查看剛新增的商品。
+      back();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "無法儲存商品。");
     } finally {
@@ -392,7 +387,6 @@ function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onC
 
   return <>
     <Header eyebrow={initialProduct ? "DUPLICATE PRODUCT" : "NEW PRODUCT"} title={initialProduct ? "複製商品" : "新增商品"} description={initialProduct ? "已帶入原商品資料；請確認商品編號與內容後儲存。" : "建立商品基本資料、售價與初始庫存。"}><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header>
-    {saved && <Card className="mb-5 border-[#D9E5DB] bg-[#EEF5EF] p-5"><b className="block text-[#34563D]">{initialProduct ? "商品複本已建立" : "商品已建立"}</b><small className="mt-1 block text-sm text-[#57735D]">商品資料已儲存至商品資料庫。{syncNotice && ` ${syncNotice}`}</small></Card>}
     {saveError && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-5"><b className="block text-[#965723]">商品尚未儲存</b><small className="mt-1 block text-sm text-[#A36B3C]">{saveError}</small></Card>}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
       <div className="space-y-5">
@@ -525,7 +519,10 @@ function ImportProducts({ back, onImported }: { back: () => void; onImported: (p
     }
     if (imported.length) onImported(imported);
     if (failed.length) setError(`已匯入 ${imported.length} 筆；${failed.length} 筆未完成。${failed.slice(0, 2).join("　")}`);
-    else setNotice(`已成功匯入 ${imported.length} 筆商品，也會同步至已設定的 Google 試算表。`);
+    else if (imported.length) {
+      // 全部匯入成功時直接回到商品資料庫；部分失敗則停留頁面顯示問題資料。
+      back();
+    }
     setImporting(false);
   };
 
