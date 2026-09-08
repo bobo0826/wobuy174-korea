@@ -13,7 +13,7 @@ const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const orderNumberPattern = /^\d{8}\d{3,}$/;
 const statuses = ["預購中", "未出貨", "已出貨", "已取消"];
 const orderMethods = ["社群下單", "員工下單"];
-const paymentMethods = ["銀行轉帳", "信用卡", "現金"];
+const paymentMethods = ["銀行轉帳", "信用卡", "現金", "貨到付款"];
 const paymentStatuses = ["未付款", "已付款"];
 const deliveryMethods = ["門市自取", "賣貨便"];
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
