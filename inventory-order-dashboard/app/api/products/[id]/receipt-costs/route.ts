@@ -17,13 +17,20 @@ export async function GET(request: NextRequest, { params }: Context) {
 
     const { data, error } = await getSupabaseAdmin()
       .from("purchase_order_items")
-      .select("id, unit_cost, local_unit_cost, quantity, received_quantity, created_at, purchase_orders(purchase_number, order_date, arrival_date, currency_code)")
+      .select("id, unit_cost, local_unit_cost, received_quantity, purchase_orders(purchase_number, order_date, currency_code)")
       .eq("product_id", id)
-      .gt("received_quantity", 0)
-      .order("created_at", { ascending: false });
+      .gt("received_quantity", 0);
     if (error) throw error;
 
-    return withRefreshedSession(NextResponse.json({ receiptCosts: data ?? [] }), auth.context);
+    const receiptCosts = (data ?? []).map((entry) => ({
+      ...entry,
+      purchase_orders: Array.isArray(entry.purchase_orders) ? entry.purchase_orders[0] ?? null : entry.purchase_orders,
+    })).sort((left, right) => {
+      const leftDate = left.purchase_orders?.order_date ?? "";
+      const rightDate = right.purchase_orders?.order_date ?? "";
+      return rightDate.localeCompare(leftDate);
+    });
+    return withRefreshedSession(NextResponse.json({ receiptCosts }), auth.context);
   } catch (error) {
     return NextResponse.json({ message: error instanceof Error ? error.message : "無法讀取入庫成本。" }, { status: 503 });
   }
