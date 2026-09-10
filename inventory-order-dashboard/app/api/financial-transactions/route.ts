@@ -162,3 +162,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: errorMessage(error, "無法儲存收支紀錄。") }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await requireSignedIn(request);
+    if (!auth.context) return auth.response!;
+    const id = new URL(request.url).searchParams.get("id") ?? "";
+    if (!uuidPattern.test(id)) return NextResponse.json({ message: "收支紀錄不正確。" }, { status: 400 });
+
+    const supabase = getSupabaseAdmin();
+    const { data: transaction, error: readError } = await supabase.from("financial_transactions").select(transactionSelect).eq("id", id).maybeSingle();
+    if (readError) throw readError;
+    if (!transaction) return NextResponse.json({ message: "找不到這筆收支紀錄。" }, { status: 404 });
+
+    const { error: deleteError } = await supabase.from("financial_transactions").delete().eq("id", id);
+    if (deleteError) throw deleteError;
+
+    return withRefreshedSession(NextResponse.json({ ok: true, deletedTransaction: transaction }), auth.context);
+  } catch (error) {
+    if (missingFinancialSetup(error)) return NextResponse.json({ message: "收支資料庫需要更新，請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
+    return NextResponse.json({ message: errorMessage(error, "無法刪除收支紀錄。") }, { status: 500 });
+  }
+}

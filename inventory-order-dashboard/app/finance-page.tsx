@@ -72,6 +72,8 @@ export function FinancePage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [setupRequired, setSetupRequired] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [deletingId, setDeletingId] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -146,6 +148,29 @@ export function FinancePage() {
     }
   };
 
+  const deleteTransaction = async (transaction: Transaction) => {
+    const cashMessage = transaction.payment_method === "現金" ? "現金餘額也會自動回復。" : "本月收支統計會自動重新計算。";
+    if (!window.confirm(`確定要刪除這筆「${transactionSub(transaction)}」紀錄嗎？此動作無法復原。${cashMessage}`)) return;
+    setDeletingId(transaction.id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/financial-transactions?id=${encodeURIComponent(transaction.id)}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) {
+        setSetupRequired(Boolean(result.setupRequired));
+        throw new Error(result.message ?? "無法刪除收支紀錄。");
+      }
+      if (selectedTransaction?.id === transaction.id) setSelectedTransaction(null);
+      await load();
+      setNotice(`已刪除「${transactionSub(transaction)}」紀錄；${cashMessage}`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法刪除收支紀錄。");
+    } finally {
+      setDeletingId("");
+    }
+  };
+
   return <>
     <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[11px] font-bold tracking-[.18em] text-[#A09A90]">CASHFLOW</p><h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em] text-[#292824] sm:text-[33px]">收支管理</h1><p className="mt-2 text-sm leading-6 text-[#7B766E]">依收入、支出與付款方式記帳；信用卡支出可依刷卡地區自動帶入幣別。</p></div><button type="button" onClick={() => { void load(); }} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">重新整理</button></div>
 
@@ -155,7 +180,20 @@ export function FinancePage() {
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">{currencies.map((item) => <div key={item} className={`p-5 ${item === "TWD" ? "rounded-2xl border border-[#D9E4DE] bg-[#EEF4EF]" : cardClass}`}><p className={`text-xs font-semibold tracking-wide ${item === "TWD" ? "text-[#58705E]" : "text-[#807A72]"}`}>目前現金餘額 · {currencyLabel[item]}</p><p className={`mt-3 text-2xl font-semibold tracking-[-.05em] ${item === "TWD" ? "text-[#31513A]" : "text-[#292824]"}`}>{money(cashBalances[item], item)}</p><p className="mt-2 text-xs leading-5 text-[#8B847A]">只計算現金收支</p></div>)}<div className={`${cardClass} p-5`}><p className="text-xs font-semibold tracking-wide text-[#807A72]">本月收入</p><BalanceRows balances={monthIncome} /><p className="mt-2 text-xs text-[#8B847A]">現金與轉帳合計</p></div><div className={`${cardClass} p-5`}><p className="text-xs font-semibold tracking-wide text-[#807A72]">本月支出</p><BalanceRows balances={monthExpense} /><p className="mt-2 text-xs text-[#8B847A]">匯款、現金與信用卡合計</p></div></section>
 
     <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,.65fr)]">
-      <section className={`${cardClass} overflow-hidden`}><div className="flex flex-col gap-4 border-b border-[#F0EDE8] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">TRANSACTION HISTORY</p><h2 className="mt-2 text-xl font-semibold">收支紀錄</h2></div><div className="flex gap-2 overflow-x-auto">{([ ["all", "全部"], ["income", "收入"], ["expense", "支出"] ] as const).map(([id, label]) => <button key={id} type="button" onClick={() => setFilter(id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${filter === id ? "bg-[#292824] text-white" : "bg-[#F4F1ED] text-[#706A61]"}`}>{label}</button>)}</div></div><div className="overflow-x-auto"><table className="w-full min-w-[930px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">日期</th><th className="px-3 py-3">大分類</th><th className="px-3 py-3">小分類</th><th className="px-3 py-3">對象</th><th className="px-3 py-3">方式</th><th className="px-3 py-3">信用卡明細</th><th className="px-3 py-3">備註</th><th className="px-6 py-3 text-right">金額</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{loading ? <tr><td colSpan={8} className="px-6 py-10 text-center text-[#8D877E]">載入收支紀錄中…</td></tr> : visibleTransactions.length ? visibleTransactions.map((transaction) => <tr key={transaction.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4 text-[#6F6960]">{transaction.occurred_on.replaceAll("-", "/")}</td><td className="px-3 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${transaction.direction === "income" ? "bg-[#E7F0E8] text-[#477154]" : "bg-[#FAECDD] text-[#A66932]"}`}>{transactionMajor(transaction)}</span></td><td className="px-3 py-4 font-semibold text-[#4A4640]">{transactionSub(transaction)}</td><td className="px-3 py-4 text-[#5C574F]">{transaction.counterparty_name}</td><td className="px-3 py-4 text-[#6F6960]">{transaction.payment_method}</td><td className="max-w-[170px] px-3 py-4 text-xs text-[#817B72]">{transaction.payment_method === "信用卡" ? [transaction.region, transaction.card_detail].filter(Boolean).join(" · ") || "—" : "—"}</td><td className="max-w-[150px] truncate px-3 py-4 text-[#817B72]">{transaction.note || "—"}</td><td className={`px-6 py-4 text-right font-semibold ${transaction.direction === "income" ? "text-[#477154]" : "text-[#A66932]"}`}>{transaction.direction === "income" ? "+" : "−"}{money(transaction.amount, transaction.currency)}</td></tr>) : <tr><td colSpan={8} className="px-6 py-12 text-center text-[#8D877E]">尚無收支紀錄。請從右側新增第一筆記帳。</td></tr>}</tbody></table></div></section>
+      <section className={`${cardClass} overflow-hidden`}>
+        <div className="flex flex-col gap-4 border-b border-[#F0EDE8] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">TRANSACTION HISTORY</p><h2 className="mt-2 text-xl font-semibold">收支紀錄</h2></div>
+          <div className="flex gap-2 overflow-x-auto">{([ ["all", "全部"], ["income", "收入"], ["expense", "支出"] ] as const).map(([id, label]) => <button key={id} type="button" onClick={() => setFilter(id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${filter === id ? "bg-[#292824] text-white" : "bg-[#F4F1ED] text-[#706A61]"}`}>{label}</button>)}</div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1050px] text-left">
+            <thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">日期</th><th className="px-3 py-3">大分類</th><th className="px-3 py-3">小分類</th><th className="px-3 py-3">對象</th><th className="px-3 py-3">方式</th><th className="px-3 py-3">信用卡明細</th><th className="px-3 py-3">備註</th><th className="px-3 py-3 text-right">金額</th><th className="px-6 py-3 text-right">操作</th></tr></thead>
+            <tbody className="divide-y divide-[#F0EDE8] text-sm">
+              {loading ? <tr><td colSpan={9} className="px-6 py-10 text-center text-[#8D877E]">載入收支紀錄中…</td></tr> : visibleTransactions.length ? visibleTransactions.map((transaction) => <tr key={transaction.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4 text-[#6F6960]">{transaction.occurred_on.replaceAll("-", "/")}</td><td className="px-3 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${transaction.direction === "income" ? "bg-[#E7F0E8] text-[#477154]" : "bg-[#FAECDD] text-[#A66932]"}`}>{transactionMajor(transaction)}</span></td><td className="px-3 py-4 font-semibold text-[#4A4640]">{transactionSub(transaction)}</td><td className="px-3 py-4 text-[#5C574F]">{transaction.counterparty_name}</td><td className="px-3 py-4 text-[#6F6960]">{transaction.payment_method}</td><td className="max-w-[170px] px-3 py-4 text-xs text-[#817B72]">{transaction.payment_method === "信用卡" ? [transaction.region, transaction.card_detail].filter(Boolean).join(" · ") || "—" : "—"}</td><td className="max-w-[150px] truncate px-3 py-4 text-[#817B72]">{transaction.note || "—"}</td><td className={`px-3 py-4 text-right font-semibold ${transaction.direction === "income" ? "text-[#477154]" : "text-[#A66932]"}`}>{transaction.direction === "income" ? "+" : "−"}{money(transaction.amount, transaction.currency)}</td><td className="px-6 py-4"><div className="flex justify-end gap-3"><button type="button" onClick={() => setSelectedTransaction(transaction)} className="text-sm font-semibold text-[#5E7665]">查看</button><button type="button" onClick={() => { void deleteTransaction(transaction); }} disabled={deletingId === transaction.id} className="text-sm font-semibold text-[#A35F37] disabled:cursor-not-allowed disabled:opacity-45">{deletingId === transaction.id ? "刪除中…" : "刪除"}</button></div></td></tr>) : <tr><td colSpan={9} className="px-6 py-12 text-center text-[#8D877E]">尚無收支紀錄。請從右側新增第一筆記帳。</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className={`${cardClass} h-fit p-5 sm:p-6`}><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">NEW ENTRY</p><h2 className="mt-2 text-xl font-semibold">新增收支紀錄</h2><p className="mt-2 text-sm leading-6 text-[#898379]">先選擇大分類與小分類，再填寫對象、付款方式與金額。</p><form className="mt-5 space-y-4" onSubmit={(event) => { void submit(event); }}><div className="grid grid-cols-3 gap-2">{([ ["income", "收入"], ["expense", "支出"], ["opening", "期初現金"] ] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setMajorCategory(value)} className={`min-h-12 rounded-xl border px-2 text-xs font-semibold ${majorCategory === value ? "border-[#87A18D] bg-[#EDF5EE] text-[#426349]" : "border-[#E5E1DB] bg-white text-[#777168] hover:bg-[#FCFBF9]"}`}>{label}</button>)}</div>
         {majorCategory !== "opening" && <label className="block text-sm font-semibold text-[#58534C]">小分類<div className="mt-2 grid grid-cols-3 gap-2">{(majorCategory === "income" ? incomeSubcategories : expenseSubcategories).map((item) => <button key={item} type="button" onClick={() => setSubCategory(item)} className={`min-h-10 rounded-xl border px-2 text-xs font-semibold ${subCategory === item ? "border-[#9EBAA4] bg-[#F2F7F2] text-[#426349]" : "border-[#E5E1DB] bg-white text-[#777168]"}`}>{item}</button>)}</div></label>}
@@ -167,5 +205,19 @@ export function FinancePage() {
         {isCreditCardExpense && <div className="rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-4"><p className="text-sm font-semibold text-[#58534C]">信用卡支出明細</p><p className="mt-1 text-xs leading-5 text-[#8B847A]">選擇刷卡地區後會自動帶入幣別；選其他地區可自行選擇幣別。</p><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold text-[#58534C]">刷卡地區<select value={region} onChange={(event) => setRegion(event.target.value)} className={inputClass}>{Object.keys(regionCurrency).map((item) => <option key={item}>{item}</option>)}</select></label><label className="block text-sm font-semibold text-[#58534C]">明細／商家<input value={cardDetail} onChange={(event) => setCardDetail(event.target.value)} placeholder="例如：Olive Young 弘大店" className={inputClass} required /></label></div></div>}
         <label className="block text-sm font-semibold text-[#58534C]">金額<input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="輸入金額" className={inputClass} required /></label><label className="block text-sm font-semibold text-[#58534C]">備註<span className="ml-1 text-xs font-normal text-[#9B958C]">（選填）</span><textarea value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 min-h-24 w-full resize-y rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 py-3 text-sm font-normal text-[#49443D] outline-none focus:border-[#89A58E]" placeholder="例如：8 月貨款、客戶訂單尾款" /></label><button type="submit" disabled={saving || setupRequired} className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white transition hover:bg-[#46423D] disabled:cursor-not-allowed disabled:opacity-45">{saving ? "儲存中…" : "儲存收支紀錄"}</button></form></section>
     </div>
+
+    {selectedTransaction && <div className="fixed inset-0 z-50 flex items-end bg-[#292824]/35 sm:items-center sm:justify-center sm:p-6">
+      <div role="dialog" aria-modal="true" aria-labelledby="transaction-detail-title" className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">TRANSACTION DETAIL</p><h2 id="transaction-detail-title" className="mt-2 text-xl font-semibold">收支紀錄明細</h2><p className="mt-2 text-sm text-[#7D776E]">可確認這筆收支的分類、金額與付款內容。</p></div>
+          <button type="button" aria-label="關閉收支紀錄明細" onClick={() => setSelectedTransaction(null)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E7E2DB] text-lg text-[#777168]">×</button>
+        </div>
+        <div className="mt-6 grid gap-px overflow-hidden rounded-2xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">
+          {[["收支日期", selectedTransaction.occurred_on.replaceAll("-", "/")], ["大分類", transactionMajor(selectedTransaction)], ["小分類", transactionSub(selectedTransaction)], ["收支對象", selectedTransaction.counterparty_name || "—"], ["付款方式", selectedTransaction.payment_method], ["幣別", currencyLabel[selectedTransaction.currency]], ["金額", `${selectedTransaction.direction === "income" ? "+" : "−"}${money(selectedTransaction.amount, selectedTransaction.currency)}`], ["信用卡明細", selectedTransaction.payment_method === "信用卡" ? [selectedTransaction.region, selectedTransaction.card_detail].filter(Boolean).join(" · ") || "—" : "—"], ["建立人員", selectedTransaction.created_by || "—"], ["建立時間", new Date(selectedTransaction.created_at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })], ["備註", selectedTransaction.note || "—"]].map(([label, value]) => <div key={label} className={`bg-white p-4 ${label === "備註" ? "sm:col-span-2" : ""}`}><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className={`mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 ${label === "金額" ? selectedTransaction.direction === "income" ? "text-[#477154]" : "text-[#A66932]" : "text-[#48433C]"}`}>{value}</p></div>)}
+        </div>
+        <p className="mt-5 rounded-xl bg-[#F8F6F2] p-4 text-xs leading-5 text-[#746D63]">刪除後，系統會自動回復這筆交易對現金餘額與收支統計的影響。</p>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setSelectedTransaction(null)} disabled={deletingId === selectedTransaction.id} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-4 text-sm font-semibold text-[#5E7665] disabled:opacity-45">關閉</button><button type="button" onClick={() => { void deleteTransaction(selectedTransaction); }} disabled={deletingId === selectedTransaction.id} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#F0D6C2] bg-white px-4 text-sm font-semibold text-[#A35F37] disabled:opacity-45">{deletingId === selectedTransaction.id ? "刪除中…" : "刪除這筆紀錄"}</button></div>
+      </div>
+    </div>}
   </>;
 }
