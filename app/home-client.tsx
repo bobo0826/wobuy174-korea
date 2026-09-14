@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getSupabaseClient, isSupabaseConfigured } from "./lib/supabase";
 
@@ -26,7 +27,7 @@ type ProductVariant = {
   price: string;
 };
 
-type Product = {
+export type Product = {
   id: string;
   name: string;
   price: string;
@@ -601,9 +602,11 @@ function CloseIcon() {
 export function ProductCatalog({
   initialCategory = "latest",
   showAllCategory = true,
+  initialProducts,
 }: {
   initialCategory?: Category;
   showAllCategory?: boolean;
+  initialProducts?: Product[];
 }) {
   const [activeCategory, setActiveCategory] = useState<Category>(initialCategory);
   const [activeBeddingType, setActiveBeddingType] = useState<
@@ -614,8 +617,12 @@ export function ProductCatalog({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [catalogProducts, setCatalogProducts] = useState<Product[]>(products);
-  const [remoteCatalogLoaded, setRemoteCatalogLoaded] = useState(false);
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>(
+    () => initialProducts ?? (isSupabaseConfigured ? [] : products),
+  );
+  const [remoteCatalogLoaded, setRemoteCatalogLoaded] = useState(
+    initialProducts !== undefined,
+  );
   const pageSize = useSyncExternalStore(
     subscribeToPageSizeChange,
     getPageSizeSnapshot,
@@ -627,12 +634,14 @@ export function ProductCatalog({
     : categories.filter((category) => category.id !== "latest");
 
   useEffect(() => {
+    if (initialProducts !== undefined) return;
+
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
     void supabase
       .from("products")
-      .select("*")
+      .select("id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,details,specs,variants")
       .eq("published", true)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: false })
@@ -642,7 +651,7 @@ export function ProductCatalog({
           setRemoteCatalogLoaded(true);
         }
       });
-  }, []);
+  }, [initialProducts]);
 
   const filteredProducts = catalogProducts.filter((product) => {
     const matchesCategory =
@@ -795,17 +804,24 @@ export function ProductCatalog({
           </div>
 
           <div id="products-grid" className="grid grid-cols-3 gap-x-3 gap-y-8 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-10 md:grid-cols-5 lg:grid-cols-6 lg:gap-x-5">
-            {visibleProducts.map((product) => (
+            {visibleProducts.map((product, index) => (
               <button
                 aria-label={`查看 ${product.name} 商品資訊`}
                 className="group min-w-0 text-left"
                 key={product.id}
                 onClick={() => openProduct(product)}
               >
-                <div
-                  className="relative aspect-square overflow-hidden rounded-[3px] bg-[#EAE8E4] bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.015]"
-                  style={{ backgroundImage: `url(${product.image})` }}
-                >
+                <div className="relative aspect-square overflow-hidden rounded-[3px] bg-[#EAE8E4]">
+                  {product.image ? (
+                    <Image
+                      alt=""
+                      className="object-cover transition-transform duration-500 group-hover:scale-[1.015]"
+                      fill
+                      priority={index < 3}
+                      sizes="(min-width: 1024px) 16vw, (min-width: 768px) 20vw, (min-width: 640px) 25vw, 33vw"
+                      src={product.image}
+                    />
+                  ) : null}
                   <span className={`absolute left-1.5 top-1.5 rounded-full font-semibold tracking-[0.08em] sm:left-2 sm:top-2 ${product.status === "現貨" ? "px-2 py-1.5 text-[9px] sm:px-2.5 sm:py-1.5 sm:text-[11px]" : "px-1.5 py-1 text-[8px] sm:px-2 sm:text-[10px]"} ${statusStyles[product.status]}`}>
                     {product.status}
                   </span>
@@ -979,7 +995,7 @@ export function ProductCatalog({
   );
 }
 
-export default function Home() {
+export default function Home({ initialProducts }: { initialProducts?: Product[] }) {
   return (
     <main className="overflow-x-clip bg-[#FAF7F0] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
       <div className="bg-[#605B51] px-4 py-2 text-center text-[11px] tracking-[0.08em] text-[#F5F5F5] sm:text-xs">
@@ -1030,7 +1046,7 @@ export default function Home() {
         </div>
       </header>
 
-      <ProductCatalog showAllCategory={false} />
+      <ProductCatalog initialProducts={initialProducts} showAllCategory={false} />
 
       <section className="border-y border-[#D9D6D0] px-5 py-5 sm:px-8 sm:py-10 lg:px-12 lg:py-14">
         <div className="mx-auto grid max-w-[1500px] gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
