@@ -3,18 +3,10 @@
 import { useEffect, useState } from "react";
 
 type DashboardView = "stock" | "create" | "orders" | "purchases" | "reports";
-type OrderRow = { order_date: string; status: string; total: number };
-type ProductRow = { available_stock: number; safety_stock: number };
-type PurchaseRow = { status: string };
 type Summary = { preorders: number; lowStock: number; pendingPurchases: number; monthlySales: number; shippedOrders: number; orderCount: number };
 
 const emptySummary: Summary = { preorders: 0, lowStock: 0, pendingPurchases: 0, monthlySales: 0, shippedOrders: 0, orderCount: 0 };
 const currency = (value: number) => `NT$ ${value.toLocaleString("zh-TW")}`;
-const currentMonth = () => {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit" }).formatToParts(new Date());
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("year")}-${value("month")}`;
-};
 
 export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
   const [summary, setSummary] = useState<Summary>(emptySummary);
@@ -27,21 +19,10 @@ export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
       setLoading(true);
       setLoadError("");
       try {
-        const [ordersResponse, productsResponse, purchasesResponse] = await Promise.all([fetch("/api/orders"), fetch("/api/products"), fetch("/api/purchase-orders")]);
-        const [ordersResult, productsResult, purchasesResult] = await Promise.all([ordersResponse.json(), productsResponse.json(), purchasesResponse.json()]);
-        if (!ordersResponse.ok || !productsResponse.ok || !purchasesResponse.ok) throw new Error("無法讀取營運資料。");
-        const orders = (ordersResult.orders ?? []) as OrderRow[];
-        const products = (productsResult.products ?? []) as ProductRow[];
-        const purchases = (purchasesResult.purchaseOrders ?? []) as PurchaseRow[];
-        const month = currentMonth();
-        if (active) setSummary({
-          preorders: orders.filter((order) => order.status === "預購中").length,
-          lowStock: products.filter((product) => product.available_stock <= product.safety_stock).length,
-          pendingPurchases: purchases.filter((purchase) => purchase.status !== "已完成" && purchase.status !== "已取消").length,
-          monthlySales: orders.filter((order) => order.order_date.startsWith(month) && order.status !== "已取消").reduce((sum, order) => sum + (Number(order.total) || 0), 0),
-          shippedOrders: orders.filter((order) => order.status === "已出貨").length,
-          orderCount: orders.length,
-        });
+        const response = await fetch("/api/dashboard");
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message ?? "無法讀取營運資料。");
+        if (active) setSummary({ ...emptySummary, ...(result.summary ?? {}) });
       } catch (error) {
         if (active) setLoadError(error instanceof Error ? error.message : "無法讀取營運資料。");
       } finally {
