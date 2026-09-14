@@ -56,6 +56,7 @@ type Product = {
   available: number;
   reserved: number;
   incoming: number;
+  preorder: number;
   sold: number;
   safety: number;
   tone: string;
@@ -78,6 +79,7 @@ type StoredProduct = {
   available_stock: number;
   reserved_stock: number;
   incoming_stock: number;
+  preorder_stock?: number;
   sold_stock?: number;
   safety_stock: number;
   supplier_id: string | null;
@@ -168,7 +170,7 @@ type ReceiptCostEntry = {
 
 // 商品清單只顯示資料庫內建立或匯入的實際商品，不再混入預設示範資料。
 const products: Array<Product & { id: number }> = [];
-const blankProduct: Product = { id: "", name: "", country: "", category: "", subcategory: "", specification: "", note: "", sku: "", cost: 0, staffPrice: 0, retailPrice: 0, available: 0, reserved: 0, incoming: 0, sold: 0, safety: 0, tone: "#E9E1D5" };
+const blankProduct: Product = { id: "", name: "", country: "", category: "", subcategory: "", specification: "", note: "", sku: "", cost: 0, staffPrice: 0, retailPrice: 0, available: 0, reserved: 0, incoming: 0, preorder: 0, sold: 0, safety: 0, tone: "#E9E1D5" };
 
 const productTones = ["#E9E1D5", "#DFE4E0", "#EADAD0", "#E6DCE3", "#DCE4E8"];
 const toProduct = (record: StoredProduct): Product => ({
@@ -186,6 +188,7 @@ const toProduct = (record: StoredProduct): Product => ({
   available: record.available_stock,
   reserved: record.reserved_stock,
   incoming: record.incoming_stock,
+  preorder: record.preorder_stock ?? 0,
   sold: record.sold_stock ?? 0,
   safety: record.safety_stock,
   tone: productTones[record.name.length % productTones.length],
@@ -1171,16 +1174,16 @@ function StockOverviewV2({ catalog, stock, openProduct, saveAdjustment }: { cata
     } finally { setSaving(false); }
   };
   const exportStock = () => {
-    const rows = [["商品編號", "商品名稱", "分類", "實際在庫", "已保留", "到貨中", "已售出", "可售庫存"], ...catalog.map((product) => [product.sku, product.name, `${product.country} · ${product.category}`, stockOf(product) + product.reserved, product.reserved, product.incoming, product.sold, stockOf(product)])];
+    const rows = [["商品編號", "商品名稱", "分類", "實際在庫", "已保留", "預購中", "到貨中", "已售出", "可售庫存"], ...catalog.map((product) => [product.sku, product.name, `${product.country} · ${product.category}`, stockOf(product) + product.reserved, product.reserved, product.preorder, product.incoming, product.sold, stockOf(product)])];
     const csv = `\uFEFF${rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n")}`;
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a"); link.href = url; link.download = "wobuy174_庫存總覽.csv"; link.click(); URL.revokeObjectURL(url);
   };
 
   return <>
-    <Header eyebrow="STOCK OVERVIEW" title="庫存總覽" description="依商品顯示實際在庫、保留、到貨、已售出與可售庫存。"><Secondary onClick={exportStock}>匯出庫存</Secondary><Primary onClick={() => openAdjustment()}>＋ 調整庫存</Primary></Header>
+    <Header eyebrow="STOCK OVERVIEW" title="庫存總覽" description="依商品顯示實際在庫、預購、保留、到貨、已售出與可售庫存；預購中不會扣除庫存。"><Secondary onClick={exportStock}>匯出庫存</Secondary><Primary onClick={() => openAdjustment()}>＋ 調整庫存</Primary></Header>
     {notice && <p className="mb-4 rounded-xl border border-[#D9E5DB] bg-[#EEF5EF] px-4 py-3 text-sm font-semibold text-[#45634C]">{notice}</p>}
-    <Card className="overflow-hidden"><div className="flex flex-col gap-3 border-b border-[#F0EDE8] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"><Search value={query} onChange={setQuery} placeholder="搜尋商品編號、商品名稱或分類" /><span className="text-xs text-[#807A71]">顯示 {visible.length} 項商品</span></div><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">商品編號</th><th className="px-3 py-3">商品名稱</th><th className="px-3 py-3">分類</th><th className="px-3 py-3">實際在庫</th><th className="px-3 py-3">已保留</th><th className="px-3 py-3">到貨中</th><th className="px-3 py-3">已售出</th><th className="px-3 py-3">可售庫存</th><th className="px-6 py-3 text-right">修改</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{visible.length ? visible.map((product) => { const current = stockOf(product); return <tr key={product.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4 font-mono text-xs text-[#6E695F]">{product.sku}</td><td className="px-3 py-4"><b className="block text-[#4A4640]">{product.name}</b><small className="mt-1 block text-xs text-[#938D84]">{product.specification}</small></td><td className="px-3 py-4 text-[#625D55]">{product.country} · {product.category}</td><td className="px-3 py-4">{current + product.reserved}</td><td className="px-3 py-4">{product.reserved}</td><td className="px-3 py-4">{product.incoming || "—"}</td><td className="px-3 py-4">{product.sold}</td><td className={`px-3 py-4 font-bold ${current <= product.safety ? "text-[#A66932]" : "text-[#45634C]"}`}>{current}</td><td className="px-6 py-4 text-right"><button onClick={() => openProduct(product)} className="mr-4 text-sm font-semibold text-[#5E7665]">修改商品</button><button onClick={() => openAdjustment(String(product.id))} className="text-sm font-semibold text-[#5E7665]">調整庫存</button></td></tr>; }) : <tr><td colSpan={9} className="px-6 py-10 text-center text-[#8D877E]">找不到符合條件的商品。</td></tr>}</tbody></table></div></Card>
+    <Card className="overflow-hidden"><div className="flex flex-col gap-3 border-b border-[#F0EDE8] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"><Search value={query} onChange={setQuery} placeholder="搜尋商品編號、商品名稱或分類" /><span className="text-xs text-[#807A71]">顯示 {visible.length} 項商品</span></div><div className="overflow-x-auto"><table className="w-full min-w-[1210px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">商品編號</th><th className="px-3 py-3">商品名稱</th><th className="px-3 py-3">分類</th><th className="px-3 py-3">實際在庫</th><th className="px-3 py-3">已保留</th><th className="px-3 py-3">預購中</th><th className="px-3 py-3">到貨中</th><th className="px-3 py-3">已售出</th><th className="px-3 py-3">可售庫存</th><th className="px-6 py-3 text-right">修改</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{visible.length ? visible.map((product) => { const current = stockOf(product); return <tr key={product.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4 font-mono text-xs text-[#6E695F]">{product.sku}</td><td className="px-3 py-4"><b className="block text-[#4A4640]">{product.name}</b><small className="mt-1 block text-xs text-[#938D84]">{product.specification}</small></td><td className="px-3 py-4 text-[#625D55]">{product.country} · {product.category}</td><td className="px-3 py-4">{current + product.reserved}</td><td className="px-3 py-4">{product.reserved}</td><td className="px-3 py-4 font-semibold text-[#A66932]">{product.preorder}</td><td className="px-3 py-4">{product.incoming || "—"}</td><td className="px-3 py-4">{product.sold}</td><td className={`px-3 py-4 font-bold ${current <= product.safety ? "text-[#A66932]" : "text-[#45634C]"}`}>{current}</td><td className="px-6 py-4 text-right"><button onClick={() => openProduct(product)} className="mr-4 text-sm font-semibold text-[#5E7665]">修改商品</button><button onClick={() => openAdjustment(String(product.id))} className="text-sm font-semibold text-[#5E7665]">調整庫存</button></td></tr>; }) : <tr><td colSpan={10} className="px-6 py-10 text-center text-[#8D877E]">找不到符合條件的商品。</td></tr>}</tbody></table></div></Card>
     {adjusting && <div className="fixed inset-0 z-50 flex items-end bg-[#292824]/35 sm:items-center sm:justify-center sm:p-6"><div role="dialog" aria-modal="true" className="w-full max-w-lg rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">STOCK ADJUSTMENT</p><h2 className="mt-2 text-xl font-semibold">調整庫存</h2><p className="mt-2 text-sm text-[#7D776E]">調整後會立即更新可售庫存並留下異動紀錄。</p></div><button onClick={() => setAdjusting(false)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E7E2DB] text-lg">×</button></div><div className="mt-6 grid gap-4"><label className="text-sm font-semibold">商品<select value={productId} onChange={(event) => setProductId(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E5E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none">{catalog.map((product) => <option key={product.id} value={String(product.id)}>{product.sku}｜{product.name}</option>)}</select></label><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold">異動數量<input type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E5E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold">異動原因<select value={reason} onChange={(event) => setReason(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E5E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>盤點差異</option><option>採購入庫</option><option>損壞報廢</option><option>樣品領用</option><option>其他調整</option></select></label></div><label className="text-sm font-semibold">備註<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：實際盤點數量" className="mt-2 h-11 w-full rounded-xl border border-[#E5E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><div className="rounded-xl bg-[#F8F6F2] p-4 text-sm"><div className="flex justify-between"><span>目前可售庫存</span><b>{available} 件</b></div><div className="mt-2 flex justify-between"><span>調整後可售庫存</span><b className={valid ? "text-[#45634C]" : "text-[#A66932]"}>{available + delta} 件</b></div>{delta < 0 && !valid && <p className="mt-3 text-xs text-[#A66932]">扣除數量不可超過目前可售庫存。</p>}</div>{error && <p className="text-sm font-semibold text-[#A35F37]">{error}</p>}</div><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Secondary onClick={() => setAdjusting(false)} disabled={saving}>取消</Secondary><Primary onClick={() => { void submit(); }} disabled={!valid || saving}>{saving ? "儲存中…" : "儲存調整"}</Primary></div></div></div>}
   </>;
 }
@@ -1702,7 +1705,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
   };
 
   return <>
-    <Header eyebrow="NEW ORDER" title="建立訂單" description="確認商品、數量與客戶資料後，訂單將立即更新可售庫存。" />
+    <Header eyebrow="NEW ORDER" title="建立訂單" description="預購中訂單會立即計入商品預購數量；實際庫存將在出貨時另行扣除。" />
     {orderError && <Card className="mb-5 border-[#F1D4C4] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{orderError}</Card>}
     {stockDeducted && <Card className="mb-5 flex flex-col gap-3 border-[#D9E5DB] bg-[#EEF5EF] p-5 sm:flex-row sm:items-center sm:justify-between"><span><b className="block text-[#34563D]">訂單已確認並扣除庫存</b><small className="mt-1 block text-sm text-[#57735D]">訂單 {orderNumber} 已建立完成，可售庫存已同步更新。</small></span><Primary onClick={back}>查看訂單</Primary></Card>}
 
@@ -1809,7 +1812,7 @@ export default function Home() {
     });
     return () => { active = false; };
   }, [currentUser]);
-  const go = (next: View) => { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const go = (next: View) => { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); if (next === "stock") void refreshProducts(); };
   const openProduct = (productOrId: Product | number | string) => { setSelectedProduct(typeof productOrId === "object" ? productOrId : databaseProducts.find((product) => String(product.id) === String(productOrId)) ?? blankProduct); go("product"); };
   const addDatabaseProducts = (incoming: Product[]) => setDatabaseProducts((previous) => [...incoming, ...previous.filter((product) => !incoming.some((item) => item.id === product.id))]);
   const updateDatabaseProduct = (updated: Product) => {

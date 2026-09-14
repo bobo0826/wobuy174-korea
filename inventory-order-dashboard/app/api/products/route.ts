@@ -85,18 +85,28 @@ export async function GET(request: NextRequest) {
     const auth = await requireSignedIn(request);
     if (!auth.context) return auth.response!;
     const supabase = getSupabaseAdmin();
-    const [{ data, error }, { data: soldItems, error: soldItemsError }] = await Promise.all([
+    const [{ data, error }, { data: soldItems, error: soldItemsError }, { data: preorderItems, error: preorderItemsError }] = await Promise.all([
       supabase.from("products").select(productSelect).order("created_at", { ascending: false }),
       supabase.from("order_items").select("product_id, quantity, orders!inner(status)").eq("orders.status", "已出貨"),
+      supabase.from("order_items").select("product_id, quantity, orders!inner(status)").eq("orders.status", "預購中"),
     ]);
     if (error) throw error;
     if (soldItemsError) throw soldItemsError;
+    if (preorderItemsError) throw preorderItemsError;
 
     const soldByProduct = (soldItems ?? []).reduce<Record<string, number>>((totals, item) => {
       if (item.product_id) totals[item.product_id] = (totals[item.product_id] ?? 0) + item.quantity;
       return totals;
     }, {});
-    const products = (data ?? []).map((product) => ({ ...product, sold_stock: soldByProduct[product.id] ?? 0 }));
+    const preorderByProduct = (preorderItems ?? []).reduce<Record<string, number>>((totals, item) => {
+      if (item.product_id) totals[item.product_id] = (totals[item.product_id] ?? 0) + item.quantity;
+      return totals;
+    }, {});
+    const products = (data ?? []).map((product) => ({
+      ...product,
+      preorder_stock: preorderByProduct[product.id] ?? 0,
+      sold_stock: soldByProduct[product.id] ?? 0,
+    }));
     return withRefreshedSession(NextResponse.json({ products }), auth.context);
   } catch (error) {
     return NextResponse.json(
