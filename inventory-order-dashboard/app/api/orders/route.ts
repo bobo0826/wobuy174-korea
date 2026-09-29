@@ -151,6 +151,10 @@ export async function POST(request: NextRequest) {
 
     const payload = validation.order;
     const supabase = getSupabaseAdmin();
+    const { data: customer, error: customerError } = await supabase.from("customers").select("id, customer_category").eq("id", payload.customerId).single();
+    if (customerError || !customer) return NextResponse.json({ message: "找不到選擇的客戶。" }, { status: 400 });
+    const requiredCategory = payload.orderMethod === "員工下單" ? "員工" : "社群";
+    if ((customer.customer_category || "社群") !== requiredCategory) return NextResponse.json({ message: `${payload.orderMethod}僅能選擇${requiredCategory}客戶。` }, { status: 400 });
     const orderNumber = payload.requestedOrderNumber || await nextOrderNumber(payload.orderDate);
     const { data: order, error: orderError } = await supabase
       .from("orders")

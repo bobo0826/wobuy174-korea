@@ -63,8 +63,10 @@ async function updateOrder(id: string, input: UpdateOrderInput) {
   const { data: current, error: currentError } = await supabase.from("orders").select("status").eq("id", id).single();
   if (currentError || !current) throw new Error("找不到訂單。");
   if (current.status === "已出貨") throw new Error("訂單已扣庫存並出貨，不能直接修改；如需修正請先建立新的調整紀錄。 ");
-  const { data: customer, error: customerError } = await supabase.from("customers").select("id").eq("id", payload.customerId).single();
+  const { data: customer, error: customerError } = await supabase.from("customers").select("id, customer_category").eq("id", payload.customerId).single();
   if (customerError || !customer) throw new Error("找不到選擇的客戶。");
+  const requiredCategory = payload.orderMethod === "員工下單" ? "員工" : "社群";
+  if ((customer.customer_category || "社群") !== requiredCategory) throw new Error(`${payload.orderMethod}僅能選擇${requiredCategory}客戶。`);
   const productIds = payload.items.map((item) => item.productId);
   const { data: products, error: productError } = await supabase.from("products").select("id, name, category, cost").in("id", productIds);
   if (productError || (products ?? []).length !== productIds.length) throw new Error("部分商品已不存在，請重新選擇。");
