@@ -18,6 +18,12 @@ type FinancialTransactionInput = {
   amount?: unknown;
   occurredOn?: unknown;
   note?: unknown;
+  settledTwdAmount?: unknown;
+};
+
+type CreditCardUpdateInput = FinancialTransactionInput & {
+  id?: unknown;
+  action?: unknown;
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -30,6 +36,10 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const positiveInteger = (value: unknown) => {
   const amount = Number(value);
   return Number.isInteger(amount) && amount > 0 ? amount : null;
+};
+const optionalPositiveInteger = (value: unknown) => {
+  if (value === null || value === undefined || value === "") return null;
+  return positiveInteger(value);
 };
 
 const errorMessage = (error: unknown, fallback: string) => {
@@ -90,7 +100,7 @@ function validateInput(input: FinancialTransactionInput) {
   return { majorCategory, subCategory: majorCategory === "opening" ? "期初現金" : subCategory, orderId, customerId, supplierId, counterpartyName, paymentMethod, currency, region, cardDetail, amount, occurredOn, note };
 }
 
-const transactionSelect = "id, entry_type, direction, major_category, sub_category, payment_method, currency, region, card_detail, amount, occurred_on, counterparty_name, customer_id, supplier_id, order_id, note, created_by, created_at";
+const transactionSelect = "id, entry_type, direction, major_category, sub_category, payment_method, currency, region, card_detail, amount, occurred_on, counterparty_name, customer_id, supplier_id, order_id, settled_twd_amount, credit_card_claimed, credit_card_claimed_at, credit_card_claimed_by, note, created_by, created_at";
 
 export async function GET(request: NextRequest) {
   try {
@@ -173,6 +183,81 @@ export async function POST(request: NextRequest) {
   }
 }
 
+async function saveCreditCardAdvance(request: NextRequest, input: CreditCardUpdateInput, claim: boolean) {
+  const id = text(input.id);
+  if (!uuidPattern.test(id)) return NextResponse.json({ message: "收支紀錄不正確。" }, { status: 400 });
+
+  const validation = validateInput({ ...input, majorCategory: "expense", paymentMethod: "信用卡" });
+  if ("error" in validation) return NextResponse.json(validation, { status: 400 });
+  const settledTwdAmount = optionalPositiveInteger(input.settledTwdAmount);
+  if (input.settledTwdAmount !== null && input.settledTwdAmount !== undefined && input.settledTwdAmount !== "" && settledTwdAmount === null) {
+    return NextResponse.json({ message: "台幣結帳金額必須是大於 0 的整數。" }, { status: 400 });
+  }
+
+  const auth = await requireSignedIn(request);
+  if (!auth.context) return auth.response!;
+  const supabase = getSupabaseAdmin();
+  const { data: current, error: currentError } = await supabase
+    .from("financial_transactions")
+    .select("id, direction, payment_method, credit_card_claimed")
+    .eq("id", id)
+    .maybeSingle();
+  if (currentError) throw currentError;
+  if (!current || current.direction !== "expense" || current.payment_method !== "信用卡") {
+    return NextResponse.json({ message: "找不到可編輯的信用卡代墊款。" }, { status: 404 });
+  }
+  if (current.credit_card_claimed) return NextResponse.json({ message: "這筆代墊款已確認請款，無法再修改。" }, { status: 409 });
+
+  let supplierId: string | null = null;
+  let counterpartyName = validation.counterpartyName;
+  if (validation.subCategory === "供應商貨款") {
+    const { data: supplier, error: supplierError } = await supabase.from("suppliers").select("id, name").eq("id", validation.supplierId).maybeSingle();
+    if (supplierError) throw supplierError;
+    if (!supplier) return NextResponse.json({ message: "找不到選擇的供應商。" }, { status: 400 });
+    supplierId = supplier.id;
+    counterpartyName = supplier.name;
+  }
+
+  const settlementAmount = validation.currency === "TWD" ? validation.amount : settledTwdAmount;
+  if (claim && settlementAmount === null) {
+    return NextResponse.json({ message: "外幣信用卡代墊款請先填寫信用卡結帳後的實際台幣金額，再確認請款。" }, { status: 400 });
+  }
+  const { data, error } = await supabase.from("financial_transactions").update({
+    major_category: "支出",
+    sub_category: validation.subCategory,
+    payment_method: "信用卡",
+    currency: validation.currency,
+    region: validation.region,
+    card_detail: validation.cardDetail,
+    amount: validation.amount,
+    occurred_on: validation.occurredOn,
+    counterparty_name: counterpartyName,
+    customer_id: null,
+    supplier_id: supplierId,
+    order_id: null,
+    settled_twd_amount: settlementAmount,
+    note: validation.note,
+    credit_card_claimed: claim,
+    credit_card_claimed_at: claim ? new Date().toISOString() : null,
+    credit_card_claimed_by: claim ? auth.context.profile.displayName : "",
+  }).eq("id", id).select(transactionSelect).single();
+  if (error) throw error;
+  return withRefreshedSession(NextResponse.json({ transaction: data, claimed: claim }), auth.context);
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const input = await request.json() as CreditCardUpdateInput;
+    const action = text(input.action);
+    if (action === "updateCreditCard") return await saveCreditCardAdvance(request, input, false);
+    if (action === "claimCreditCard") return await saveCreditCardAdvance(request, input, true);
+    return NextResponse.json({ message: "不支援的收支更新操作。" }, { status: 400 });
+  } catch (error) {
+    if (missingFinancialSetup(error)) return NextResponse.json({ message: "收支資料庫需要更新，請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
+    return NextResponse.json({ message: errorMessage(error, "無法更新信用卡代墊款。") }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const auth = await requireSignedIn(request);
@@ -184,6 +269,9 @@ export async function DELETE(request: NextRequest) {
     const { data: transaction, error: readError } = await supabase.from("financial_transactions").select(transactionSelect).eq("id", id).maybeSingle();
     if (readError) throw readError;
     if (!transaction) return NextResponse.json({ message: "找不到這筆收支紀錄。" }, { status: 404 });
+    if (transaction.payment_method === "信用卡" && transaction.credit_card_claimed) {
+      return NextResponse.json({ message: "這筆信用卡代墊款已確認請款，無法刪除。" }, { status: 409 });
+    }
 
     const { error: deleteError } = await supabase.from("financial_transactions").delete().eq("id", id);
     if (deleteError) throw deleteError;

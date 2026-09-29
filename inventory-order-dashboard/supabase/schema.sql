@@ -134,6 +134,10 @@ create table if not exists financial_transactions (
   customer_id uuid references customers(id) on delete set null,
   supplier_id uuid references suppliers(id) on delete set null,
   order_id uuid references orders(id) on delete set null,
+  settled_twd_amount integer check (settled_twd_amount is null or settled_twd_amount > 0),
+  credit_card_claimed boolean not null default false,
+  credit_card_claimed_at timestamptz,
+  credit_card_claimed_by text not null default '',
   note text not null default '',
   created_by text not null default '',
   created_at timestamptz not null default now(),
@@ -157,6 +161,7 @@ create index if not exists financial_transactions_occurred_on_idx on financial_t
 create index if not exists financial_transactions_customer_id_idx on financial_transactions(customer_id);
 create index if not exists financial_transactions_supplier_id_idx on financial_transactions(supplier_id);
 create index if not exists financial_transactions_order_id_idx on financial_transactions(order_id);
+create index if not exists financial_transactions_credit_card_claimed_idx on financial_transactions(credit_card_claimed) where payment_method = '信用卡';
 
 -- All stock changes are applied inside the database so stock cannot become negative.
 create or replace function public.apply_inventory_adjustment(
