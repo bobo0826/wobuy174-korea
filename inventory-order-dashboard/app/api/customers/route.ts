@@ -7,21 +7,30 @@ export const dynamic = "force-dynamic";
 type CustomerInput = {
   name?: unknown;
   lineName?: unknown;
+  customerCategory?: unknown;
+  preferredDeliveryMethod?: unknown;
   phone?: unknown;
   address?: unknown;
 };
 
 const cleanText = (value: unknown) => typeof value === "string" ? value.trim() : "";
+const customerCategories = ["員工", "社群"];
+const deliveryMethods = ["自取", "賣貨便"];
+const customerSelect = "id, name, line_name, customer_category, preferred_delivery_method, phone, address, created_at, updated_at";
 
 function validateCustomer(input: CustomerInput) {
   const customer = {
     name: cleanText(input.name),
     line_name: cleanText(input.lineName),
+    customer_category: cleanText(input.customerCategory) || "社群",
+    preferred_delivery_method: cleanText(input.preferredDeliveryMethod) || "自取",
     phone: cleanText(input.phone),
     address: cleanText(input.address),
   };
 
   if (!customer.name) return { error: "請填寫客戶姓名。" };
+  if (!customerCategories.includes(customer.customer_category)) return { error: "客戶類別不正確。" };
+  if (!deliveryMethods.includes(customer.preferred_delivery_method)) return { error: "常用交易方式不正確。" };
   return { customer };
 }
 
@@ -31,7 +40,7 @@ export async function GET(request: NextRequest) {
     if (!auth.context) return auth.response!;
     const { data, error } = await getSupabaseAdmin()
       .from("customers")
-      .select("id, name, line_name, phone, address, created_at, updated_at")
+      .select(customerSelect)
       .order("created_at", { ascending: false });
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ customers: data }), auth.context);
@@ -53,7 +62,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await getSupabaseAdmin()
       .from("customers")
       .insert(validation.customer)
-      .select("id, name, line_name, phone, address, created_at, updated_at")
+      .select(customerSelect)
       .single();
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ customer: data }, { status: 201 }), auth.context);
@@ -78,7 +87,7 @@ export async function PATCH(request: NextRequest) {
       .from("customers")
       .update(validation.customer)
       .eq("id", body.id)
-      .select("id, name, line_name, phone, address, created_at, updated_at")
+      .select(customerSelect)
       .single();
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ customer: data }), auth.context);

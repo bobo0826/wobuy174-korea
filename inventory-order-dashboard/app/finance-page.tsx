@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Customer = { id: string; name: string; line_name: string };
 type Supplier = { id: string; name: string; country: string };
+type OrderOption = { id: string; order_number: string; order_date: string; status: string; reconciliation_status: string; customers: Customer | null };
 type EntryType = "customer_payment" | "supplier_payment" | "opening_cash";
 type CurrencyCode = "TWD" | "KRW" | "JPY";
 type MajorCategory = "income" | "expense" | "opening";
@@ -20,6 +21,7 @@ type Transaction = {
   amount: number;
   occurred_on: string;
   counterparty_name: string;
+  order_id?: string | null;
   note: string;
   created_by: string;
   created_at: string;
@@ -35,7 +37,7 @@ const currencies: CurrencyCode[] = ["TWD", "KRW", "JPY"];
 const currencyLabel: Record<CurrencyCode, string> = { TWD: "台幣", KRW: "韓幣", JPY: "日幣" };
 const currencySymbol: Record<CurrencyCode, string> = { TWD: "NT$", KRW: "₩", JPY: "¥" };
 const regionCurrency: Record<string, CurrencyCode | null> = { "台灣": "TWD", "韓國": "KRW", "日本": "JPY", "其他": null };
-const incomeSubcategories = ["員工購買", "客人購買", "其他"] as const;
+const incomeSubcategories = ["訂單結帳", "零售購買", "其他"] as const;
 const expenseSubcategories = ["供應商貨款", "貨款請款", "其他"] as const;
 const cardClass = "rounded-2xl border border-[#E9E5DF] bg-white";
 const inputClass = "mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#49443D] outline-none focus:border-[#89A58E]";
@@ -47,16 +49,16 @@ function BalanceRows({ balances }: { balances: Record<CurrencyCode, number> }) {
 }
 
 const transactionMajor = (transaction: Transaction) => transaction.major_category || (transaction.entry_type === "opening_cash" ? "期初現金" : transaction.direction === "income" ? "收入" : "支出");
-const transactionSub = (transaction: Transaction) => transaction.sub_category || (transaction.entry_type === "customer_payment" ? "客人購買" : transaction.entry_type === "supplier_payment" ? "供應商貨款" : "期初現金");
+const transactionSub = (transaction: Transaction) => transaction.sub_category || (transaction.entry_type === "customer_payment" ? "訂單結帳" : transaction.entry_type === "supplier_payment" ? "供應商貨款" : "期初現金");
 
 export function FinancePage() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [orders, setOrders] = useState<OrderOption[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cashBalances, setCashBalances] = useState<Record<CurrencyCode, number>>(emptyBalances);
   const [majorCategory, setMajorCategory] = useState<MajorCategory>("income");
-  const [subCategory, setSubCategory] = useState<string>("客人購買");
-  const [customerId, setCustomerId] = useState("");
+  const [subCategory, setSubCategory] = useState<string>("訂單結帳");
+  const [orderId, setOrderId] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [counterpartyName, setCounterpartyName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("現金");
@@ -67,6 +69,11 @@ export function FinancePage() {
   const [occurredOn, setOccurredOn] = useState(taipeiToday());
   const [note, setNote] = useState("");
   const [filter, setFilter] = useState<"all" | "income" | "expense">("all");
+  const [keyword, setKeyword] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [subCategoryFilter, setSubCategoryFilter] = useState("all");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -79,8 +86,8 @@ export function FinancePage() {
     setLoading(true);
     setError("");
     try {
-      const [financeResponse, customerResponse, supplierResponse] = await Promise.all([fetch("/api/financial-transactions"), fetch("/api/customers"), fetch("/api/suppliers")]);
-      const [financeResult, customerResult, supplierResult] = await Promise.all([financeResponse.json(), customerResponse.json(), supplierResponse.json()]);
+      const [financeResponse, supplierResponse, orderResponse] = await Promise.all([fetch("/api/financial-transactions"), fetch("/api/suppliers"), fetch("/api/orders")]);
+      const [financeResult, supplierResult, orderResult] = await Promise.all([financeResponse.json(), supplierResponse.json(), orderResponse.json()]);
       if (!financeResponse.ok) {
         setSetupRequired(Boolean(financeResult.setupRequired));
         throw new Error(financeResult.message ?? "無法讀取收支紀錄。");
@@ -88,8 +95,8 @@ export function FinancePage() {
       setSetupRequired(false);
       setTransactions(financeResult.transactions ?? []);
       setCashBalances({ ...emptyBalances(), ...(financeResult.cashBalances ?? {}) });
-      if (customerResponse.ok) setCustomers(customerResult.customers ?? []);
       if (supplierResponse.ok) setSuppliers(supplierResult.suppliers ?? []);
+      if (orderResponse.ok) setOrders(orderResult.orders ?? []);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "無法讀取收支紀錄。");
     } finally {
@@ -100,7 +107,8 @@ export function FinancePage() {
   useEffect(() => { void load(); }, []);
   useEffect(() => {
     setNotice("");
-    if (majorCategory === "income") { setSubCategory("客人購買"); setPaymentMethod("現金"); }
+    setOrderId("");
+    if (majorCategory === "income") { setSubCategory("訂單結帳"); setPaymentMethod("現金"); }
     if (majorCategory === "expense") { setSubCategory("供應商貨款"); setPaymentMethod("匯款"); }
     if (majorCategory === "opening") { setSubCategory("期初現金"); setPaymentMethod("現金"); }
   }, [majorCategory]);
@@ -112,12 +120,22 @@ export function FinancePage() {
   const totalsForDirection = (direction: "income" | "expense") => transactions.filter((transaction) => transaction.direction === direction && transaction.occurred_on.startsWith(thisMonth)).reduce<Record<CurrencyCode, number>>((totals, transaction) => ({ ...totals, [transaction.currency]: totals[transaction.currency] + transaction.amount }), emptyBalances());
   const monthIncome = useMemo(() => totalsForDirection("income"), [transactions, thisMonth]);
   const monthExpense = useMemo(() => totalsForDirection("expense"), [transactions, thisMonth]);
-  const visibleTransactions = useMemo(() => filter === "all" ? transactions : transactions.filter((transaction) => transaction.direction === filter), [filter, transactions]);
+  const transactionSubcategories = useMemo(() => [...new Set(transactions.map(transactionSub))].sort((left, right) => left.localeCompare(right, "zh-TW")), [transactions]);
+  const transactionMethods = useMemo(() => [...new Set(transactions.map((transaction) => transaction.payment_method))].sort((left, right) => left.localeCompare(right, "zh-TW")), [transactions]);
+  const visibleTransactions = useMemo(() => transactions.filter((transaction) => {
+    const matchesDirection = filter === "all" || transaction.direction === filter;
+    const matchesKeyword = !keyword.trim() || [transaction.counterparty_name, transactionSub(transaction), transaction.note, transaction.region, transaction.card_detail].filter(Boolean).join(" ").toLowerCase().includes(keyword.trim().toLowerCase());
+    const matchesStart = !startDate || transaction.occurred_on >= startDate;
+    const matchesEnd = !endDate || transaction.occurred_on <= endDate;
+    const matchesSubcategory = subCategoryFilter === "all" || transactionSub(transaction) === subCategoryFilter;
+    const matchesMethod = paymentMethodFilter === "all" || transaction.payment_method === paymentMethodFilter;
+    return matchesDirection && matchesKeyword && matchesStart && matchesEnd && matchesSubcategory && matchesMethod;
+  }), [endDate, filter, keyword, paymentMethodFilter, startDate, subCategoryFilter, transactions]);
   const methods = majorCategory === "income" ? ["現金", "轉帳"] : majorCategory === "expense" ? ["匯款", "現金", "信用卡"] : ["現金"];
   const isCreditCardExpense = majorCategory === "expense" && paymentMethod === "信用卡";
-  const requiresCustomer = majorCategory === "income" && subCategory === "客人購買";
+  const requiresOrder = majorCategory === "income" && subCategory === "訂單結帳";
   const requiresSupplier = majorCategory === "expense" && subCategory === "供應商貨款";
-  const counterpartLabel = majorCategory === "income" ? subCategory === "員工購買" ? "員工姓名" : "收款對象" : "支出對象";
+  const counterpartLabel = majorCategory === "income" ? subCategory === "零售購買" ? "購買對象" : "收款對象" : "支出對象";
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -128,7 +146,7 @@ export function FinancePage() {
       const response = await fetch("/api/financial-transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ majorCategory, subCategory, customerId, supplierId, counterpartyName, paymentMethod, currency, region: isCreditCardExpense ? region : "", cardDetail: isCreditCardExpense ? cardDetail : "", amount, occurredOn, note }),
+        body: JSON.stringify({ majorCategory, subCategory, orderId, supplierId, counterpartyName, paymentMethod, currency, region: isCreditCardExpense ? region : "", cardDetail: isCreditCardExpense ? cardDetail : "", amount, occurredOn, note }),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -185,6 +203,15 @@ export function FinancePage() {
           <div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">TRANSACTION HISTORY</p><h2 className="mt-2 text-xl font-semibold">收支紀錄</h2></div>
           <div className="flex gap-2 overflow-x-auto">{([ ["all", "全部"], ["income", "收入"], ["expense", "支出"] ] as const).map(([id, label]) => <button key={id} type="button" onClick={() => setFilter(id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${filter === id ? "bg-[#292824] text-white" : "bg-[#F4F1ED] text-[#706A61]"}`}>{label}</button>)}</div>
         </div>
+        <div className="flex flex-wrap items-end gap-3 border-b border-[#F0EDE8] bg-[#FCFBF9] p-4 sm:px-6">
+          <label className="min-w-[180px] flex-1 text-xs font-semibold text-[#777168]">搜尋<input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜尋對象、分類、備註或信用卡明細" className="mt-1 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label>
+          <label className="text-xs font-semibold text-[#777168]">起日<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-1 h-10 rounded-lg border border-[#E6E1DB] bg-white px-2 text-sm font-normal outline-none" /></label>
+          <label className="text-xs font-semibold text-[#777168]">迄日<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="mt-1 h-10 rounded-lg border border-[#E6E1DB] bg-white px-2 text-sm font-normal outline-none" /></label>
+          <label className="text-xs font-semibold text-[#777168]">小分類<select value={subCategoryFilter} onChange={(event) => setSubCategoryFilter(event.target.value)} className="mt-1 h-10 rounded-lg border border-[#E6E1DB] bg-white px-2 text-sm font-normal outline-none"><option value="all">全部</option>{transactionSubcategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label className="text-xs font-semibold text-[#777168]">付款方式<select value={paymentMethodFilter} onChange={(event) => setPaymentMethodFilter(event.target.value)} className="mt-1 h-10 rounded-lg border border-[#E6E1DB] bg-white px-2 text-sm font-normal outline-none"><option value="all">全部</option>{transactionMethods.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          {(keyword || startDate || endDate || subCategoryFilter !== "all" || paymentMethodFilter !== "all") && <button type="button" onClick={() => { setKeyword(""); setStartDate(""); setEndDate(""); setSubCategoryFilter("all"); setPaymentMethodFilter("all"); }} className="h-10 text-sm font-semibold text-[#5E7665]">清除條件</button>}
+          <span className="pb-2 text-xs text-[#807A71]">顯示 {visibleTransactions.length} 筆</span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1050px] text-left">
             <thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">日期</th><th className="px-3 py-3">大分類</th><th className="px-3 py-3">小分類</th><th className="px-3 py-3">對象</th><th className="px-3 py-3">方式</th><th className="px-3 py-3">信用卡明細</th><th className="px-3 py-3">備註</th><th className="px-3 py-3 text-right">金額</th><th className="px-6 py-3 text-right">操作</th></tr></thead>
@@ -197,9 +224,9 @@ export function FinancePage() {
 
       <section className={`${cardClass} h-fit p-5 sm:p-6`}><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">NEW ENTRY</p><h2 className="mt-2 text-xl font-semibold">新增收支紀錄</h2><p className="mt-2 text-sm leading-6 text-[#898379]">先選擇大分類與小分類，再填寫對象、付款方式與金額。</p><form className="mt-5 space-y-4" onSubmit={(event) => { void submit(event); }}><div className="grid grid-cols-3 gap-2">{([ ["income", "收入"], ["expense", "支出"], ["opening", "期初現金"] ] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setMajorCategory(value)} className={`min-h-12 rounded-xl border px-2 text-xs font-semibold ${majorCategory === value ? "border-[#87A18D] bg-[#EDF5EE] text-[#426349]" : "border-[#E5E1DB] bg-white text-[#777168] hover:bg-[#FCFBF9]"}`}>{label}</button>)}</div>
         {majorCategory !== "opening" && <label className="block text-sm font-semibold text-[#58534C]">小分類<div className="mt-2 grid grid-cols-3 gap-2">{(majorCategory === "income" ? incomeSubcategories : expenseSubcategories).map((item) => <button key={item} type="button" onClick={() => setSubCategory(item)} className={`min-h-10 rounded-xl border px-2 text-xs font-semibold ${subCategory === item ? "border-[#9EBAA4] bg-[#F2F7F2] text-[#426349]" : "border-[#E5E1DB] bg-white text-[#777168]"}`}>{item}</button>)}</div></label>}
-        {requiresCustomer && <label className="block text-sm font-semibold text-[#58534C]">客戶<select value={customerId} onChange={(event) => setCustomerId(event.target.value)} className={inputClass} required><option value="">選擇客戶</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{customer.line_name ? ` · ${customer.line_name}` : ""}</option>)}</select>{!customers.length && !loading && <small className="mt-2 block text-xs font-normal text-[#A66932]">尚未建立客戶，請先到客戶管理新增資料。</small>}</label>}
+        {requiresOrder && <label className="block text-sm font-semibold text-[#58534C]">連結訂單<select value={orderId} onChange={(event) => setOrderId(event.target.value)} className={inputClass} required><option value="">選擇要結帳的訂單</option>{orders.filter((order) => order.status !== "已取消").map((order) => <option key={order.id} value={order.id}>{order.order_number} · {order.customers?.name || "未指定客戶"} · {order.order_date} · {order.reconciliation_status}</option>)}</select>{!orders.length && !loading && <small className="mt-2 block text-xs font-normal text-[#A66932]">尚無可連結的訂單，請先建立訂單。</small>}</label>}
         {requiresSupplier && <label className="block text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass} required><option value="">選擇供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.country ? ` · ${supplier.country}` : ""}</option>)}</select>{!suppliers.length && !loading && <small className="mt-2 block text-xs font-normal text-[#A66932]">尚未建立供應商，請先到採購與供應商新增資料。</small>}</label>}
-        {majorCategory !== "opening" && !requiresCustomer && !requiresSupplier && <label className="block text-sm font-semibold text-[#58534C]">{counterpartLabel}<input value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} placeholder={majorCategory === "income" ? "例如：王小明" : "例如：物流費用"} className={inputClass} required /></label>}
+        {majorCategory !== "opening" && !requiresOrder && !requiresSupplier && <label className="block text-sm font-semibold text-[#58534C]">{counterpartLabel}<input value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} placeholder={majorCategory === "income" ? "例如：零售客人姓名" : "例如：物流費用"} className={inputClass} required /></label>}
         {majorCategory === "opening" && <div className="rounded-xl bg-[#F8F6F2] px-4 py-3 text-xs leading-5 text-[#776F65]">第一次開始記帳時，輸入手上既有的現金。之後的現金收款與現金支出會自動加減餘額。</div>}
         <div className="grid gap-4 sm:grid-cols-3"><label className="block text-sm font-semibold text-[#58534C]">收支日期<input type="date" value={occurredOn} onChange={(event) => setOccurredOn(event.target.value)} className={inputClass} required /></label><label className="block text-sm font-semibold text-[#58534C]">付款方式<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className={inputClass}>{methods.map((method) => <option key={method} value={method}>{method}</option>)}</select></label><label className="block text-sm font-semibold text-[#58534C]">幣別<select value={currency} disabled={isCreditCardExpense && Boolean(regionCurrency[region])} onChange={(event) => setCurrency(event.target.value as CurrencyCode)} className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}>{currencies.map((item) => <option key={item} value={item}>{currencyLabel[item]}（{currencySymbol[item]}）</option>)}</select></label></div>
         {isCreditCardExpense && <div className="rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-4"><p className="text-sm font-semibold text-[#58534C]">信用卡支出明細</p><p className="mt-1 text-xs leading-5 text-[#8B847A]">選擇刷卡地區後會自動帶入幣別；選其他地區可自行選擇幣別。</p><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold text-[#58534C]">刷卡地區<select value={region} onChange={(event) => setRegion(event.target.value)} className={inputClass}>{Object.keys(regionCurrency).map((item) => <option key={item}>{item}</option>)}</select></label><label className="block text-sm font-semibold text-[#58534C]">明細／商家<input value={cardDetail} onChange={(event) => setCardDetail(event.target.value)} placeholder="例如：Olive Young 弘大店" className={inputClass} required /></label></div></div>}

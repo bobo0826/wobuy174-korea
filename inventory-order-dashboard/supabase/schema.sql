@@ -24,6 +24,8 @@ create table if not exists customers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   line_name text not null default '',
+  customer_category text not null default '社群' check (customer_category in ('員工', '社群')),
+  preferred_delivery_method text not null default '自取' check (preferred_delivery_method in ('自取', '賣貨便')),
   phone text not null default '',
   address text not null default '',
   created_at timestamptz not null default now(),
@@ -131,12 +133,13 @@ create table if not exists financial_transactions (
   counterparty_name text not null default '',
   customer_id uuid references customers(id) on delete set null,
   supplier_id uuid references suppliers(id) on delete set null,
+  order_id uuid references orders(id) on delete set null,
   note text not null default '',
   created_by text not null default '',
   created_at timestamptz not null default now(),
   check (
-    (entry_type = 'customer_payment' and direction = 'income' and customer_id is not null and supplier_id is null and payment_method in ('現金', '轉帳'))
-    or (entry_type = 'supplier_payment' and direction = 'expense' and supplier_id is not null and customer_id is null and payment_method in ('現金', '匯款', '信用卡'))
+    (entry_type = 'customer_payment' and direction = 'income' and supplier_id is null and payment_method in ('現金', '轉帳'))
+    or (entry_type = 'supplier_payment' and direction = 'expense' and customer_id is null and payment_method in ('現金', '匯款', '信用卡'))
     or (entry_type = 'opening_cash' and direction = 'income' and customer_id is null and supplier_id is null and payment_method = '現金')
   )
 );
@@ -153,6 +156,7 @@ create index if not exists purchase_orders_supplier_id_idx on purchase_orders(su
 create index if not exists financial_transactions_occurred_on_idx on financial_transactions(occurred_on desc, created_at desc);
 create index if not exists financial_transactions_customer_id_idx on financial_transactions(customer_id);
 create index if not exists financial_transactions_supplier_id_idx on financial_transactions(supplier_id);
+create index if not exists financial_transactions_order_id_idx on financial_transactions(order_id);
 
 -- All stock changes are applied inside the database so stock cannot become negative.
 create or replace function public.apply_inventory_adjustment(

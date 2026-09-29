@@ -90,6 +90,8 @@ type Customer = {
   id: string;
   name: string;
   line_name: string;
+  customer_category: "員工" | "社群";
+  preferred_delivery_method: "自取" | "賣貨便";
   phone: string;
   address: string;
   created_at: string;
@@ -564,7 +566,7 @@ function ImportProducts({ back, onImported }: { back: () => void; onImported: (p
 }
 
 function CustomerManagement() {
-  const emptyForm = { name: "", lineName: "", phone: "", address: "" };
+  const emptyForm = { name: "", lineName: "", customerCategory: "社群", preferredDeliveryMethod: "自取", phone: "", address: "" };
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -590,7 +592,7 @@ function CustomerManagement() {
   useEffect(() => { void loadCustomers(); }, []);
 
   const openNew = () => { setEditing(null); setForm(emptyForm); setError(""); setNotice(""); setShowForm(true); };
-  const openEdit = (customer: Customer) => { setEditing(customer); setForm({ name: customer.name, lineName: customer.line_name, phone: customer.phone, address: customer.address }); setError(""); setNotice(""); setShowForm(true); };
+  const openEdit = (customer: Customer) => { setEditing(customer); setForm({ name: customer.name, lineName: customer.line_name, customerCategory: customer.customer_category || "社群", preferredDeliveryMethod: customer.preferred_delivery_method || "自取", phone: customer.phone, address: customer.address }); setError(""); setNotice(""); setShowForm(true); };
   const updateForm = (field: keyof typeof emptyForm, value: string) => setForm((previous) => ({ ...previous, [field]: value }));
   const saveCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -619,15 +621,15 @@ function CustomerManagement() {
       setNotice("客戶資料已刪除。");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "無法刪除客戶資料。"); }
   };
-  const visibleCustomers = customers.filter((customer) => [customer.name, customer.line_name, customer.phone, customer.address].join(" ").toLowerCase().includes(query.trim().toLowerCase()));
+  const visibleCustomers = customers.filter((customer) => [customer.name, customer.line_name, customer.customer_category, customer.preferred_delivery_method, customer.phone, customer.address].join(" ").toLowerCase().includes(query.trim().toLowerCase()));
   const inputClass = "mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]";
 
   return <>
-    <Header eyebrow="CUSTOMERS" title="客戶管理" description="集中管理客戶姓名、LINE@、電話與配送地址。"><Primary onClick={openNew}>＋ 新增客戶</Primary></Header>
+    <Header eyebrow="CUSTOMERS" title="客戶管理" description="集中管理客戶類別、常用交易方式與收件資料。"><Primary onClick={openNew}>＋ 新增客戶</Primary></Header>
     {notice && <Card className="mb-5 border-[#D9E5DB] bg-[#EEF5EF] p-4 text-sm font-semibold text-[#45634C]">{notice}</Card>}
     {error && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{error}</Card>}
-    {showForm && <Card className="mb-5 p-5 sm:p-6"><div className="flex items-center justify-between gap-4"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CUSTOMER FORM</p><h2 className="mt-1 text-xl font-semibold">{editing ? "編輯客戶" : "新增客戶"}</h2></div><button aria-label="關閉客戶表單" onClick={() => setShowForm(false)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E7E2DB] text-lg text-[#777168]">×</button></div><form onSubmit={saveCustomer} className="mt-5"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-[#58534C]">客戶姓名<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} placeholder="例如：王思妤" className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">LINE@名稱<input value={form.lineName} onChange={(event) => updateForm("lineName", event.target.value)} placeholder="例如：@szu.yi" className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">電話<input value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} placeholder="例如：0912-456-789" className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">地址<input value={form.address} onChange={(event) => updateForm("address", event.target.value)} placeholder="例如：台南市中西區府前路一段 120 號" className={inputClass} /></label></div><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Secondary onClick={() => setShowForm(false)}>取消</Secondary><Primary type="submit" disabled={saving}>{saving ? "儲存中…" : "儲存客戶"}</Primary></div></form></Card>}
-    <Card className="overflow-hidden"><div className="flex flex-col gap-3 border-b border-[#F0EDE8] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"><Search value={query} onChange={setQuery} placeholder="搜尋客戶姓名、LINE@、電話或地址" /><span className="text-xs text-[#807A71]">共 {customers.length} 位客戶</span></div><div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">客戶姓名</th><th className="px-3 py-3">LINE@名稱</th><th className="px-3 py-3">電話</th><th className="px-3 py-3">地址</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{loading ? <tr><td colSpan={5} className="px-6 py-10 text-center text-[#8D877E]">載入客戶資料中…</td></tr> : visibleCustomers.length ? visibleCustomers.map((customer) => <tr key={customer.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4 font-semibold text-[#4A4640]">{customer.name}</td><td className="px-3 py-4 text-[#625D55]">{customer.line_name || "—"}</td><td className="px-3 py-4 text-[#625D55]">{customer.phone || "—"}</td><td className="px-3 py-4 text-[#625D55]">{customer.address || "—"}</td><td className="px-6 py-4 text-right"><button onClick={() => openEdit(customer)} className="mr-4 text-sm font-semibold text-[#5E7665]">編輯</button><button onClick={() => { void removeCustomer(customer); }} className="text-sm font-semibold text-[#A35F37]">刪除</button></td></tr>) : <tr><td colSpan={5} className="px-6 py-10 text-center text-[#8D877E]">尚無客戶資料。請按「新增客戶」建立第一位客戶。</td></tr>}</tbody></table></div></Card>
+    {showForm && <Card className="mb-5 p-5 sm:p-6"><div className="flex items-center justify-between gap-4"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CUSTOMER FORM</p><h2 className="mt-1 text-xl font-semibold">{editing ? "編輯客戶" : "新增客戶"}</h2></div><button aria-label="關閉客戶表單" onClick={() => setShowForm(false)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E7E2DB] text-lg text-[#777168]">×</button></div><form onSubmit={saveCustomer} className="mt-5"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-[#58534C]">客戶姓名<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} placeholder="例如：王思妤" className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">LINE@名稱<input value={form.lineName} onChange={(event) => updateForm("lineName", event.target.value)} placeholder="例如：@szu.yi" className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">類別<select value={form.customerCategory} onChange={(event) => updateForm("customerCategory", event.target.value)} className={inputClass}><option>員工</option><option>社群</option></select></label><label className="text-sm font-semibold text-[#58534C]">常用交易方式<select value={form.preferredDeliveryMethod} onChange={(event) => updateForm("preferredDeliveryMethod", event.target.value)} className={inputClass}><option>自取</option><option>賣貨便</option></select></label><label className="text-sm font-semibold text-[#58534C]">電話<input value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} placeholder="例如：0912-456-789" className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">地址／取貨門市<input value={form.address} onChange={(event) => updateForm("address", event.target.value)} placeholder="例如：台南市中西區府前路一段 120 號／永康門市" className={inputClass} /></label></div><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Secondary onClick={() => setShowForm(false)}>取消</Secondary><Primary type="submit" disabled={saving}>{saving ? "儲存中…" : "儲存客戶"}</Primary></div></form></Card>}
+    <Card className="overflow-hidden"><div className="flex flex-col gap-3 border-b border-[#F0EDE8] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"><Search value={query} onChange={setQuery} placeholder="搜尋客戶、LINE@、類別、方式、電話或門市" /><span className="text-xs text-[#807A71]">共 {customers.length} 位客戶</span></div><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">客戶姓名</th><th className="px-3 py-3">LINE@名稱</th><th className="px-3 py-3">類別</th><th className="px-3 py-3">常用交易方式</th><th className="px-3 py-3">電話</th><th className="px-3 py-3">地址／取貨門市</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{loading ? <tr><td colSpan={7} className="px-6 py-10 text-center text-[#8D877E]">載入客戶資料中…</td></tr> : visibleCustomers.length ? visibleCustomers.map((customer) => <tr key={customer.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4 font-semibold text-[#4A4640]">{customer.name}</td><td className="px-3 py-4 text-[#625D55]">{customer.line_name || "—"}</td><td className="px-3 py-4 text-[#625D55]">{customer.customer_category || "社群"}</td><td className="px-3 py-4 text-[#625D55]">{customer.preferred_delivery_method || "自取"}</td><td className="px-3 py-4 text-[#625D55]">{customer.phone || "—"}</td><td className="px-3 py-4 text-[#625D55]">{customer.address || "—"}</td><td className="px-6 py-4 text-right"><button onClick={() => openEdit(customer)} className="mr-4 text-sm font-semibold text-[#5E7665]">編輯</button><button onClick={() => { void removeCustomer(customer); }} className="text-sm font-semibold text-[#A35F37]">刪除</button></td></tr>) : <tr><td colSpan={7} className="px-6 py-10 text-center text-[#8D877E]">尚無客戶資料。請按「新增客戶」建立第一位客戶。</td></tr>}</tbody></table></div></Card>
   </>;
 }
 
@@ -1518,11 +1520,13 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
   const [orderError, setOrderError] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerError, setCustomerError] = useState("");
   const [customerFields, setCustomerFields] = useState<Array<[string, string]>>([[
-    "客戶姓名", "尚未選擇"], ["LINE@名稱", "—"], ["電話", "—"], ["地址", "—"],
+    "客戶姓名", "尚未選擇"], ["LINE@名稱", "—"], ["類別", "—"], ["常用交易方式", "—"], ["電話", "—"], ["地址／取貨門市", "—"],
   ]);
   const [newCustomer, setNewCustomer] = useState({ name: "", lineName: "", phone: "", address: "" });
   const stockFor = (product: Product) => stock[String(product.id)] ?? product.available;
@@ -1534,6 +1538,8 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
   const netProfit = total - costTotal;
   // 預購訂單允許先選擇 0 庫存商品；實際扣庫存改由訂單管理頁的按鈕執行。
   const availableProducts = storedProducts.filter((product) => !lines[String(product.id)]);
+  const customerLabel = (customer: Customer) => [customer.name, customer.line_name, customer.phone].filter(Boolean).join(" · ");
+  const matchingCustomers = customers.filter((customer) => [customer.name, customer.line_name, customer.phone, customer.address].join(" ").toLowerCase().includes(customerSearch.trim().toLowerCase())).slice(0, 8);
 
   useEffect(() => {
     let active = true;
@@ -1595,12 +1601,22 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
     setSelectedCustomerId(id);
     const customer = customers.find((item) => item.id === id);
     if (!customer) return;
+    setCustomerSearch(customerLabel(customer));
+    setCustomerPickerOpen(false);
+    setDelivery(customer.preferred_delivery_method === "賣貨便" ? "myship" : "pickup");
     setCustomerFields([
       ["客戶姓名", customer.name],
       ["LINE@名稱", customer.line_name || "—"],
+      ["類別", customer.customer_category || "社群"],
+      ["常用交易方式", customer.preferred_delivery_method || "自取"],
       ["電話", customer.phone || "—"],
-      ["地址", customer.address || "—"],
+      ["地址／取貨門市", customer.address || "—"],
     ]);
+  };
+  const clearCustomerSelection = (value: string) => {
+    setCustomerSearch(value);
+    setSelectedCustomerId("");
+    setCustomerFields([["客戶姓名", "尚未選擇"], ["LINE@名稱", "—"], ["類別", "—"], ["常用交易方式", "—"], ["電話", "—"], ["地址／取貨門市", "—"]]);
   };
   const saveNewCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1617,11 +1633,14 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
       const customer = result.customer as Customer;
       setCustomers((previous) => [customer, ...previous]);
       setSelectedCustomerId(customer.id);
+      setCustomerSearch(customerLabel(customer));
       setCustomerFields([
         ["客戶姓名", customer.name],
         ["LINE@名稱", customer.line_name || "—"],
+        ["類別", customer.customer_category || "社群"],
+        ["常用交易方式", customer.preferred_delivery_method || "自取"],
         ["電話", customer.phone || "—"],
-        ["地址", customer.address || "—"],
+        ["地址／取貨門市", customer.address || "—"],
       ]);
       setNewCustomer({ name: "", lineName: "", phone: "", address: "" });
       setShowNewCustomer(false);
@@ -1726,7 +1745,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
         <Card className="p-5 sm:p-6">
           <div className="flex justify-between"><span><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CUSTOMER</p><h2 className="mt-1 text-lg font-semibold">選擇客戶</h2></span><button onClick={() => { setCustomerError(""); setShowNewCustomer((value) => !value); }} className="text-sm font-semibold text-[#5E7665]">＋ 新增客戶</button></div>
           {showNewCustomer && <form onSubmit={saveNewCustomer} className="mt-5 rounded-xl border border-[#E9E5DF] bg-[#FCFBF9] p-4"><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold text-[#58534C]">客戶姓名<input required value={newCustomer.name} onChange={(event) => setNewCustomer((previous) => ({ ...previous, name: event.target.value }))} placeholder="例如：王思妤" className="mt-2 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">LINE@名稱<input value={newCustomer.lineName} onChange={(event) => setNewCustomer((previous) => ({ ...previous, lineName: event.target.value }))} placeholder="例如：@szu.yi" className="mt-2 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">電話<input value={newCustomer.phone} onChange={(event) => setNewCustomer((previous) => ({ ...previous, phone: event.target.value }))} placeholder="例如：0912-456-789" className="mt-2 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">地址<input value={newCustomer.address} onChange={(event) => setNewCustomer((previous) => ({ ...previous, address: event.target.value }))} placeholder="配送地址" className="mt-2 h-10 w-full rounded-lg border border-[#E6E1DB] bg-white px-3 text-sm font-normal outline-none" /></label></div>{customerError && <p role="alert" className="mt-3 text-sm font-semibold text-[#A35F37]">{customerError}</p>}<div className="mt-4 flex justify-end gap-2"><Secondary onClick={() => setShowNewCustomer(false)}>取消</Secondary><Primary type="submit" disabled={savingCustomer}>{savingCustomer ? "新增中…" : "儲存客戶"}</Primary></div></form>}
-          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] gap-3"><select value={selectedCustomerId} onChange={(event) => chooseCustomer(event.target.value)} className="h-11 min-w-0 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#58534C] outline-none"><option value="">選擇已建立的客戶</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{customer.line_name ? ` · ${customer.line_name}` : ""}</option>)}</select><Secondary onClick={openCustomers} className="px-3">管理客戶</Secondary></div>
+          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] gap-3"><div className="relative"><input value={customerSearch} onFocus={() => setCustomerPickerOpen(true)} onChange={(event) => { clearCustomerSelection(event.target.value); setCustomerPickerOpen(true); }} placeholder="搜尋客戶姓名、LINE@、電話或地址" className="h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#58534C] outline-none" />{customerPickerOpen && <div className="absolute z-20 mt-2 max-h-64 w-full overflow-y-auto rounded-xl border border-[#E7E2DB] bg-white p-1.5 shadow-lg">{matchingCustomers.length ? matchingCustomers.map((customer) => <button type="button" key={customer.id} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseCustomer(customer.id)} className="w-full rounded-lg px-3 py-2.5 text-left text-sm hover:bg-[#F5F3EF]"><b className="block text-[#48433C]">{customer.name}{customer.line_name ? ` · ${customer.line_name}` : ""}</b><span className="mt-1 block text-xs text-[#8D877E]">{[customer.customer_category, customer.preferred_delivery_method, customer.phone, customer.address].filter(Boolean).join(" · ")}</span></button>) : <p className="px-3 py-3 text-sm text-[#8D877E]">找不到符合的客戶。</p>}</div>}</div><Secondary onClick={openCustomers} className="px-3">管理客戶</Secondary></div>
           <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2]">{customerFields.map(([label, value]) => <div key={label} className="bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-1 break-words text-sm font-semibold leading-6 text-[#48433C]">{value}</p></div>)}</div>
         </Card>
 

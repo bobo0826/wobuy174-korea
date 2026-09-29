@@ -14,7 +14,7 @@ type StoredProduct = {
   available_stock: number;
 };
 
-type Customer = { id: string; name: string; line_name: string; phone: string; address: string };
+type Customer = { id: string; name: string; line_name: string; customer_category?: string; preferred_delivery_method?: string; phone: string; address: string };
 type StoredItem = { id: string; product_id: string; product_name: string; category: string; unit_price: number; unit_cost: number; quantity: number };
 export type StoredOrder = {
   id: string;
@@ -39,6 +39,8 @@ export function OrderEditor({ order, onClose, onSaved }: { order: StoredOrder; o
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<StoredProduct[]>([]);
   const [customerId, setCustomerId] = useState(order.customers?.id ?? "");
+  const [customerSearch, setCustomerSearch] = useState(() => order.customers ? [order.customers.name, order.customers.line_name, order.customers.phone].filter(Boolean).join(" · ") : "");
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [orderNumber, setOrderNumber] = useState(order.order_number);
   const [orderDate, setOrderDate] = useState(order.order_date);
   const [status, setStatus] = useState<StoredOrder["status"]>(order.status);
@@ -80,7 +82,15 @@ export function OrderEditor({ order, onClose, onSaved }: { order: StoredOrder; o
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const unselected = products.filter((product) => !lines.some((line) => line.productId === product.id));
+  const customerLabel = (customer: Customer) => [customer.name, customer.line_name, customer.phone].filter(Boolean).join(" · ");
+  const matchingCustomers = customers.filter((customer) => [customer.name, customer.line_name, customer.phone, customer.address].join(" ").toLowerCase().includes(customerSearch.trim().toLowerCase())).slice(0, 8);
   const setLine = (index: number, change: Partial<EditableLine>) => setLines((previous) => previous.map((line, lineIndex) => lineIndex === index ? { ...line, ...change } : line));
+
+  const chooseCustomer = (customer: Customer) => {
+    setCustomerId(customer.id);
+    setCustomerSearch(customerLabel(customer));
+    setCustomerPickerOpen(false);
+  };
 
   const addLine = () => {
     const product = productById.get(addProductId);
@@ -146,7 +156,7 @@ export function OrderEditor({ order, onClose, onSaved }: { order: StoredOrder; o
           <label className="text-sm font-semibold">訂單編號<input value={orderNumber} disabled={shipped} onChange={(event) => setOrderNumber(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none disabled:bg-[#F4F1EC]" /></label>
           <label className="text-sm font-semibold">訂單日期<input type="date" value={orderDate} disabled={shipped} onChange={(event) => setOrderDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none disabled:bg-[#F4F1EC]" /></label>
           <label className="text-sm font-semibold">訂單狀態<select value={status} disabled={shipped} onChange={(event) => setStatus(event.target.value as StoredOrder["status"])} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none disabled:bg-[#F4F1EC]"><option>預購中</option><option>未出貨</option><option>已出貨</option><option>已取消</option></select></label>
-          <label className="text-sm font-semibold sm:col-span-2 lg:col-span-3">客戶<select value={customerId} disabled={shipped} onChange={(event) => setCustomerId(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none disabled:bg-[#F4F1EC]"><option value="">請選擇客戶</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}{customer.line_name ? ` · ${customer.line_name}` : ""}</option>)}</select></label>
+          <label className="relative text-sm font-semibold sm:col-span-2 lg:col-span-3">客戶<input value={customerSearch} disabled={shipped} onFocus={() => setCustomerPickerOpen(true)} onChange={(event) => { setCustomerSearch(event.target.value); setCustomerId(""); setCustomerPickerOpen(true); }} placeholder="搜尋客戶姓名、LINE@、電話或地址" className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none disabled:bg-[#F4F1EC]" />{customerPickerOpen && !shipped && <div className="absolute z-20 mt-2 max-h-64 w-full overflow-y-auto rounded-xl border border-[#E7E2DB] bg-white p-1.5 shadow-lg">{matchingCustomers.length ? matchingCustomers.map((customer) => <button type="button" key={customer.id} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseCustomer(customer)} className="w-full rounded-lg px-3 py-2.5 text-left text-sm hover:bg-[#F5F3EF]"><b className="block text-[#48433C]">{customer.name}{customer.line_name ? ` · ${customer.line_name}` : ""}</b><span className="mt-1 block text-xs text-[#8D877E]">{[customer.customer_category, customer.preferred_delivery_method, customer.phone, customer.address].filter(Boolean).join(" · ")}</span></button>) : <p className="px-3 py-3 text-sm font-normal text-[#8D877E]">找不到符合的客戶。</p>}</div>}</label>
           <label className="text-sm font-semibold">下單方式<select value={orderMethod} disabled={shipped} onChange={(event) => setOrderMethod(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none disabled:bg-[#F4F1EC]"><option>社群下單</option><option>員工下單</option></select></label>
           <label className="text-sm font-semibold">付款方式<select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>銀行轉帳</option><option>信用卡</option><option>現金</option><option>貨到付款</option></select></label>
           <label className="text-sm font-semibold">付款狀態<select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>未付款</option><option>已付款</option></select></label>

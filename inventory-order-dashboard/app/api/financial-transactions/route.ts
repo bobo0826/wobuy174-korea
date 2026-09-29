@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 type FinancialTransactionInput = {
   majorCategory?: unknown;
   subCategory?: unknown;
+  orderId?: unknown;
   customerId?: unknown;
   supplierId?: unknown;
   counterpartyName?: unknown;
@@ -22,7 +23,7 @@ type FinancialTransactionInput = {
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const currencies = ["TWD", "KRW", "JPY"] as const;
-const incomeSubcategories = ["員工購買", "客人購買", "其他"] as const;
+const incomeSubcategories = ["訂單結帳", "零售購買", "其他"] as const;
 const expenseSubcategories = ["供應商貨款", "貨款請款", "其他"] as const;
 const regionCurrency: Record<string, (typeof currencies)[number] | null> = { "台灣": "TWD", "韓國": "KRW", "日本": "JPY", "其他": null };
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -49,6 +50,7 @@ const missingFinancialSetup = (error: unknown) => {
 function validateInput(input: FinancialTransactionInput) {
   const majorCategory = text(input.majorCategory);
   const subCategory = text(input.subCategory);
+  const orderId = text(input.orderId);
   const customerId = text(input.customerId);
   const supplierId = text(input.supplierId);
   const counterpartyName = text(input.counterpartyName);
@@ -68,8 +70,8 @@ function validateInput(input: FinancialTransactionInput) {
   if (majorCategory === "income") {
     if (!incomeSubcategories.includes(subCategory as (typeof incomeSubcategories)[number])) return { error: "收入小分類不正確。" };
     if (!["現金", "轉帳"].includes(paymentMethod)) return { error: "收入付款方式僅限現金或轉帳。" };
-    if (subCategory === "客人購買" && !uuidPattern.test(customerId)) return { error: "客人購買請選擇已建立的客戶。" };
-    if (subCategory !== "客人購買" && !counterpartyName) return { error: "請填寫收款對象。" };
+    if (subCategory === "訂單結帳" && !uuidPattern.test(orderId)) return { error: "訂單結帳請選擇既有訂單。" };
+    if (subCategory !== "訂單結帳" && !counterpartyName) return { error: "請填寫收款對象。" };
   }
 
   if (majorCategory === "expense") {
@@ -85,10 +87,10 @@ function validateInput(input: FinancialTransactionInput) {
   }
 
   if (majorCategory === "opening" && paymentMethod !== "現金") return { error: "期初現金須以現金記錄。" };
-  return { majorCategory, subCategory: majorCategory === "opening" ? "期初現金" : subCategory, customerId, supplierId, counterpartyName, paymentMethod, currency, region, cardDetail, amount, occurredOn, note };
+  return { majorCategory, subCategory: majorCategory === "opening" ? "期初現金" : subCategory, orderId, customerId, supplierId, counterpartyName, paymentMethod, currency, region, cardDetail, amount, occurredOn, note };
 }
 
-const transactionSelect = "id, entry_type, direction, major_category, sub_category, payment_method, currency, region, card_detail, amount, occurred_on, counterparty_name, note, created_by, created_at";
+const transactionSelect = "id, entry_type, direction, major_category, sub_category, payment_method, currency, region, card_detail, amount, occurred_on, counterparty_name, customer_id, supplier_id, order_id, note, created_by, created_at";
 
 export async function GET(request: NextRequest) {
   try {
@@ -120,15 +122,22 @@ export async function POST(request: NextRequest) {
     let counterpartyName = validation.majorCategory === "opening" ? "期初現金" : validation.counterpartyName;
     let customerId: string | null = null;
     let supplierId: string | null = null;
+    let orderId: string | null = null;
     const direction = validation.majorCategory === "expense" ? "expense" : "income";
     const entryType = validation.majorCategory === "expense" ? "supplier_payment" : validation.majorCategory === "income" ? "customer_payment" : "opening_cash";
 
-    if (validation.majorCategory === "income" && validation.subCategory === "客人購買") {
-      const { data: customer, error } = await supabase.from("customers").select("id, name").eq("id", validation.customerId).maybeSingle();
+    if (validation.majorCategory === "income" && validation.subCategory === "訂單結帳") {
+      const { data: order, error } = await supabase.from("orders").select("id, order_number, customer_id, customers(name)").eq("id", validation.orderId).maybeSingle();
       if (error) throw error;
-      if (!customer) return NextResponse.json({ message: "找不到選擇的客戶。" }, { status: 400 });
-      counterpartyName = customer.name;
-      customerId = customer.id;
+      if (!order) return NextResponse.json({ message: "找不到選擇的訂單。" }, { status: 400 });
+      if (!order.customer_id) return NextResponse.json({ message: "這張訂單尚未連結客戶，無法建立訂單結帳紀錄。" }, { status: 400 });
+      const linkedCustomer = order.customers as unknown;
+      const customerName = Array.isArray(linkedCustomer)
+        ? (linkedCustomer[0] as { name?: string } | undefined)?.name
+        : (linkedCustomer as { name?: string } | null)?.name;
+      counterpartyName = `訂單 ${order.order_number}${customerName ? ` · ${customerName}` : ""}`;
+      customerId = order.customer_id;
+      orderId = order.id;
     }
     if (validation.majorCategory === "expense" && validation.subCategory === "供應商貨款") {
       const { data: supplier, error } = await supabase.from("suppliers").select("id, name").eq("id", validation.supplierId).maybeSingle();
@@ -152,6 +161,7 @@ export async function POST(request: NextRequest) {
       counterparty_name: counterpartyName,
       customer_id: customerId,
       supplier_id: supplierId,
+      order_id: orderId,
       note: validation.note,
       created_by: auth.context.profile.displayName,
     }).select(transactionSelect).single();
