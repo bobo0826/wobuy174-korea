@@ -30,23 +30,34 @@ type ManagedProduct = {
   code: string;
   name: string;
   price: string;
+  original_price: string | null;
   status: string;
+  country: string;
   sort_order: number | null;
   categories: string[] | null;
   bedding_type: string | null;
+  korea_type: string | null;
+  deadline: string | null;
+  arrival: string | null;
+  colors: string | null;
+  sizes: string | null;
+  details: string | null;
+  specs: string | null;
   variants: unknown;
   image_urls: string[] | null;
   published: boolean;
 };
 
+function storagePathFromUrl(imageUrl: string) {
+  const marker = "/product-images/";
+  const index = imageUrl.indexOf(marker);
+  return index === -1 ? null : decodeURIComponent(imageUrl.slice(index + marker.length));
+}
+
 function storagePathsFromUrls(imageUrls: string[]) {
   return imageUrls
-    .map((url) => {
-      const marker = "/product-images/";
-      const index = url.indexOf(marker);
-      return index === -1 ? "" : decodeURIComponent(url.slice(index + marker.length));
-    })
-    .filter(Boolean);
+    .map(storagePathFromUrl)
+    .filter((path): path is string => Boolean(path));
 }
 
 function variantCount(value: unknown) {
@@ -56,6 +67,67 @@ function variantCount(value: unknown) {
     const record = variant as Record<string, unknown>;
     return typeof record.name === "string" && Boolean(record.name.trim()) && typeof record.price === "string" && Boolean(record.price.trim());
   }).length;
+}
+
+function copiedVariants(value: unknown, copiedProductCode: string) {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((variant, index) => {
+    if (!variant || typeof variant !== "object") return [];
+    const record = variant as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const price = typeof record.price === "string" ? record.price.trim() : "";
+    if (!name || !price) return [];
+
+    return [{ name, price, code: `${copiedProductCode}-${index + 1}` }];
+  });
+}
+
+function imageExtension(contentType: string) {
+  const extensions: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+  };
+  return extensions[contentType] ?? "jpg";
+}
+
+async function copyProductImages(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  imageUrls: string[],
+  copiedProductCode: string,
+) {
+  const copiedImageUrls: string[] = [];
+
+  for (const [index, imageUrl] of imageUrls.slice(0, 3).entries()) {
+    const sourcePath = storagePathFromUrl(imageUrl);
+    if (!sourcePath) {
+      copiedImageUrls.push(imageUrl);
+      continue;
+    }
+
+    const { data: image, error: downloadError } = await supabase.storage
+      .from("product-images")
+      .download(sourcePath);
+    if (downloadError || !image) {
+      throw new Error(`複製商品照片失敗：${downloadError?.message ?? "找不到原始照片"}`);
+    }
+
+    const imagePath = `${copiedProductCode}/${Date.now()}-${index}-copy.${imageExtension(image.type)}`;
+    const { error: uploadError } = await supabase.storage.from("product-images").upload(imagePath, image, {
+      cacheControl: "31536000",
+      contentType: image.type,
+      upsert: false,
+    });
+    if (uploadError) throw new Error(`複製商品照片失敗：${uploadError.message}`);
+
+    copiedImageUrls.push(
+      supabase.storage.from("product-images").getPublicUrl(imagePath).data.publicUrl,
+    );
+  }
+
+  return copiedImageUrls;
 }
 
 export default function AdminProductsPage() {
@@ -151,6 +223,56 @@ export default function AdminProductsPage() {
     if (imagePaths.length) await supabase.storage.from("product-images").remove(imagePaths);
     await loadProducts();
     setIsBusy(false);
+  };
+
+  const copyProduct = async (product: ManagedProduct) => {
+    const copiedProductCode = `${product.code.trim().toUpperCase()}-COPY-${Date.now().toString(36).toUpperCase()}`;
+    const confirmed = window.confirm(
+      `要複製「${product.name}」嗎？\n\n會建立一個不會顯示在前台的商品副本，接著可調整名稱、商品編號與規格。`,
+    );
+    if (!confirmed) return;
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    setIsBusy(true);
+    setMessage("正在複製商品資料與照片…");
+    try {
+      const imageUrls = await copyProductImages(
+        supabase,
+        product.image_urls ?? [],
+        copiedProductCode,
+      );
+      const { error } = await supabase.from("products").insert({
+        code: copiedProductCode,
+        name: `${product.name}（複製）`,
+        price: product.price,
+        original_price: product.original_price,
+        status: product.status,
+        country: product.country,
+        categories: product.categories ?? [],
+        bedding_type: product.bedding_type,
+        korea_type: product.korea_type,
+        deadline: product.deadline,
+        arrival: product.arrival,
+        colors: product.colors,
+        sizes: product.sizes,
+        details: product.details,
+        specs: product.specs,
+        variants: copiedVariants(product.variants, copiedProductCode),
+        image_urls: imageUrls,
+        sort_order: (product.sort_order ?? 0) + 1,
+        published: false,
+      });
+      if (error) throw error;
+
+      window.location.assign(
+        `/admin?edit=${encodeURIComponent(copiedProductCode)}#single-product-form`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "複製商品失敗，請稍後再試。");
+      setIsBusy(false);
+    }
   };
 
   const saveSortOrder = async (product: ManagedProduct) => {
@@ -266,7 +388,7 @@ export default function AdminProductsPage() {
                 <th className="min-w-36 px-4 py-3">分類</th>
                 <th className="w-24 px-4 py-3">貨況</th>
                 <th className="w-28 px-4 py-3">前台顯示</th>
-                <th className="w-36 px-4 py-3 text-right">管理</th>
+                <th className="w-52 px-4 py-3 text-right">管理</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#D9D6D0]">
@@ -296,7 +418,7 @@ export default function AdminProductsPage() {
                     <td className="px-4 py-3 text-xs leading-5 text-[#605B51]/75">{labels.length ? labels.join(" · ") : "未分類"}</td>
                     <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${product.status === "現貨" ? "bg-[#7D2F35] text-[#F5F5F5]" : "bg-[#E9E7E3] text-[#605B51]"}`}>{product.status}</span></td>
                     <td className="px-4 py-3"><button aria-pressed={product.published} className={`rounded-full px-2.5 py-1.5 text-xs font-semibold ${product.published ? "bg-[#605B51] text-[#F5F5F5]" : "border border-[#D9D6D0] text-[#605B51]"}`} disabled={isBusy} onClick={() => void togglePublished(product)}>{product.published ? "顯示中" : "已隱藏"}</button></td>
-                    <td className="px-4 py-3 text-right"><div className="inline-flex items-center gap-3"><Link className="font-medium hover:text-[#766F63]" href={`/admin?edit=${encodeURIComponent(product.code)}#single-product-form`}>編輯</Link><button className="font-medium text-[#A81515] disabled:opacity-50" disabled={isBusy} onClick={() => void deleteProduct(product)}>刪除</button></div></td>
+                    <td className="px-4 py-3 text-right"><div className="inline-flex items-center gap-3"><Link className="font-medium hover:text-[#766F63]" href={`/admin?edit=${encodeURIComponent(product.code)}#single-product-form`}>編輯</Link><button className="font-medium hover:text-[#766F63] disabled:opacity-50" disabled={isBusy} onClick={() => void copyProduct(product)}>複製</button><button className="font-medium text-[#A81515] disabled:opacity-50" disabled={isBusy} onClick={() => void deleteProduct(product)}>刪除</button></div></td>
                   </tr>
                 );
               })}
