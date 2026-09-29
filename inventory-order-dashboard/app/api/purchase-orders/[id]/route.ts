@@ -239,6 +239,66 @@ async function syncLatestCostsForReceivedItems(itemIds: string[]) {
   }
 }
 
+export async function DELETE(request: NextRequest, { params }: Context) {
+  try {
+    const auth = await requireSignedIn(request);
+    if (!auth.context) return auth.response!;
+    const { id } = await params;
+    if (!uuidPattern.test(id)) return NextResponse.json({ message: "採購單資料不正確。" }, { status: 400 });
+
+    const supabase = getSupabaseAdmin();
+    const { data: purchaseOrder, error: purchaseOrderError } = await supabase
+      .from("purchase_orders")
+      .select("id, purchase_number, purchase_order_items(product_id, product_name, quantity, received_quantity)")
+      .eq("id", id)
+      .maybeSingle();
+    if (purchaseOrderError) throw purchaseOrderError;
+    if (!purchaseOrder) return NextResponse.json({ message: "找不到採購單。" }, { status: 404 });
+
+    // 已入庫的採購單會影響可售庫存與成本；必須先回復為未收貨，才可安全刪除。
+    if ((purchaseOrder.purchase_order_items ?? []).some((item) => Number(item.received_quantity) > 0)) {
+      return NextResponse.json({ message: "這張採購單已有入庫紀錄。請先回復為未收貨，再刪除採購單。" }, { status: 409 });
+    }
+
+    const quantityByProduct = new Map<string, number>();
+    for (const item of purchaseOrder.purchase_order_items ?? []) {
+      if (!item.product_id) continue;
+      quantityByProduct.set(item.product_id, (quantityByProduct.get(item.product_id) ?? 0) + Number(item.quantity));
+    }
+    const productIds = [...quantityByProduct.keys()];
+    const { data: products, error: productsError } = productIds.length
+      ? await supabase.from("products").select("id, name, incoming_stock").in("id", productIds)
+      : { data: [], error: null };
+    if (productsError) throw productsError;
+    const productsById = new Map((products ?? []).map((product) => [product.id, product]));
+
+    for (const [productId, quantity] of quantityByProduct) {
+      const product = productsById.get(productId);
+      if (!product) return NextResponse.json({ message: "部分採購商品已不存在，無法安全刪除採購單。" }, { status: 409 });
+      if (Number(product.incoming_stock) < quantity) {
+        return NextResponse.json({ message: `「${product.name}」的到貨中庫存不足，請先確認庫存資料後再刪除採購單。` }, { status: 409 });
+      }
+    }
+
+    // 尚未收貨的採購單只會影響「到貨中」數量；刪除時同步扣回，避免庫存總覽殘留數量。
+    for (const [productId, quantity] of quantityByProduct) {
+      const product = productsById.get(productId)!;
+      const { error } = await supabase
+        .from("products")
+        .update({ incoming_stock: Number(product.incoming_stock) - quantity, updated_at: new Date().toISOString() })
+        .eq("id", productId);
+      if (error) throw error;
+    }
+
+    // purchase_order_items 設有 ON DELETE CASCADE，會與採購單一併移除。
+    const { error: deleteError } = await supabase.from("purchase_orders").delete().eq("id", id);
+    if (deleteError) throw deleteError;
+    return withRefreshedSession(NextResponse.json({ ok: true, id }), auth.context);
+  } catch (error) {
+    return NextResponse.json({ message: errorMessage(error, "無法刪除採購單。") }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: Context) {
   try {
     const auth = await requireSignedIn(request);

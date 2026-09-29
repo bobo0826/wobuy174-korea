@@ -62,6 +62,10 @@ function canRevertReceipt(purchase: PurchaseOrder) {
   return purchase.status !== "已取消" && purchase.purchase_order_items.some((item) => item.received_quantity > 0);
 }
 
+function canDelete(purchase: PurchaseOrder) {
+  return !purchase.purchase_order_items.some((item) => item.received_quantity > 0);
+}
+
 export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view: View) => void; onInventoryChanged: () => Promise<void>; onEdit: (purchase: PurchaseOrder) => void }) {
   const [purchases, setPurchases] = useState<PurchaseOrder[]>([]);
   const [selected, setSelected] = useState<PurchaseOrder | null>(null);
@@ -70,6 +74,7 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
   const [receiptQuantities, setReceiptQuantities] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const load = async () => {
@@ -142,6 +147,29 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
     }
   };
 
+  const deletePurchase = async (purchase: PurchaseOrder) => {
+    if (!canDelete(purchase)) {
+      setError("這張採購單已有入庫紀錄。請先回復為未收貨，再刪除採購單。");
+      return;
+    }
+    if (!window.confirm(`確定要刪除採購單 ${purchase.purchase_number}？\n\n採購明細與到貨中數量將一併移除，且無法復原。`)) return;
+
+    setDeletingId(purchase.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/purchase-orders/${purchase.id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法刪除採購單。");
+      setPurchases((previous) => previous.filter((item) => item.id !== purchase.id));
+      setSelected((previous) => previous?.id === purchase.id ? null : previous);
+      await onInventoryChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法刪除採購單。");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return <>
     <header className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
@@ -168,7 +196,7 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
                 <p className="mt-2 text-sm font-semibold text-[#5A554D]">{purchase.supplier_name}</p>
                 <p className="mt-1 text-xs text-[#938D84]">下單 {formatDate(purchase.order_date)}　·　到貨 {formatDate(purchase.arrival_date ?? purchase.expected_arrival_date)}　·　{purchase.payment_terms || "未設定交易方式"}</p>
               </button>
-              <div className="flex flex-wrap items-center gap-2 lg:justify-end"><span className="mr-1 text-sm font-semibold">{twd(purchase.total)}</span><button onClick={() => setSelected(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">查看採購單</button>{canEdit(purchase) && <button onClick={() => onEdit(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">修改內容</button>}{canReceive(purchase) && <button onClick={() => openReceipt(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-3 text-sm font-semibold text-white">確認到貨並入庫</button>}{canRevertReceipt(purchase) && <button onClick={() => { setReverting(purchase); setError(""); }} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E4C7B2] bg-white px-3 text-sm font-semibold text-[#A35F37]">回復未收貨</button>}</div>
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end"><span className="mr-1 text-sm font-semibold">{twd(purchase.total)}</span><button onClick={() => setSelected(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">查看採購單</button>{canEdit(purchase) && <button onClick={() => onEdit(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">修改內容</button>}{canDelete(purchase) && <button onClick={() => { void deletePurchase(purchase); }} disabled={deletingId === purchase.id} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E4C7B2] bg-white px-3 text-sm font-semibold text-[#A35F37] disabled:opacity-45">{deletingId === purchase.id ? "刪除中…" : "刪除採購單"}</button>}{canReceive(purchase) && <button onClick={() => openReceipt(purchase)} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-3 text-sm font-semibold text-white">確認到貨並入庫</button>}{canRevertReceipt(purchase) && <button onClick={() => { setReverting(purchase); setError(""); }} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E4C7B2] bg-white px-3 text-sm font-semibold text-[#A35F37]">回復未收貨</button>}</div>
             </div>
             <p className="mt-4 rounded-xl bg-[#F8F6F2] px-4 py-3 text-xs text-[#706A61]">{purchase.purchase_order_items.map((item) => `${item.product_name}｜已到貨 ${item.received_quantity}/${item.quantity}`).join("　")}</p>
           </article>) : <p className="p-8 text-center text-sm text-[#8D877E]">尚無採購單。請先建立第一張採購單。</p>}
@@ -184,7 +212,7 @@ export function PurchasesPageV2({ go, onInventoryChanged, onEdit }: { go: (view:
         <div className="mt-6 overflow-x-auto rounded-2xl border border-[#E9E5DF]"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="px-5 py-3">商品</th><th className="px-3 py-3">台幣成本</th><th className="px-3 py-3">當地成本</th><th className="px-3 py-3">訂購</th><th className="px-3 py-3">已到貨</th><th className="px-5 py-3 text-right">尚待到貨</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{selected.purchase_order_items.map((item) => <tr key={item.id}><td className="px-5 py-4 font-semibold">{item.product_name}</td><td className="px-3 py-4">{twd(item.unit_cost)}</td><td className="px-3 py-4">{localMoney(item.local_unit_cost, selected.currency_code)}</td><td className="px-3 py-4">{item.quantity}</td><td className="px-3 py-4">{item.received_quantity}</td><td className="px-5 py-4 text-right font-semibold">{Math.max(0, item.quantity - item.received_quantity)}</td></tr>)}</tbody></table></div>
         <div className="mt-5 grid gap-3 rounded-2xl border border-[#E9E5DF] p-4 text-sm sm:grid-cols-3"><div><span className="text-[#807A72]">台幣商品成本</span><b className="mt-1 block">{twd(selected.total)}</b></div><div><span className="text-[#807A72]">當地運費</span><b className="mt-1 block">{localMoney(selected.shipping_fee, selected.currency_code)}</b></div><div><span className="text-[#807A72]">訂購總數</span><b className="mt-1 block">{selected.purchase_order_items.reduce((sum, item) => sum + item.quantity, 0)} 件</b></div></div>
         {!canEdit(selected) && selected.status !== "已完成" && selected.status !== "已取消" && <p className="mt-4 text-sm text-[#807A72]">這張採購單已有到貨紀錄，為維持庫存正確性，商品明細不可再修改。</p>}
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button onClick={() => setSelected(null)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">關閉</button>{canEdit(selected) && <button onClick={() => { onEdit(selected); setSelected(null); }} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">修改內容</button>}{canReceive(selected) && <button onClick={() => openReceipt(selected)} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-4 text-sm font-semibold text-white">確認到貨並入庫</button>}{canRevertReceipt(selected) && <button onClick={() => { setReverting(selected); setError(""); }} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E4C7B2] bg-white px-3 text-sm font-semibold text-[#A35F37]">回復未收貨</button>}</div>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button onClick={() => setSelected(null)} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">關閉</button>{canEdit(selected) && <button onClick={() => { onEdit(selected); setSelected(null); }} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]">修改內容</button>}{canDelete(selected) && <button onClick={() => { void deletePurchase(selected); }} disabled={deletingId === selected.id} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E4C7B2] bg-white px-3 text-sm font-semibold text-[#A35F37] disabled:opacity-45">{deletingId === selected.id ? "刪除中…" : "刪除採購單"}</button>}{canReceive(selected) && <button onClick={() => openReceipt(selected)} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-4 text-sm font-semibold text-white">確認到貨並入庫</button>}{canRevertReceipt(selected) && <button onClick={() => { setReverting(selected); setError(""); }} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E4C7B2] bg-white px-3 text-sm font-semibold text-[#A35F37]">回復未收貨</button>}</div>
       </div>
     </div>}
 
