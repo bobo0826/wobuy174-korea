@@ -20,6 +20,20 @@ create table if not exists products (
   updated_at timestamptz not null default now()
 );
 
+-- 可由使用者擴充的商品第三層分類。預設分類仍由前端提供，
+-- 此表只保存額外建立的子分類，並依國家與第二層分類區分。
+create table if not exists product_subcategories (
+  id uuid primary key default gen_random_uuid(),
+  country text not null,
+  category text not null,
+  name text not null,
+  created_by text not null default '',
+  created_at timestamptz not null default now(),
+  unique (country, category, name)
+);
+
+alter table public.product_subcategories enable row level security;
+
 create table if not exists customers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -148,8 +162,23 @@ create table if not exists financial_transactions (
   )
 );
 
+create table if not exists credit_card_claim_batches (
+  id uuid primary key default gen_random_uuid(),
+  total_twd_amount integer not null check (total_twd_amount > 0),
+  entry_count integer not null check (entry_count > 0),
+  claimed_by text not null default '',
+  claimed_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+alter table public.credit_card_claim_batches enable row level security;
+
+alter table public.financial_transactions
+  add column if not exists credit_card_claim_batch_id uuid references public.credit_card_claim_batches(id) on delete restrict;
+
 create index if not exists products_country_category_idx on products(country, category);
 create index if not exists products_country_category_subcategory_idx on products(country, category, subcategory);
+create index if not exists product_subcategories_parent_idx on product_subcategories(country, category, created_at);
 create index if not exists products_supplier_id_idx on products(supplier_id);
 create index if not exists suppliers_name_idx on suppliers(name);
 create index if not exists orders_customer_id_idx on orders(customer_id);
@@ -162,6 +191,7 @@ create index if not exists financial_transactions_customer_id_idx on financial_t
 create index if not exists financial_transactions_supplier_id_idx on financial_transactions(supplier_id);
 create index if not exists financial_transactions_order_id_idx on financial_transactions(order_id);
 create index if not exists financial_transactions_credit_card_claimed_idx on financial_transactions(credit_card_claimed) where payment_method = '信用卡';
+create index if not exists financial_transactions_credit_card_claim_batch_idx on financial_transactions(credit_card_claim_batch_id) where credit_card_claim_batch_id is not null;
 
 -- All stock changes are applied inside the database so stock cannot become negative.
 create or replace function public.apply_inventory_adjustment(

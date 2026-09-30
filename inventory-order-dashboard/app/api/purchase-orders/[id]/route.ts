@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
 type PurchaseItemInput = { productId?: unknown; unitCost?: unknown; localUnitCost?: unknown; quantity?: unknown };
-type UpdatePurchaseInput = { action?: unknown; purchaseNumber?: unknown; supplierId?: unknown; orderDate?: unknown; arrivalDate?: unknown; paymentTerms?: unknown; currencyCode?: unknown; shippingFee?: unknown; items?: unknown };
+type ReceiptCostInput = { itemId?: unknown; unitCost?: unknown; localUnitCost?: unknown };
+type UpdatePurchaseInput = { action?: unknown; purchaseNumber?: unknown; supplierId?: unknown; orderDate?: unknown; arrivalDate?: unknown; paymentTerms?: unknown; currencyCode?: unknown; shippingFee?: unknown; items?: unknown; itemCosts?: unknown };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -108,6 +109,61 @@ async function updatePurchaseOrder(id: string, input: UpdatePurchaseInput) {
   const { data, error } = await supabase.from("purchase_orders").select(purchaseSelect).eq("id", id).single();
   if (error) throw error;
   return data;
+}
+
+async function updateReceiptCosts(id: string, input: UpdatePurchaseInput) {
+  const hasItemCosts = Array.isArray(input.itemCosts);
+  const hasShippingFee = input.shippingFee !== undefined;
+  if (!hasItemCosts && !hasShippingFee) return;
+
+  const shippingFee = hasShippingFee ? nonNegativeAmount(input.shippingFee) : null;
+  if (hasShippingFee && shippingFee === null) throw new Error("實際運費必須為零或正數。");
+  const requestedCosts = hasItemCosts
+    ? (input.itemCosts as ReceiptCostInput[]).map((item) => ({ itemId: text(item.itemId), unitCost: nonNegativeInteger(item.unitCost), localUnitCost: nonNegativeAmount(item.localUnitCost) }))
+    : [];
+  if (requestedCosts.some((item) => !uuidPattern.test(item.itemId) || item.unitCost === null || item.localUnitCost === null)) throw new Error("採購成本資料不正確。");
+  if (new Set(requestedCosts.map((item) => item.itemId)).size !== requestedCosts.length) throw new Error("同一項採購明細不可重複填寫成本。");
+
+  const supabase = getSupabaseAdmin();
+  const { data: order, error: orderError } = await supabase
+    .from("purchase_orders")
+    .select("id, status, shipping_fee, purchase_order_items(id, product_id, unit_cost, local_unit_cost, quantity, received_quantity)")
+    .eq("id", id)
+    .single();
+  if (orderError || !order) throw new Error("找不到採購單。");
+  if (order.status === "已取消") throw new Error("已取消的採購單不可修改採購金額。");
+
+  const requestedById = new Map(requestedCosts.map((item) => [item.itemId, item]));
+  const lines = order.purchase_order_items ?? [];
+  if (requestedCosts.some((item) => !lines.some((line) => line.id === item.itemId))) throw new Error("部分成本明細不屬於這張採購單。");
+  const nextLines = lines.map((line) => {
+    const requested = requestedById.get(line.id);
+    const nextUnitCost = requested?.unitCost ?? Number(line.unit_cost);
+    const nextLocalUnitCost = requested?.localUnitCost ?? Number(line.local_unit_cost);
+    return { ...line, nextUnitCost, nextLocalUnitCost };
+  });
+
+  for (const line of nextLines) {
+    if (line.nextUnitCost === Number(line.unit_cost) && line.nextLocalUnitCost === Number(line.local_unit_cost)) continue;
+    const { error } = await supabase.from("purchase_order_items").update({ unit_cost: line.nextUnitCost, local_unit_cost: line.nextLocalUnitCost }).eq("id", line.id);
+    if (error) throw error;
+
+    // 已收貨的採購單仍可在信用卡帳單或實際結算後更正成本；不更動庫存數量，
+    // 只把商品的「最新成本」同步為本次修正後的台幣單件成本。
+    if (Number(line.received_quantity) > 0 && line.product_id) {
+      const { error: productError } = await supabase
+        .from("products")
+        .update({ cost: line.nextUnitCost, updated_at: new Date().toISOString() })
+        .eq("id", line.product_id);
+      if (productError) throw productError;
+    }
+  }
+  const total = nextLines.reduce((sum, line) => sum + line.nextUnitCost * Number(line.quantity), 0);
+  const { error: headerError } = await supabase
+    .from("purchase_orders")
+    .update({ total, shipping_fee: shippingFee ?? Number(order.shipping_fee), updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (headerError) throw headerError;
 }
 
 async function receivePurchaseOrderFallback(id: string, items: Array<{ item_id: string; quantity: number }>) {
@@ -311,6 +367,12 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       const purchaseOrder = await updatePurchaseOrder(id, body);
       return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
     }
+    if (body.action === "updateCosts") {
+      await updateReceiptCosts(id, body);
+      const { data: purchaseOrder, error } = await supabase.from("purchase_orders").select(purchaseSelect).eq("id", id).single();
+      if (error) throw error;
+      return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
+    }
     if (body.action === "revertReceipt") {
       const purchaseOrder = await revertPurchaseReceipt(id, auth.context.profile.displayName);
       return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
@@ -318,6 +380,7 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     if (body.action !== "receive" || !Array.isArray(body.items)) return NextResponse.json({ message: "不支援的採購單操作。" }, { status: 400 });
     const items: Array<{ item_id: string; quantity: number | null }> = (body.items as Array<{ itemId?: unknown; quantity?: unknown }>).map((item) => ({ item_id: typeof item.itemId === "string" ? item.itemId : "", quantity: positiveInteger(item.quantity) }));
     if (!items.length || items.some((item) => !uuidPattern.test(item.item_id) || item.quantity === null)) return NextResponse.json({ message: "請填寫正確的收貨數量。" }, { status: 400 });
+    await updateReceiptCosts(id, body);
     const { error: receiptError } = await supabase.rpc("receive_purchase_order", { p_purchase_order_id: id, p_items: items, p_performed_by: auth.context.profile.displayName });
     if (receiptError && !missingDatabaseFunction(receiptError)) throw receiptError;
     const purchaseOrder = receiptError ? await receivePurchaseOrderFallback(id, items as Array<{ item_id: string; quantity: number }>) : await (async () => {

@@ -24,6 +24,8 @@ type FinancialTransactionInput = {
 type CreditCardUpdateInput = FinancialTransactionInput & {
   id?: unknown;
   action?: unknown;
+  ids?: unknown;
+  totalTwdAmount?: unknown;
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -54,7 +56,7 @@ const errorMessage = (error: unknown, fallback: string) => {
 const missingFinancialSetup = (error: unknown) => {
   const message = errorMessage(error, "");
   return (typeof error === "object" && error !== null && (error as { code?: string }).code === "PGRST205")
-    || /financial_transactions/i.test(message) && /(schema cache|does not exist|could not find|column)/i.test(message);
+    || /(financial_transactions|credit_card_claim_batches)/i.test(message) && /(schema cache|does not exist|could not find|column)/i.test(message);
 };
 
 function validateInput(input: FinancialTransactionInput) {
@@ -100,7 +102,7 @@ function validateInput(input: FinancialTransactionInput) {
   return { majorCategory, subCategory: majorCategory === "opening" ? "期初現金" : subCategory, orderId, customerId, supplierId, counterpartyName, paymentMethod, currency, region, cardDetail, amount, occurredOn, note };
 }
 
-const transactionSelect = "id, entry_type, direction, major_category, sub_category, payment_method, currency, region, card_detail, amount, occurred_on, counterparty_name, customer_id, supplier_id, order_id, settled_twd_amount, credit_card_claimed, credit_card_claimed_at, credit_card_claimed_by, note, created_by, created_at";
+const transactionSelect = "id, entry_type, direction, major_category, sub_category, payment_method, currency, region, card_detail, amount, occurred_on, counterparty_name, customer_id, supplier_id, order_id, settled_twd_amount, credit_card_claimed, credit_card_claimed_at, credit_card_claimed_by, credit_card_claim_batch_id, credit_card_claim_batches(total_twd_amount, entry_count, claimed_at), note, created_by, created_at";
 
 export async function GET(request: NextRequest) {
   try {
@@ -240,9 +242,60 @@ async function saveCreditCardAdvance(request: NextRequest, input: CreditCardUpda
     credit_card_claimed: claim,
     credit_card_claimed_at: claim ? new Date().toISOString() : null,
     credit_card_claimed_by: claim ? auth.context.profile.displayName : "",
+    credit_card_claim_batch_id: null,
   }).eq("id", id).select(transactionSelect).single();
   if (error) throw error;
   return withRefreshedSession(NextResponse.json({ transaction: data, claimed: claim }), auth.context);
+}
+
+async function claimCreditCardBatch(request: NextRequest, input: CreditCardUpdateInput) {
+  const auth = await requireSignedIn(request);
+  if (!auth.context) return auth.response!;
+
+  const ids = Array.isArray(input.ids)
+    ? Array.from(new Set(input.ids.filter((id): id is string => typeof id === "string" && uuidPattern.test(id))))
+    : [];
+  const totalTwdAmount = positiveInteger(input.totalTwdAmount);
+  if (!ids.length || ids.length > 100) return NextResponse.json({ message: "請選擇 1 至 100 筆尚未請款的信用卡代墊款。" }, { status: 400 });
+  if (totalTwdAmount === null) return NextResponse.json({ message: "請填寫本次信用卡帳單的台幣總金額。" }, { status: 400 });
+
+  const supabase = getSupabaseAdmin();
+  const { data: transactions, error: transactionError } = await supabase
+    .from("financial_transactions")
+    .select("id, payment_method, direction, currency, amount, credit_card_claimed")
+    .in("id", ids);
+  if (transactionError) throw transactionError;
+  if ((transactions ?? []).length !== ids.length) return NextResponse.json({ message: "部分選取的代墊款已不存在，請重新整理後再請款。" }, { status: 409 });
+  if ((transactions ?? []).some((transaction) => transaction.direction !== "expense" || transaction.payment_method !== "信用卡" || transaction.credit_card_claimed)) {
+    return NextResponse.json({ message: "選取內容含有非信用卡代墊款或已請款資料，請重新整理後再試。" }, { status: 409 });
+  }
+
+  const knownTwdTotal = (transactions ?? []).reduce((sum, transaction) => transaction.currency === "TWD" ? sum + Number(transaction.amount) : sum, 0);
+  if (totalTwdAmount < knownTwdTotal) {
+    return NextResponse.json({ message: `本次帳單總額不可小於已選台幣代墊款 ${knownTwdTotal.toLocaleString("zh-TW")} 元。` }, { status: 400 });
+  }
+
+  const claimedAt = new Date().toISOString();
+  const { data: batch, error: batchError } = await supabase
+    .from("credit_card_claim_batches")
+    .insert({ total_twd_amount: totalTwdAmount, entry_count: ids.length, claimed_by: auth.context.profile.displayName, claimed_at: claimedAt })
+    .select("id, total_twd_amount, entry_count, claimed_at")
+    .single();
+  if (batchError) throw batchError;
+
+  const { data: updated, error: updateError } = await supabase
+    .from("financial_transactions")
+    .update({ credit_card_claimed: true, credit_card_claimed_at: claimedAt, credit_card_claimed_by: auth.context.profile.displayName, credit_card_claim_batch_id: batch.id })
+    .in("id", ids)
+    .eq("payment_method", "信用卡")
+    .eq("credit_card_claimed", false)
+    .select("id");
+  if (updateError) throw updateError;
+  if ((updated ?? []).length !== ids.length) {
+    return NextResponse.json({ message: "部分代墊款剛剛已被請款，請重新整理後確認結果。" }, { status: 409 });
+  }
+
+  return withRefreshedSession(NextResponse.json({ batch, claimedIds: ids }), auth.context);
 }
 
 export async function PATCH(request: NextRequest) {
@@ -251,6 +304,7 @@ export async function PATCH(request: NextRequest) {
     const action = text(input.action);
     if (action === "updateCreditCard") return await saveCreditCardAdvance(request, input, false);
     if (action === "claimCreditCard") return await saveCreditCardAdvance(request, input, true);
+    if (action === "claimCreditCardBatch") return await claimCreditCardBatch(request, input);
     return NextResponse.json({ message: "不支援的收支更新操作。" }, { status: 400 });
   } catch (error) {
     if (missingFinancialSetup(error)) return NextResponse.json({ message: "收支資料庫需要更新，請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });

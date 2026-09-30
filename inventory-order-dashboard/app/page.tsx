@@ -209,7 +209,7 @@ const productCategoriesByCountry: Record<string, string[]> = {
 const productSubcategoriesByCountry: Record<string, Record<string, string[]>> = {
   "韓國": {
     "棉被": ["涼感被", "四季被", "秒睡枕", "睡袋", "枕頭套"],
-    "正版IP": ["三麗鷗", "吉伊卡哇", "寶可夢", "米菲", "Pingu"],
+    "正版IP": ["三麗鷗", "吉伊卡哇", "寶可夢", "米飛兔", "PINGU", "地區限定", "其他"],
   },
   "日本": {
     "正版IP": ["三麗鷗", "吉伊卡哇", "寶可夢", "米菲", "任天堂"],
@@ -218,6 +218,58 @@ const productSubcategoriesByCountry: Record<string, Record<string, string[]>> = 
 
 const subcategoryOptionsFor = (country: string, category: string) => productSubcategoriesByCountry[country]?.[category] ?? [];
 const taxonomyLabel = (product: Pick<Product, "country" | "category" | "subcategory">) => [product.country, product.category, product.subcategory].filter(Boolean).join(" · ");
+
+type CustomSubcategory = { id: string; name: string };
+
+function uniqueSubcategories(...groups: string[][]) {
+  return Array.from(new Set(groups.flat().map((name) => name.trim()).filter(Boolean)));
+}
+
+function useProductSubcategoryOptions(country: string, category: string) {
+  const [customSubcategories, setCustomSubcategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    if (!country || !category) {
+      setCustomSubcategories([]);
+      return () => { active = false; };
+    }
+
+    const load = async () => {
+      try {
+        const params = new URLSearchParams({ country, category });
+        const response = await fetch(`/api/product-subcategories?${params.toString()}`);
+        const result = await response.json();
+        if (response.ok && active) {
+          setCustomSubcategories((result.subcategories as CustomSubcategory[] ?? []).map((item) => item.name));
+        }
+      } catch {
+        // 預設分類仍可使用；自訂分類會在下次成功讀取時出現。
+      }
+    };
+
+    void load();
+    return () => { active = false; };
+  }, [country, category]);
+
+  const addCustomSubcategory = async (name: string) => {
+    const response = await fetch("/api/product-subcategories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ country, category, name }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message ?? "無法新增自訂子分類。");
+    const savedName = typeof result.subcategory?.name === "string" ? result.subcategory.name : name.trim();
+    setCustomSubcategories((current) => uniqueSubcategories(current, [savedName]));
+    return savedName;
+  };
+
+  return {
+    options: uniqueSubcategories(subcategoryOptionsFor(country, category), customSubcategories),
+    addCustomSubcategory,
+  };
+}
 
 const nav: { id: Exclude<View, "create" | "product">; label: string; no: string }[] = [
   { id: "dashboard", label: "營運總覽", no: "01" },
@@ -287,6 +339,48 @@ function Search({ placeholder = "搜尋商品、SKU、條碼或訂單", value, o
   return <label className="flex h-11 max-w-md flex-1 items-center gap-2 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#928C84]"><span>⌕</span><input value={value} onChange={(event) => onChange?.(event.target.value)} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#AAA39A]" placeholder={placeholder} /></label>;
 }
 
+function ProductSubcategoryPicker({ country, category, value, onChange, inputClass }: { country: string; category: string; value: string; onChange: (value: string) => void; inputClass: string }) {
+  const { options: savedOptions, addCustomSubcategory } = useProductSubcategoryOptions(country, category);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const canChooseParent = Boolean(country && category);
+  const options = uniqueSubcategories(savedOptions, value ? [value] : []);
+
+  const add = async () => {
+    if (!newName.trim()) {
+      setError("請填寫子分類名稱。");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const savedName = await addCustomSubcategory(newName);
+      onChange(savedName);
+      setNewName("");
+      setAdding(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法新增自訂子分類。");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <label className="col-span-2 text-sm font-semibold text-[#58534C]">商品子分類
+    <select value={value} onChange={(event) => onChange(event.target.value)} disabled={!canChooseParent} className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}>
+      <option value="">{canChooseParent ? "請選擇商品子分類" : "請先選擇國家與商品分類"}</option>
+      {options.map((option) => <option key={option}>{option}</option>)}
+    </select>
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <button type="button" disabled={!canChooseParent || saving} onClick={() => { setAdding((current) => !current); setError(""); }} className="text-xs font-semibold text-[#5E7665] disabled:cursor-not-allowed disabled:opacity-45">{adding ? "取消新增" : "＋ 新增自訂子分類"}</button>
+      <small className="font-normal text-xs text-[#938D84]">新增後會儲存，可在同一國家與商品分類下重複選用。</small>
+    </div>
+    {adding && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void add(); } }} maxLength={60} placeholder="例如：限定合作款" className="h-10 min-w-0 flex-1 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /><button type="button" disabled={saving} onClick={() => { void add(); }} className="h-10 rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">{saving ? "新增中…" : "儲存子分類"}</button></div>}
+    {error && <small className="mt-2 block font-normal text-xs text-[#A35F37]">{error}</small>}
+  </label>;
+}
+
 function ProductSearchAdd({ products, onAdd, placeholder = "搜尋貨號、商品名稱或分類" }: { products: Product[]; onAdd: (product: Product) => void; placeholder?: string }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -322,7 +416,10 @@ function Products({ catalog, openProduct, openNewProduct, openImportProducts, de
   const countries = Object.keys(productCategoriesByCountry);
   const canChooseCategory = countryFilter !== "全部國家";
   const categoryOptions = canChooseCategory ? productCategoriesByCountry[countryFilter] ?? [] : [];
-  const subcategoryOptions = canChooseCategory && categoryFilter !== "全部商品種類" ? subcategoryOptionsFor(countryFilter, categoryFilter) : [];
+  const selectedCountry = canChooseCategory ? countryFilter : "";
+  const selectedCategory = categoryFilter === "全部商品種類" ? "" : categoryFilter;
+  const { options: customSubcategoryOptions } = useProductSubcategoryOptions(selectedCountry, selectedCategory);
+  const subcategoryOptions = canChooseCategory && selectedCategory ? customSubcategoryOptions : [];
   const canChooseSubcategory = subcategoryOptions.length > 0;
   const visibleProducts = catalog.filter((product) => {
     const isLowStock = product.available <= product.safety;
@@ -375,7 +472,6 @@ function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onC
   const [form, setForm] = useState({ sku: initialProduct?.sku ? `${initialProduct.sku}-COPY` : "", name: initialProduct?.name ?? "", specification: initialProduct?.specification ?? "", note: initialProduct?.note ?? "", cost: String(initialProduct?.cost ?? 0), staffPrice: String(initialProduct?.staffPrice ?? 0), retailPrice: String(initialProduct?.retailPrice ?? 0), availableStock: String(initialProduct?.available ?? 0), safetyStock: String(initialProduct?.safety ?? 0) });
   const inputClass = "mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]";
   const categoryOptions = productCategoriesByCountry[country] ?? [];
-  const subcategoryOptions = subcategoryOptionsFor(country, category);
   const updateForm = (field: keyof typeof form, value: string) => setForm((previous) => ({ ...previous, [field]: value }));
   useEffect(() => {
     let active = true;
@@ -423,7 +519,7 @@ function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onC
             <label className="text-sm font-semibold text-[#58534C]">商品名稱<input value={form.name} onChange={(event) => updateForm("name", event.target.value)} placeholder="例如：雲朵感純棉四季被" className={inputClass} /></label>
             <label className="text-sm font-semibold text-[#58534C]">國家<select value={country} onChange={(event) => { setCountry(event.target.value); setCategory(""); setSubcategory(""); }} className={inputClass}><option value="">請選擇國家</option><option>韓國</option><option>日本</option><option>大陸</option><option>台灣</option><option>其他</option></select></label>
             <label className="text-sm font-semibold text-[#58534C]">商品分類<select value={category} onChange={(event) => { setCategory(event.target.value); setSubcategory(""); }} disabled={!country} className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}><option value="">{country ? "請選擇商品分類" : "請先選擇國家"}</option>{categoryOptions.map((option) => <option key={option}>{option}</option>)}</select></label>
-            <label className="col-span-2 text-sm font-semibold text-[#58534C]">商品子分類<select value={subcategory} onChange={(event) => setSubcategory(event.target.value)} disabled={!subcategoryOptions.length} className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}><option value="">{subcategoryOptions.length ? "請選擇商品子分類" : "此分類沒有子分類"}</option>{subcategoryOptions.map((option) => <option key={option}>{option}</option>)}</select><small className="mt-2 block font-normal text-xs text-[#938D84]">只有韓國棉被、韓國正版 IP、日版正版 IP 需選擇子分類。</small></label>
+            <ProductSubcategoryPicker country={country} category={category} value={subcategory} onChange={setSubcategory} inputClass={inputClass} />
             <label className="col-span-2 text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass}><option value="">尚未指定供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select><small className="mt-2 block font-normal text-xs text-[#938D84]">供應商可先在供應商管理頁建立，再於新增商品時選取。</small></label>
             <label className="col-span-2 text-sm font-semibold text-[#58534C]">商品規格<input value={form.specification} onChange={(event) => updateForm("specification", event.target.value)} placeholder="例如：奶油白／單人" className={inputClass} /></label>
             <label className="col-span-2 text-sm font-semibold text-[#58534C]">備註<textarea value={form.note} onChange={(event) => updateForm("note", event.target.value)} placeholder="例如：限定款、預購商品或採購注意事項" className="mt-2 min-h-24 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /></label>
@@ -814,7 +910,6 @@ function EditProductCostV3({ product, back, onUpdated }: { product: Product; bac
   const [error, setError] = useState("");
   const inputClass = "mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]";
   const categoryOptions = productCategoriesByCountry[country] ?? [];
-  const subcategoryOptions = subcategoryOptionsFor(country, category);
   const updateForm = (field: keyof typeof form, value: string) => setForm((previous) => ({ ...previous, [field]: value }));
 
   useEffect(() => {
@@ -838,7 +933,7 @@ function EditProductCostV3({ product, back, onUpdated }: { product: Product; bac
     }
   };
 
-  return <><Header eyebrow="EDIT PRODUCT" title="修改商品" description="調整商品資料、最新成本與售價。每次入庫成本會由採購到貨入庫自動帶入。"><Secondary onClick={back}>← 返回商品頁面</Secondary></Header>{error && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-5 text-sm font-semibold text-[#9B562A]">{error}</Card>}<div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">BASIC INFORMATION</p><h2 className="mt-1 text-lg font-semibold">商品基本資料</h2><div className="mt-5 grid grid-cols-2 gap-4"><label className="text-sm font-semibold text-[#58534C]">商品編號<input value={form.sku} onChange={(event) => updateForm("sku", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">商品名稱<input value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">國家<select value={country} onChange={(event) => { setCountry(event.target.value); setCategory(""); setSubcategory(""); }} className={inputClass}><option>韓國</option><option>日本</option><option>大陸</option><option>台灣</option><option>其他</option></select></label><label className="text-sm font-semibold text-[#58534C]">商品分類<select value={category} onChange={(event) => { setCategory(event.target.value); setSubcategory(""); }} className={inputClass}><option value="">請選擇商品分類</option>{categoryOptions.map((option) => <option key={option}>{option}</option>)}</select></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">商品子分類<select value={subcategory} onChange={(event) => setSubcategory(event.target.value)} disabled={!subcategoryOptions.length} className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}><option value="">{subcategoryOptions.length ? "請選擇商品子分類" : "此分類沒有子分類"}</option>{subcategoryOptions.map((option) => <option key={option}>{option}</option>)}</select></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass}><option value="">尚未指定供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">商品規格<input value={form.specification} onChange={(event) => updateForm("specification", event.target.value)} className={inputClass} /></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">商品備註<textarea value={form.note} onChange={(event) => updateForm("note", event.target.value)} className="mt-2 min-h-24 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-3 text-sm font-normal outline-none" /></label></div></Card><Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><label className="text-sm font-semibold text-[#58534C]">最新成本<input type="number" min="0" value={form.cost} onChange={(event) => updateForm("cost", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">員工價<input type="number" min="0" value={form.staffPrice} onChange={(event) => updateForm("staffPrice", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">一般售價<input type="number" min="0" value={form.retailPrice} onChange={(event) => updateForm("retailPrice", event.target.value)} className={inputClass} /></label></div></Card></div><aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6 xl:sticky xl:top-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存設定</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["可售庫存", String(product.available)], ["已保留", String(product.reserved)], ["到貨中", String(product.incoming)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b>{value}</b></div>)}</div><label className="mt-5 block text-sm font-semibold text-[#58534C]">安全庫存<input type="number" min="0" value={form.safetyStock} onChange={(event) => updateForm("safetyStock", event.target.value)} className={inputClass} /></label><p className="mt-5 rounded-xl bg-[#F8F6F2] p-4 text-xs leading-5 text-[#746D63]">可售庫存請從庫存總覽的「調整庫存」操作，才能保留正確的庫存異動紀錄。</p><Primary onClick={() => { void save(); }} disabled={saving} className="mt-5 w-full">{saving ? "儲存中…" : "儲存商品修改"}</Primary></aside></div></>;
+  return <><Header eyebrow="EDIT PRODUCT" title="修改商品" description="調整商品資料、最新成本與售價。每次入庫成本會由採購到貨入庫自動帶入。"><Secondary onClick={back}>← 返回商品頁面</Secondary></Header>{error && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-5 text-sm font-semibold text-[#9B562A]">{error}</Card>}<div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]"><div className="space-y-5"><Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">BASIC INFORMATION</p><h2 className="mt-1 text-lg font-semibold">商品基本資料</h2><div className="mt-5 grid grid-cols-2 gap-4"><label className="text-sm font-semibold text-[#58534C]">商品編號<input value={form.sku} onChange={(event) => updateForm("sku", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">商品名稱<input value={form.name} onChange={(event) => updateForm("name", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">國家<select value={country} onChange={(event) => { setCountry(event.target.value); setCategory(""); setSubcategory(""); }} className={inputClass}><option>韓國</option><option>日本</option><option>大陸</option><option>台灣</option><option>其他</option></select></label><label className="text-sm font-semibold text-[#58534C]">商品分類<select value={category} onChange={(event) => { setCategory(event.target.value); setSubcategory(""); }} className={inputClass}><option value="">請選擇商品分類</option>{categoryOptions.map((option) => <option key={option}>{option}</option>)}</select></label><ProductSubcategoryPicker country={country} category={category} value={subcategory} onChange={setSubcategory} inputClass={inputClass} /><label className="col-span-2 text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass}><option value="">尚未指定供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">商品規格<input value={form.specification} onChange={(event) => updateForm("specification", event.target.value)} className={inputClass} /></label><label className="col-span-2 text-sm font-semibold text-[#58534C]">商品備註<textarea value={form.note} onChange={(event) => updateForm("note", event.target.value)} className="mt-2 min-h-24 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-3 text-sm font-normal outline-none" /></label></div></Card><Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-3"><label className="text-sm font-semibold text-[#58534C]">最新成本<input type="number" min="0" value={form.cost} onChange={(event) => updateForm("cost", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">員工價<input type="number" min="0" value={form.staffPrice} onChange={(event) => updateForm("staffPrice", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">一般售價<input type="number" min="0" value={form.retailPrice} onChange={(event) => updateForm("retailPrice", event.target.value)} className={inputClass} /></label></div></Card></div><aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6 xl:sticky xl:top-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存設定</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["可售庫存", String(product.available)], ["已保留", String(product.reserved)], ["到貨中", String(product.incoming)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b>{value}</b></div>)}</div><label className="mt-5 block text-sm font-semibold text-[#58534C]">安全庫存<input type="number" min="0" value={form.safetyStock} onChange={(event) => updateForm("safetyStock", event.target.value)} className={inputClass} /></label><p className="mt-5 rounded-xl bg-[#F8F6F2] p-4 text-xs leading-5 text-[#746D63]">可售庫存請從庫存總覽的「調整庫存」操作，才能保留正確的庫存異動紀錄。</p><Primary onClick={() => { void save(); }} disabled={saving} className="mt-5 w-full">{saving ? "儲存中…" : "儲存商品修改"}</Primary></aside></div></>;
 }
 
 function EditProductPage({ product, back, onUpdated }: { product: Product; back: () => void; onUpdated: (product: Product) => void }) {
