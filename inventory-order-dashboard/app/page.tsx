@@ -170,6 +170,15 @@ type ReceiptCostEntry = {
   } | null;
 };
 
+type GlobalSearchOrder = {
+  id: string;
+  order_number: string;
+  order_date: string;
+  status: string;
+  customers: { name: string; line_name: string } | null;
+  order_items: Array<{ product_name: string }>;
+};
+
 // 商品清單只顯示資料庫內建立或匯入的實際商品，不再混入預設示範資料。
 const products: Array<Product & { id: number }> = [];
 const blankProduct: Product = { id: "", name: "", country: "", category: "", subcategory: "", specification: "", note: "", sku: "", cost: 0, staffPrice: 0, retailPrice: 0, available: 0, reserved: 0, incoming: 0, preorder: 0, sold: 0, safety: 0, tone: "#E9E1D5" };
@@ -891,7 +900,7 @@ function ProductPageCostV3({ product, stock, back, openStock, copyProduct, editP
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
       <div className="space-y-5">
         <Card className="p-5 sm:p-6"><div className="flex items-start gap-4"><ProductTile product={product}/><div className="min-w-0 flex-1"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT PROFILE</p><h2 className="mt-1 text-xl font-semibold">{product.name}</h2><p className="mt-1 text-sm text-[#807A72]">{taxonomyLabel(product)}{product.specification ? ` · ${product.specification}` : ""}</p></div><Pill tone="green">已上架</Pill></div><div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-[#ECE8E2] bg-[#ECE8E2] sm:grid-cols-2">{basic.map(([label, value]) => <div key={label} className={`bg-white p-4 ${label === "備註" ? "sm:col-span-2" : ""}`}><p className="text-xs font-semibold text-[#938D84]">{label}</p><p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#48433C]">{value}</p></div>)}</div></Card>
-        <Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">確認採購單到貨並入庫後，系統會將該筆台幣單件成本更新為最新成本。</p></Card>
+        <Card className="p-5 sm:p-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2></div><div className="mt-5 grid gap-3 sm:grid-cols-3">{price.map(([label, value]) => <div key={label} className="rounded-xl bg-[#F8F6F2] p-4"><p className="text-xs font-semibold text-[#8A8379]">{label}</p><p className="mt-2 text-lg font-semibold tracking-[-.03em] text-[#36322E]">{value}</p></div>)}</div><p className="mt-4 text-xs leading-5 text-[#938D84]">最新成本會自動採用「下單日期最接近今天」的已入庫台幣單件成本。</p></Card>
         <Card className="overflow-hidden"><div className="border-b border-[#F0EDE8] p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">RECEIPT COSTS</p><h2 className="mt-1 text-lg font-semibold">每次入庫成本</h2></div>{receiptCostsLoading ? <p className="p-6 text-sm text-[#8D877E]">載入入庫成本中…</p> : receiptCostsError ? <p className="p-6 text-sm font-semibold text-[#A35F37]">{receiptCostsError}</p> : receiptCosts.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">採購單編號</th><th className="px-3 py-3">下單日期</th><th className="px-3 py-3">入庫數量</th><th className="px-3 py-3">台幣單件成本</th><th className="px-6 py-3">當地貨幣成本</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{receiptCosts.map((entry) => { const purchase = entry.purchase_orders; const localCost = Number(entry.local_unit_cost) || 0; return <tr key={entry.id}><td className="px-6 py-4 font-semibold text-[#4A4640]">{purchase?.purchase_number ?? "—"}</td><td className="px-3 py-4 text-[#625D55]">{dateLabel(purchase?.order_date)}</td><td className="px-3 py-4 text-[#625D55]">{entry.received_quantity} 件</td><td className="px-3 py-4 font-semibold text-[#4A4640]">{currency(Number(entry.unit_cost) || 0)}</td><td className="px-6 py-4 text-[#625D55]">{localCost > 0 ? localCurrency(localCost, purchase?.currency_code || "TWD") : "—"}</td></tr>; })}</tbody></table></div> : <p className="p-6 text-sm leading-6 text-[#8D877E]">尚無已入庫資料。確認採購單到貨並入庫後，成本會顯示在這裡。</p>}</Card>
       </div>
       <aside className="space-y-5"><Card className="p-5"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">庫存資訊</h2><div className="mt-5 divide-y divide-[#F0EDE8]">{[["實際在庫", String(stock + product.reserved)], ["已保留", String(product.reserved)], ["可售庫存", String(stock)], ["到貨中", String(product.incoming)], ["安全庫存", String(product.safety)]].map(([label, value]) => <div key={label} className="flex justify-between py-3 text-sm"><span className="text-[#7A746B]">{label}</span><b className={label === "可售庫存" ? "text-[#45634C]" : "text-[#45413B]"}>{value}</b></div>)}</div><Secondary onClick={openStock} className="mt-5 w-full">調整庫存</Secondary></Card></aside>
@@ -1906,6 +1915,16 @@ export default function Home() {
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseOrder | null>(null);
   const [databaseProducts, setDatabaseProducts] = useState<Product[]>([]);
   const [stock, setStock] = useState<Record<string, number>>(() => Object.fromEntries(products.map(product => [String(product.id), product.available])));
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [globalOrders, setGlobalOrders] = useState<GlobalSearchOrder[]>([]);
+  const [globalOrdersLoading, setGlobalOrdersLoading] = useState(false);
+  const [globalOrdersError, setGlobalOrdersError] = useState("");
+  const [orderSearchQuery, setOrderSearchQuery] = useState("");
+  const [orderSearchTargetId, setOrderSearchTargetId] = useState("");
+  const globalKeyword = globalSearchQuery.trim().toLowerCase();
+  const globalProductMatches = useMemo(() => !globalKeyword ? [] : databaseProducts.filter((product) => [product.sku, product.name, product.country, product.category, product.subcategory, product.specification].join(" ").toLowerCase().includes(globalKeyword)).slice(0, 5), [databaseProducts, globalKeyword]);
+  const globalOrderMatches = useMemo(() => !globalKeyword ? [] : globalOrders.filter((order) => [order.order_number, order.customers?.name, order.customers?.line_name, ...order.order_items.map((item) => item.product_name)].join(" ").toLowerCase().includes(globalKeyword)).slice(0, 5), [globalOrders, globalKeyword]);
   const refreshProducts = async () => {
     const response = await fetch("/api/products");
     const result = await response.json();
@@ -1942,8 +1961,33 @@ export default function Home() {
     });
     return () => { active = false; };
   }, [currentUser]);
-  const go = (next: View) => { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); if (next === "stock") void refreshProducts(); };
+  const go = (next: View) => { if (next === "orders") { setOrderSearchQuery(""); setOrderSearchTargetId(""); } setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); if (next === "stock") void refreshProducts(); };
   const openProduct = (productOrId: Product | number | string) => { setSelectedProduct(typeof productOrId === "object" ? productOrId : databaseProducts.find((product) => String(product.id) === String(productOrId)) ?? blankProduct); go("product"); };
+  const loadGlobalOrders = async () => {
+    if (globalOrdersLoading || globalOrders.length) return;
+    setGlobalOrdersLoading(true);
+    setGlobalOrdersError("");
+    try {
+      const response = await fetch("/api/orders");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法讀取訂單資料。");
+      setGlobalOrders(result.orders ?? []);
+    } catch (reason) {
+      setGlobalOrdersError(reason instanceof Error ? reason.message : "無法讀取訂單資料。");
+    } finally {
+      setGlobalOrdersLoading(false);
+    }
+  };
+  const openGlobalSearch = () => { setGlobalSearchOpen(true); void loadGlobalOrders(); };
+  const closeGlobalSearch = () => { setGlobalSearchOpen(false); setGlobalSearchQuery(""); };
+  const openGlobalOrder = (order: GlobalSearchOrder) => {
+    setOrderSearchQuery(globalSearchQuery);
+    setOrderSearchTargetId(order.id);
+    closeGlobalSearch();
+    setView("orders");
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const addDatabaseProducts = (incoming: Product[]) => setDatabaseProducts((previous) => [...incoming, ...previous.filter((product) => !incoming.some((item) => item.id === product.id))]);
   const updateDatabaseProduct = (updated: Product) => {
     setDatabaseProducts((previous) => previous.map((product) => String(product.id) === String(updated.id) ? updated : product));
@@ -1977,10 +2021,66 @@ export default function Home() {
   const openNewProduct = () => { setProductDraft(null); go("newProduct"); };
   const copyProduct = (product: Product) => { setProductDraft(product); go("newProduct"); };
   const openEditProduct = (product: Product) => { setEditingProduct(product); go("editProduct"); };
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} onInventoryChanged={refreshProducts}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPageCostV3 product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)} editProduct={() => openEditProduct(selectedProduct)}/> : view === "editProduct" ? <EditProductCostV3 product={editingProduct ?? selectedProduct} back={() => go("product")} onUpdated={(product) => { updateDatabaseProduct(product); setEditingProduct(product); go("product"); }} /> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseForeignCosts key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverviewV2 catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} onInventoryChanged={refreshProducts} initialQuery={orderSearchQuery} initialOrderId={orderSearchTargetId}/> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPageCostV3 product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)} editProduct={() => openEditProduct(selectedProduct)}/> : view === "editProduct" ? <EditProductCostV3 product={editingProduct ?? selectedProduct} back={() => go("product")} onUpdated={(product) => { updateDatabaseProduct(product); setEditingProduct(product); go("product"); }} /> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseForeignCosts key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverviewV2 catalog={databaseProducts} stock={stock} openProduct={openProduct} saveAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
   const isProductsView = view === "products" || view === "product" || view === "editProduct" || view === "newProduct" || view === "importProducts";
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
   const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";
   const initial = currentUser.displayName.trim().slice(0, 1) || "U";
-  return <div className="min-h-screen bg-[#F8F7F4] text-[#292824]"><aside className="fixed inset-y-0 left-0 z-40 hidden w-[244px] flex-col border-r border-[#E9E5DF] bg-[#FCFBF9] px-4 py-5 lg:flex"><div className="px-2"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold text-[#45413B]">商品與庫存管理</p></div><div className="mt-10">{links}</div><div className="mt-auto"><Primary onClick={() => go("create")} className="w-full">＋ 建立訂單</Primary><button onClick={() => go("settings")} className="mt-6 flex w-full items-center gap-3 border-t border-[#E9E5DF] px-2 pt-5 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E5DDD2] text-xs font-bold text-[#766859]">{initial}</span><span className="min-w-0"><b className="block truncate text-sm">{currentUser.displayName}</b><small className="block text-xs text-[#969087]">{displayRole}</small></span></button></div></aside><div className="lg:pl-[244px]"><header className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-[#E9E5DF] bg-[#F8F7F4]/90 px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-3"><button aria-label="開啟選單" onClick={() => setMenuOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-lg lg:hidden">≡</button><div className="hidden h-10 min-w-[270px] items-center gap-2 rounded-xl border border-[#E7E2DB] bg-white px-3 text-sm text-[#AAA39A] md:flex">⌕　搜尋商品、SKU、條碼或訂單</div><b className="text-sm md:hidden">MUSE STOCK</b></div><div className="relative flex items-center gap-2"><button aria-label="通知" className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-[#726C63]">◌<span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[#C8796D]"/></button><button onClick={() => setAccountOpen((value) => !value)} className="hidden h-10 items-center gap-2 rounded-xl border border-[#E4E0D9] bg-white px-3 text-sm font-semibold sm:flex"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E5DDD2] text-[10px]">{initial}</span>{currentUser.displayName}</button>{accountOpen && <div className="absolute right-0 top-12 w-52 rounded-2xl border border-[#E9E5DF] bg-white p-2 shadow-xl"><button onClick={() => { go("settings"); setAccountOpen(false); }} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#5D7764] hover:bg-[#F3F7F3]">系統設定</button><button onClick={signOut} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#9A5B38] hover:bg-[#FFF7F0]">登出</button></div>}</div></header><main className="mx-auto w-full max-w-[1600px] px-5 py-7 sm:px-8 sm:py-9">{content}</main></div>{menuOpen && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="關閉選單" onClick={() => setMenuOpen(false)} className="absolute inset-0 bg-[#292824]/30"/><aside className="relative flex h-full w-[280px] flex-col bg-[#FCFBF9] p-5 shadow-2xl"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold">商品與庫存管理</p><div className="mt-8">{links}</div><button onClick={signOut} className="mt-auto text-sm font-semibold text-[#9A5B38]">登出</button><Primary onClick={() => go("create")} className="mt-4 w-full">＋ 建立訂單</Primary></aside></div>}</div>;
+  const globalSearch = (
+    <div className="relative hidden min-w-[270px] md:block">
+      <label className="flex h-10 items-center gap-2 rounded-xl border border-[#E7E2DB] bg-white px-3 text-sm text-[#928C84]">
+        <span>⌕</span>
+        <input
+          aria-label="搜尋商品、SKU、條碼或訂單"
+          value={globalSearchQuery}
+          onFocus={openGlobalSearch}
+          onChange={(event) => { setGlobalSearchQuery(event.target.value); setGlobalSearchOpen(true); }}
+          onKeyDown={(event) => { if (event.key === "Escape") closeGlobalSearch(); }}
+          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#AAA39A]"
+          placeholder="搜尋商品、SKU、條碼或訂單"
+        />
+      </label>
+      {globalSearchOpen && (
+        <div className="absolute left-0 top-12 z-50 w-[420px] overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-[#F0EDE8] px-4 py-3">
+            <b className="text-sm">全站搜尋</b>
+            <button onClick={closeGlobalSearch} className="text-xs font-semibold text-[#5E7665]">關閉</button>
+          </div>
+          {!globalKeyword ? (
+            <p className="px-4 py-5 text-sm text-[#8D877E]">輸入商品名稱、貨號、分類、訂單編號或客戶名稱。</p>
+          ) : (
+            <div className="max-h-[420px] overflow-y-auto">
+              {globalProductMatches.length > 0 && (
+                <section className="border-b border-[#F0EDE8] py-2">
+                  <p className="px-4 pb-1 pt-2 text-[10px] font-bold tracking-[.14em] text-[#9A948B]">商品</p>
+                  {globalProductMatches.map((product) => (
+                    <button key={product.id} onClick={() => { closeGlobalSearch(); openProduct(product); }} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[#F8F6F2]">
+                      <ProductTile product={product} small />
+                      <span className="min-w-0"><b className="block truncate text-sm">{product.name}</b><small className="mt-1 block truncate text-xs text-[#938D84]">{product.sku} · {taxonomyLabel(product)}</small></span>
+                    </button>
+                  ))}
+                </section>
+              )}
+              {globalOrdersLoading ? (
+                <p className="px-4 py-4 text-sm text-[#8D877E]">正在搜尋訂單…</p>
+              ) : globalOrderMatches.length > 0 ? (
+                <section className="py-2">
+                  <p className="px-4 pb-1 pt-2 text-[10px] font-bold tracking-[.14em] text-[#9A948B]">訂單</p>
+                  {globalOrderMatches.map((order) => (
+                    <button key={order.id} onClick={() => openGlobalOrder(order)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[#F8F6F2]">
+                      <span className="min-w-0"><b className="block truncate text-sm">{order.order_number}</b><small className="mt-1 block truncate text-xs text-[#938D84]">{order.customers?.name || "未指定客戶"} · {order.order_items.map((item) => item.product_name).join("、") || "無商品"}</small></span>
+                      <span className="shrink-0 text-xs font-semibold text-[#5E7665]">{order.status}</span>
+                    </button>
+                  ))}
+                </section>
+              ) : null}
+              {globalOrdersError && <p className="px-4 py-4 text-sm font-semibold text-[#A35F37]">{globalOrdersError}</p>}
+              {!globalOrdersLoading && !globalOrdersError && !globalProductMatches.length && !globalOrderMatches.length && <p className="px-4 py-5 text-sm text-[#8D877E]">找不到符合的商品或訂單。</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+  return <div className="min-h-screen bg-[#F8F7F4] text-[#292824]"><aside className="fixed inset-y-0 left-0 z-40 hidden w-[244px] flex-col border-r border-[#E9E5DF] bg-[#FCFBF9] px-4 py-5 lg:flex"><div className="px-2"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold text-[#45413B]">商品與庫存管理</p></div><div className="mt-10">{links}</div><div className="mt-auto"><Primary onClick={() => go("create")} className="w-full">＋ 建立訂單</Primary><button onClick={() => go("settings")} className="mt-6 flex w-full items-center gap-3 border-t border-[#E9E5DF] px-2 pt-5 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E5DDD2] text-xs font-bold text-[#766859]">{initial}</span><span className="min-w-0"><b className="block truncate text-sm">{currentUser.displayName}</b><small className="block text-xs text-[#969087]">{displayRole}</small></span></button></div></aside><div className="lg:pl-[244px]"><header className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-[#E9E5DF] bg-[#F8F7F4]/90 px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-3"><button aria-label="開啟選單" onClick={() => setMenuOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-lg lg:hidden">≡</button>{globalSearch}<b className="text-sm md:hidden">MUSE STOCK</b></div><div className="relative flex items-center gap-2"><button aria-label="通知" className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-[#726C63]">◌<span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[#C8796D]"/></button><button onClick={() => setAccountOpen((value) => !value)} className="hidden h-10 items-center gap-2 rounded-xl border border-[#E4E0D9] bg-white px-3 text-sm font-semibold sm:flex"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E5DDD2] text-[10px]">{initial}</span>{currentUser.displayName}</button>{accountOpen && <div className="absolute right-0 top-12 w-52 rounded-2xl border border-[#E9E5DF] bg-white p-2 shadow-xl"><button onClick={() => { go("settings"); setAccountOpen(false); }} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#5D7764] hover:bg-[#F3F7F3]">系統設定</button><button onClick={signOut} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#9A5B38] hover:bg-[#FFF7F0]">登出</button></div>}</div></header><main className="mx-auto w-full max-w-[1600px] px-5 py-7 sm:px-8 sm:py-9">{content}</main></div>{menuOpen && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="關閉選單" onClick={() => setMenuOpen(false)} className="absolute inset-0 bg-[#292824]/30"/><aside className="relative flex h-full w-[280px] flex-col bg-[#FCFBF9] p-5 shadow-2xl"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold">商品與庫存管理</p><div className="mt-8">{links}</div><button onClick={signOut} className="mt-auto text-sm font-semibold text-[#9A5B38]">登出</button><Primary onClick={() => go("create")} className="mt-4 w-full">＋ 建立訂單</Primary></aside></div>}</div>;
 }

@@ -147,16 +147,6 @@ async function updateReceiptCosts(id: string, input: UpdatePurchaseInput) {
     if (line.nextUnitCost === Number(line.unit_cost) && line.nextLocalUnitCost === Number(line.local_unit_cost)) continue;
     const { error } = await supabase.from("purchase_order_items").update({ unit_cost: line.nextUnitCost, local_unit_cost: line.nextLocalUnitCost }).eq("id", line.id);
     if (error) throw error;
-
-    // 已收貨的採購單仍可在信用卡帳單或實際結算後更正成本；不更動庫存數量，
-    // 只把商品的「最新成本」同步為本次修正後的台幣單件成本。
-    if (Number(line.received_quantity) > 0 && line.product_id) {
-      const { error: productError } = await supabase
-        .from("products")
-        .update({ cost: line.nextUnitCost, updated_at: new Date().toISOString() })
-        .eq("id", line.product_id);
-      if (productError) throw productError;
-    }
   }
   const total = nextLines.reduce((sum, line) => sum + line.nextUnitCost * Number(line.quantity), 0);
   const { error: headerError } = await supabase
@@ -164,6 +154,12 @@ async function updateReceiptCosts(id: string, input: UpdatePurchaseInput) {
     .update({ total, shipping_fee: shippingFee ?? Number(order.shipping_fee), updated_at: new Date().toISOString() })
     .eq("id", id);
   if (headerError) throw headerError;
+
+  // 已收貨的採購單可在帳單結算後修正成本。商品的最新成本一律取下單日期
+  // 與今天最接近的已入庫紀錄，因此更正舊採購單不會覆蓋較接近今天的成本。
+  await syncLatestCostsForProducts(nextLines
+    .filter((line) => Number(line.received_quantity) > 0 && Boolean(line.product_id))
+    .map((line) => line.product_id as string));
 }
 
 async function receivePurchaseOrderFallback(id: string, items: Array<{ item_id: string; quantity: number }>) {
@@ -277,20 +273,46 @@ async function revertPurchaseReceipt(id: string, performedBy: string) {
   return data;
 }
 
-async function syncLatestCostsForReceivedItems(itemIds: string[]) {
+async function syncLatestCostsForProducts(productIds: string[]) {
+  const uniqueProductIds = [...new Set(productIds.filter((id) => uuidPattern.test(id)))];
+  if (!uniqueProductIds.length) return;
+
   const supabase = getSupabaseAdmin();
   const { data: receivedItems, error } = await supabase
     .from("purchase_order_items")
-    .select("id, product_id, unit_cost")
-    .in("id", itemIds);
+    .select("product_id, unit_cost, purchase_orders(order_date)")
+    .in("product_id", uniqueProductIds)
+    .gt("received_quantity", 0);
   if (error) throw error;
 
+  const taiwanDateParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const todayParts = Object.fromEntries(taiwanDateParts.map((part) => [part.type, part.value]));
+  const today = Date.UTC(Number(todayParts.year), Number(todayParts.month) - 1, Number(todayParts.day));
+  const closestCosts = new Map<string, { unitCost: number; distance: number; orderDate: string }>();
   for (const item of receivedItems ?? []) {
     if (!item.product_id) continue;
+    const order = Array.isArray(item.purchase_orders) ? item.purchase_orders[0] : item.purchase_orders;
+    const orderDate = order?.order_date;
+    if (!orderDate) continue;
+    const date = new Date(`${orderDate}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) continue;
+    const distance = Math.abs(date.getTime() - today);
+    const current = closestCosts.get(item.product_id);
+    if (!current || distance < current.distance || (distance === current.distance && orderDate > current.orderDate)) {
+      closestCosts.set(item.product_id, { unitCost: Number(item.unit_cost) || 0, distance, orderDate });
+    }
+  }
+
+  for (const [productId, cost] of closestCosts) {
     const { error: productError } = await supabase
       .from("products")
-      .update({ cost: item.unit_cost, updated_at: new Date().toISOString() })
-      .eq("id", item.product_id);
+      .update({ cost: cost.unitCost, updated_at: new Date().toISOString() })
+      .eq("id", productId);
     if (productError) throw productError;
   }
 }
@@ -388,7 +410,10 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       if (error) throw error;
       return data;
     })();
-    await syncLatestCostsForReceivedItems(items.map((item) => item.item_id));
+    await syncLatestCostsForProducts((purchaseOrder.purchase_order_items ?? [])
+      .filter((item) => items.some((received) => received.item_id === item.id))
+      .map((item) => item.product_id)
+      .filter((productId): productId is string => Boolean(productId)));
     return withRefreshedSession(NextResponse.json({ purchaseOrder }), auth.context);
   } catch (error) {
     if (foreignCostColumnsMissing(error)) return NextResponse.json({ message: "採購的當地幣別、成本與運費欄位尚未建立。請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
