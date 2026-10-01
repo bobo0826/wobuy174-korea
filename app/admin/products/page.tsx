@@ -25,6 +25,16 @@ const beddingTypeFilters = [
 
 type BeddingTypeFilter = (typeof beddingTypeFilters)[number]["id"];
 
+const plushTypeFilters = [
+  { id: "sanrio", label: "三麗鷗" },
+  { id: "chiikawa", label: "吉伊卡哇" },
+  { id: "pokemon", label: "寶可夢" },
+  { id: "miffy", label: "米飛兔" },
+  { id: "pingu", label: "PINGU" },
+  { id: "regional", label: "地區限定" },
+  { id: "other", label: "其他" },
+] as const;
+
 type ManagedProduct = {
   id: string;
   code: string;
@@ -37,6 +47,7 @@ type ManagedProduct = {
   categories: string[] | null;
   bedding_type: string | null;
   korea_type: string | null;
+  plush_type: string | null;
   deadline: string | null;
   arrival: string | null;
   colors: string | null;
@@ -253,6 +264,7 @@ export default function AdminProductsPage() {
         categories: product.categories ?? [],
         bedding_type: product.bedding_type,
         korea_type: product.korea_type,
+        plush_type: product.plush_type,
         deadline: product.deadline,
         arrival: product.arrival,
         colors: product.colors,
@@ -398,6 +410,8 @@ export default function AdminProductsPage() {
                   .map((filter) => filter.label);
                 const beddingTypeLabel = beddingTypeFilters.find((filter) => filter.id === product.bedding_type)?.label;
                 if (beddingTypeLabel) labels.push(beddingTypeLabel);
+                const plushTypeLabel = plushTypeFilters.find((filter) => filter.id === product.plush_type)?.label;
+                if (plushTypeLabel) labels.push(plushTypeLabel);
                 const productVariantCount = variantCount(product.variants);
                 return (
                   <tr className="align-middle" key={product.id}>

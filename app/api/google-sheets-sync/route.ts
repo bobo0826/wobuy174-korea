@@ -52,6 +52,22 @@ const koreaTypeAliases: Record<string, string> = {
   socks: "socks",
 };
 
+const plushTypeAliases: Record<string, string> = {
+  "三麗鷗": "sanrio",
+  sanrio: "sanrio",
+  "吉伊卡哇": "chiikawa",
+  chiikawa: "chiikawa",
+  "寶可夢": "pokemon",
+  pokemon: "pokemon",
+  "米飛兔": "miffy",
+  miffy: "miffy",
+  pingu: "pingu",
+  "地區限定": "regional",
+  regional: "regional",
+  "其他": "other",
+  other: "other",
+};
+
 const beddingTypeAliases: Record<string, string> = {
   "涼感被": "cool",
   "涼被": "cool",
@@ -183,6 +199,9 @@ function toProductRecord(product: SheetProduct, existing?: ExistingProduct) {
   const koreaType = koreaTypeAliases[
     getValue(product, "韓國子分類", "korea_type").toLowerCase()
   ];
+  const plushType = plushTypeAliases[
+    getValue(product, "正版玩偶子分類", "plush_type").toLowerCase()
+  ];
   const detailsFromSheet = getValue(product, "商品介紹", "details");
   const specsFromSheet = getValue(product, "規格", "規格與注意事項", "specs");
 
@@ -196,6 +215,7 @@ function toProductRecord(product: SheetProduct, existing?: ExistingProduct) {
     country,
     categories,
     korea_type: koreaType ?? null,
+    plush_type: koreaType === "plush" ? (plushType ?? null) : null,
     bedding_type: beddingType ?? null,
     deadline: getValue(product, "收單日", "deadline") || null,
     arrival: getValue(product, "預計到貨", "arrival") || "依商品頁或客服通知",
@@ -280,7 +300,7 @@ export async function POST(request: Request) {
     .upsert(records, { onConflict: "code" });
 
   if (upsertError) {
-    const schemaHint = upsertError.message.includes("original_price") || upsertError.message.includes("colors") || upsertError.message.includes("sizes") || upsertError.message.includes("sort_order") || upsertError.message.includes("variants")
+    const schemaHint = upsertError.message.includes("original_price") || upsertError.message.includes("colors") || upsertError.message.includes("sizes") || upsertError.message.includes("sort_order") || upsertError.message.includes("variants") || upsertError.message.includes("plush_type")
       ? "請先在 Supabase SQL Editor 重新執行 supabase/schema.sql。"
       : "";
     return NextResponse.json(

@@ -39,6 +39,22 @@ const koreaTypeAliases: Record<string, string> = {
   socks: "socks",
 };
 
+const plushTypeAliases: Record<string, string> = {
+  "三麗鷗": "sanrio",
+  sanrio: "sanrio",
+  "吉伊卡哇": "chiikawa",
+  chiikawa: "chiikawa",
+  "寶可夢": "pokemon",
+  pokemon: "pokemon",
+  "米飛兔": "miffy",
+  miffy: "miffy",
+  pingu: "pingu",
+  "地區限定": "regional",
+  regional: "regional",
+  "其他": "other",
+  other: "other",
+};
+
 const beddingTypeAliases: Record<string, string> = {
   "-18°C 涼被": "cool",
   "涼被": "cool",
@@ -68,6 +84,16 @@ const koreaTypeOptions = [
   { value: "socks", label: "純棉襪子" },
 ];
 
+const plushTypeOptions = [
+  { value: "sanrio", label: "三麗鷗" },
+  { value: "chiikawa", label: "吉伊卡哇" },
+  { value: "pokemon", label: "寶可夢" },
+  { value: "miffy", label: "米飛兔" },
+  { value: "pingu", label: "PINGU" },
+  { value: "regional", label: "地區限定" },
+  { value: "other", label: "其他" },
+];
+
 const beddingTypeOptions = [
   { value: "cool", label: "涼感被" },
   { value: "allSeason", label: "四季被" },
@@ -93,6 +119,7 @@ type ProductDraft = {
   country: string;
   categories: string;
   koreaType: string;
+  plushType: string;
   beddingType: string;
   deadline: string;
   arrival: string;
@@ -114,6 +141,7 @@ type ManagedProduct = {
   country: string;
   categories: string[] | null;
   korea_type: string | null;
+  plush_type: string | null;
   bedding_type: string | null;
   deadline: string | null;
   arrival: string | null;
@@ -137,6 +165,7 @@ const emptyDraft: ProductDraft = {
   country: "KOREA",
   categories: "",
   koreaType: "",
+  plushType: "",
   beddingType: "",
   deadline: "",
   arrival: "依商品頁或客服通知",
@@ -264,6 +293,8 @@ function toDraft(row: CsvRow): ProductDraft {
     categories: toList(getValue(row, "分類", "categories"), categoryAliases).join(","),
     koreaType:
       toList(getValue(row, "韓國子分類", "korea_type"), koreaTypeAliases)[0] ?? "",
+    plushType:
+      toList(getValue(row, "正版玩偶子分類", "plush_type"), plushTypeAliases)[0] ?? "",
     beddingType:
       toList(getValue(row, "棉被子分類", "bedding_type"), beddingTypeAliases)[0] ?? "",
     deadline: getValue(row, "收單日", "deadline"),
@@ -293,6 +324,10 @@ function toRecord(draft: ProductDraft, imageUrls: string[], fallbackSortOrder = 
       : "SELECT",
     categories: toList(draft.categories, categoryAliases),
     korea_type: toList(draft.koreaType, koreaTypeAliases)[0] ?? null,
+    plush_type:
+      draft.koreaType === "plush"
+        ? (toList(draft.plushType, plushTypeAliases)[0] ?? null)
+        : null,
     bedding_type: toList(draft.beddingType, beddingTypeAliases)[0] ?? null,
     deadline: draft.deadline.trim() || null,
     arrival: draft.arrival.trim() || null,
@@ -317,6 +352,7 @@ function toDraftFromProduct(product: ManagedProduct): ProductDraft {
     country: product.country,
     categories: (product.categories ?? []).join(","),
     koreaType: product.korea_type ?? "",
+    plushType: product.plush_type ?? "",
     beddingType: product.bedding_type ?? "",
     deadline: product.deadline ?? "",
     arrival: product.arrival ?? "依商品頁或客服通知",
@@ -561,6 +597,7 @@ export default function AdminPage() {
               ? "KOREA"
               : current.country,
         koreaType: isSelected && category === "korea" ? "" : current.koreaType,
+        plushType: isSelected && category === "korea" ? "" : current.plushType,
         beddingType: isSelected && category === "bedding" ? "" : current.beddingType,
       };
     });
@@ -712,7 +749,20 @@ export default function AdminPage() {
                 <legend className="text-sm font-medium">韓國選品子分類</legend>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {koreaTypeOptions.map((option) => (
-                    <button aria-pressed={draft.koreaType === option.value} className={optionClass(draft.koreaType === option.value)} key={option.value} onClick={() => setDraft((current) => ({ ...current, koreaType: current.koreaType === option.value ? "" : option.value }))} type="button">
+                  <button aria-pressed={draft.koreaType === option.value} className={optionClass(draft.koreaType === option.value)} key={option.value} onClick={() => setDraft((current) => ({ ...current, koreaType: current.koreaType === option.value ? "" : option.value, plushType: current.koreaType === option.value || option.value !== "plush" ? "" : current.plushType }))} type="button">
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            )}
+            {hasCategory("korea") && draft.koreaType === "plush" && (
+              <fieldset className="md:col-span-2">
+                <legend className="text-sm font-medium">正版玩偶子分類</legend>
+                <p className="mt-2 text-xs leading-5 text-[#605B51]/65">請先選擇「正版玩偶」後，再選擇商品角色或系列。</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {plushTypeOptions.map((option) => (
+                    <button aria-pressed={draft.plushType === option.value} className={optionClass(draft.plushType === option.value)} key={option.value} onClick={() => setDraft((current) => ({ ...current, plushType: current.plushType === option.value ? "" : option.value }))} type="button">
                       {option.label}
                     </button>
                   ))}

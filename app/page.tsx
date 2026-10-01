@@ -21,13 +21,14 @@ type StoredProduct = {
   categories: string[] | null;
   bedding_type: string | null;
   korea_type: string | null;
+  plush_type: string | null;
   details: string | null;
   specs: string | null;
   variants: unknown;
 };
 
 const productFields =
-  "id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,details,specs,variants";
+  "id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,plush_type,details,specs,variants";
 
 function normalizeVariants(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -72,6 +73,9 @@ function toProduct(product: StoredProduct): Product {
       : undefined,
     koreaType: ["plush", "pajamas", "fashion", "snacks", "beauty", "dutyFree", "socks"].includes(product.korea_type ?? "")
       ? (product.korea_type as Product["koreaType"])
+      : undefined,
+    plushType: ["sanrio", "chiikawa", "pokemon", "miffy", "pingu", "regional", "other"].includes(product.plush_type ?? "")
+      ? (product.plush_type as Product["plushType"])
       : undefined,
     details: product.details ?? "商品介紹請洽 LINE@ 官方帳號確認。",
     specs: product.specs ?? "尺寸、花色與供貨狀況請以客服確認為準。",

@@ -21,6 +21,15 @@ type KoreaType =
   | "dutyFree"
   | "socks";
 
+type PlushType =
+  | "sanrio"
+  | "chiikawa"
+  | "pokemon"
+  | "miffy"
+  | "pingu"
+  | "regional"
+  | "other";
+
 type ProductVariant = {
   name: string;
   code: string;
@@ -45,6 +54,7 @@ export type Product = {
   categories: Category[];
   beddingType?: "cool" | "allSeason" | "pillow";
   koreaType?: KoreaType;
+  plushType?: PlushType;
   details: string;
   specs: string;
 };
@@ -65,6 +75,7 @@ type StoredProduct = {
   categories: string[] | null;
   bedding_type: string | null;
   korea_type: string | null;
+  plush_type: string | null;
   details: string | null;
   specs: string | null;
   variants: unknown;
@@ -506,6 +517,16 @@ const koreaTypes: { id: KoreaType; label: string }[] = [
   { id: "socks", label: "純棉襪子" },
 ];
 
+const plushTypes: { id: PlushType; label: string }[] = [
+  { id: "sanrio", label: "三麗鷗" },
+  { id: "chiikawa", label: "吉伊卡哇" },
+  { id: "pokemon", label: "寶可夢" },
+  { id: "miffy", label: "米飛兔" },
+  { id: "pingu", label: "PINGU" },
+  { id: "regional", label: "地區限定" },
+  { id: "other", label: "其他" },
+];
+
 function normalizeProductVariants(value: unknown): ProductVariant[] {
   if (!Array.isArray(value)) return [];
 
@@ -551,6 +572,9 @@ function storedProductToProduct(product: StoredProduct): Product {
       : undefined,
     koreaType: koreaTypes.some((type) => type.id === product.korea_type)
       ? (product.korea_type as KoreaType)
+      : undefined,
+    plushType: plushTypes.some((type) => type.id === product.plush_type)
+      ? (product.plush_type as PlushType)
       : undefined,
     details: product.details ?? "商品介紹請洽 LINE@ 官方帳號確認。",
     specs: product.specs ?? "尺寸、花色與供貨狀況請以客服確認為準。",
@@ -613,6 +637,7 @@ export function ProductCatalog({
     "all" | "cool" | "allSeason" | "pillow"
   >("all");
   const [activeKoreaType, setActiveKoreaType] = useState<"all" | KoreaType>("all");
+  const [activePlushType, setActivePlushType] = useState<"all" | PlushType>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
@@ -641,7 +666,7 @@ export function ProductCatalog({
 
     void supabase
       .from("products")
-      .select("id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,details,specs,variants")
+      .select("id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,plush_type,details,specs,variants")
       .eq("published", true)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: false })
@@ -664,8 +689,13 @@ export function ProductCatalog({
       activeCategory !== "korea" ||
       activeKoreaType === "all" ||
       product.koreaType === activeKoreaType;
+    const matchesPlush =
+      activeCategory !== "korea" ||
+      activeKoreaType !== "plush" ||
+      activePlushType === "all" ||
+      product.plushType === activePlushType;
 
-    return matchesCategory && matchesBedding && matchesKorea;
+    return matchesCategory && matchesBedding && matchesKorea && matchesPlush;
   });
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
   const activePage = Math.min(currentPage, totalPages);
@@ -688,6 +718,7 @@ export function ProductCatalog({
     setActiveCategory(category);
     setActiveBeddingType("all");
     setActiveKoreaType("all");
+    setActivePlushType("all");
     setCurrentPage(1);
     scrollToProducts();
   };
@@ -774,6 +805,7 @@ export function ProductCatalog({
                 }`}
                 onClick={() => {
                   setActiveKoreaType("all");
+                  setActivePlushType("all");
                   setCurrentPage(1);
                 }}
               >
@@ -789,6 +821,41 @@ export function ProductCatalog({
                   key={item.id}
                   onClick={() => {
                     setActiveKoreaType(item.id);
+                    setActivePlushType("all");
+                    setCurrentPage(1);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {activeCategory === "korea" && activeKoreaType === "plush" && (
+            <div className="flex flex-wrap gap-2 border-b border-[#D9D6D0] pb-4">
+              <button
+                className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
+                  activePlushType === "all"
+                    ? "bg-[#7D2F35] text-[#F5F5F5]"
+                    : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
+                }`}
+                onClick={() => {
+                  setActivePlushType("all");
+                  setCurrentPage(1);
+                }}
+              >
+                全部子分類
+              </button>
+              {plushTypes.map((item) => (
+                <button
+                  className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
+                    activePlushType === item.id
+                      ? "bg-[#7D2F35] text-[#F5F5F5]"
+                      : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
+                  }`}
+                  key={item.id}
+                  onClick={() => {
+                    setActivePlushType(item.id);
                     setCurrentPage(1);
                   }}
                 >

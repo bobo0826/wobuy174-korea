@@ -13,6 +13,7 @@ create table if not exists public.products (
   country text not null default 'KOREA' check (country in ('KOREA', 'JAPAN', 'SELECT')),
   categories text[] not null default '{}',
   korea_type text,
+  plush_type text,
   bedding_type text,
   deadline text,
   arrival text,
@@ -33,6 +34,7 @@ alter table public.products add column if not exists colors text;
 alter table public.products add column if not exists sizes text;
 alter table public.products add column if not exists variants jsonb not null default '[]'::jsonb;
 alter table public.products add column if not exists sort_order integer not null default 0;
+alter table public.products add column if not exists plush_type text;
 
 create table if not exists public.admin_users (
   user_id uuid primary key references auth.users(id) on delete cascade,
