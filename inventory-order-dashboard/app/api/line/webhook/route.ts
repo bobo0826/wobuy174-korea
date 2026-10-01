@@ -151,11 +151,17 @@ async function handleTextEvent(event: LineEvent) {
   const allowed = allowedUserIds();
   const userId = event.source?.userId ?? "";
   if (!allowed.size) {
-    await reply(event.replyToken, `尚未設定可新增商品的 LINE 帳號。\n\n請將以下 ID 加到 Vercel 的 LINE_ALLOWED_USER_IDS：\n${userId || "（此訊息沒有可用的使用者 ID）"}`);
+    // 官方帳號仍可正常與客戶聊天；尚未設定管理者前，只在管理者主動
+    // 查詢時回覆 ID，絕不對每位客戶自動訊息。
+    if (text === "查詢商品上傳 ID") {
+      await reply(event.replyToken, `你的商品上傳授權 ID：\n${userId || "（此訊息沒有可用的使用者 ID）"}\n\n請交給系統管理員設定。`);
+    }
     return;
   }
   if (!allowed.has(userId)) {
-    await reply(event.replyToken, "此 LINE 帳號沒有新增商品權限。請聯絡系統管理員。\n\n若需協助設定，請提供此 ID：\n" + (userId || "（此訊息沒有可用的使用者 ID）"));
+    if (text === "查詢商品上傳 ID") {
+      await reply(event.replyToken, `你的商品上傳授權 ID：\n${userId || "（此訊息沒有可用的使用者 ID）"}\n\n此帳號尚未取得商品建立權限。`);
+    }
     return;
   }
 
