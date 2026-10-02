@@ -71,6 +71,10 @@ function allowedUserIds() {
   );
 }
 
+function isAuthorizationIdRequest(text: string) {
+  return normalize(text) === normalize("查詢商品上傳 ID");
+}
+
 function verifySignature(rawBody: string, signature: string | null) {
   const secret = process.env.LINE_CHANNEL_SECRET;
   if (!secret || !signature) return false;
@@ -131,17 +135,25 @@ function parseProduct(text: string): { product?: ProductDraft; error?: string } 
 
 async function reply(replyToken: string | undefined, text: string) {
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  if (!replyToken || !accessToken) return;
-  const response = await fetch("https://api.line.me/v2/bot/message/reply", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ messages: [{ type: "text", text }], replyToken }),
-    cache: "no-store",
-  });
-  if (!response.ok) console.error("LINE reply failed", response.status);
+  if (!replyToken || !accessToken) {
+    console.error("LINE reply unavailable", { hasReplyToken: Boolean(replyToken), hasAccessToken: Boolean(accessToken) });
+    return;
+  }
+
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/message/reply", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ messages: [{ type: "text", text }], replyToken }),
+      cache: "no-store",
+    });
+    if (!response.ok) console.error("LINE reply failed", { status: response.status, statusText: response.statusText });
+  } catch (error) {
+    console.error("LINE reply request failed", error);
+  }
 }
 
 async function handleTextEvent(event: LineEvent) {
@@ -153,13 +165,13 @@ async function handleTextEvent(event: LineEvent) {
   if (!allowed.size) {
     // 官方帳號仍可正常與客戶聊天；尚未設定管理者前，只在管理者主動
     // 查詢時回覆 ID，絕不對每位客戶自動訊息。
-    if (text === "查詢商品上傳 ID") {
+    if (isAuthorizationIdRequest(text)) {
       await reply(event.replyToken, `你的商品上傳授權 ID：\n${userId || "（此訊息沒有可用的使用者 ID）"}\n\n請交給系統管理員設定。`);
     }
     return;
   }
   if (!allowed.has(userId)) {
-    if (text === "查詢商品上傳 ID") {
+    if (isAuthorizationIdRequest(text)) {
       await reply(event.replyToken, `你的商品上傳授權 ID：\n${userId || "（此訊息沒有可用的使用者 ID）"}\n\n此帳號尚未取得商品建立權限。`);
     }
     return;
