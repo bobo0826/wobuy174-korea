@@ -795,7 +795,7 @@ export function ProductCatalog({
           )}
 
           {activeCategory === "korea" && activeKoreaType === "plush" && (
-            <div className="flex flex-wrap gap-2 border-b border-[#D9D6D0] pb-4">
+            <div className="flex flex-wrap gap-2 border-b border-[#D9D6D0] pb-4 pt-3 sm:pt-4">
               <button
                 className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
                   activePlushType === "all"
