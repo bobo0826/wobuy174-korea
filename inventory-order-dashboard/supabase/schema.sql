@@ -20,6 +20,18 @@ create table if not exists products (
   updated_at timestamptz not null default now()
 );
 
+-- 可由使用者擴充的商品第二層分類，依國家區分。
+create table if not exists product_categories (
+  id uuid primary key default gen_random_uuid(),
+  country text not null,
+  name text not null,
+  created_by text not null default '',
+  created_at timestamptz not null default now(),
+  unique (country, name)
+);
+
+alter table public.product_categories enable row level security;
+
 -- 可由使用者擴充的商品第三層分類。預設分類仍由前端提供，
 -- 此表只保存額外建立的子分類，並依國家與第二層分類區分。
 create table if not exists product_subcategories (
@@ -178,6 +190,7 @@ alter table public.financial_transactions
 
 create index if not exists products_country_category_idx on products(country, category);
 create index if not exists products_country_category_subcategory_idx on products(country, category, subcategory);
+create index if not exists product_categories_country_idx on product_categories(country, created_at);
 create index if not exists product_subcategories_parent_idx on product_subcategories(country, category, created_at);
 create index if not exists products_supplier_id_idx on products(supplier_id);
 create index if not exists suppliers_name_idx on suppliers(name);
