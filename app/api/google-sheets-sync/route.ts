@@ -2,6 +2,12 @@ import { timingSafeEqual } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import {
+  beddingTypeAliases,
+  koreaTypeAliases,
+  plushTypeAliases,
+  productCategoryAliases as categoryAliases,
+} from "../../lib/product-categories";
 
 export const runtime = "nodejs";
 
@@ -20,64 +26,6 @@ type ExistingProduct = {
   image_urls: string[] | null;
   sort_order: number | null;
   variants: unknown;
-};
-
-const categoryAliases: Record<string, string> = {
-  "熱門商品": "popular",
-  "韓國棉被": "bedding",
-  "韓國選品": "korea",
-  "日本選品": "japan",
-  "其他選品": "other",
-  popular: "popular",
-  bedding: "bedding",
-  korea: "korea",
-  japan: "japan",
-  other: "other",
-};
-
-const koreaTypeAliases: Record<string, string> = {
-  "正版玩偶": "plush",
-  "正韓睡衣": "pajamas",
-  "時尚潮牌": "fashion",
-  "零食糖果": "snacks",
-  "藥局美妝": "beauty",
-  "免稅精選": "dutyFree",
-  "純棉襪子": "socks",
-  plush: "plush",
-  pajamas: "pajamas",
-  fashion: "fashion",
-  snacks: "snacks",
-  beauty: "beauty",
-  dutyfree: "dutyFree",
-  socks: "socks",
-};
-
-const plushTypeAliases: Record<string, string> = {
-  "三麗鷗": "sanrio",
-  sanrio: "sanrio",
-  "吉伊卡哇": "chiikawa",
-  chiikawa: "chiikawa",
-  "寶可夢": "pokemon",
-  pokemon: "pokemon",
-  "米飛兔": "miffy",
-  miffy: "miffy",
-  pingu: "pingu",
-  "地區限定": "regional",
-  regional: "regional",
-  "其他": "other",
-  other: "other",
-};
-
-const beddingTypeAliases: Record<string, string> = {
-  "涼感被": "cool",
-  "涼被": "cool",
-  "-18°C 涼被": "cool",
-  cool: "cool",
-  "四季被": "allSeason",
-  allseason: "allSeason",
-  "秒睡枕": "pillow",
-  "抗蟎秒睡枕": "pillow",
-  pillow: "pillow",
 };
 
 const validStatuses = new Set(["現貨", "預購", "連線中", "已收單"]);

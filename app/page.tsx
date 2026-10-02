@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 
 import Home, { type Category, type Product } from "./home-client";
+import { beddingTypeOptions, koreaTypeOptions, plushTypeOptions, productCategoryOptions } from "./lib/product-categories";
 
 export const revalidate = 60;
 
@@ -45,7 +46,7 @@ function normalizeVariants(value: unknown) {
 
 function toProduct(product: StoredProduct): Product {
   const categories = (product.categories ?? []).filter((category) =>
-    ["popular", "bedding", "korea", "japan", "other"].includes(category),
+    productCategoryOptions.some((option) => option.id === category),
   ) as Category[];
 
   return {
@@ -68,13 +69,13 @@ function toProduct(product: StoredProduct): Product {
     image: product.image_urls?.[0] ?? "",
     images: product.image_urls?.filter(Boolean).slice(0, 3) ?? [],
     categories,
-    beddingType: ["cool", "allSeason", "pillow"].includes(product.bedding_type ?? "")
+    beddingType: beddingTypeOptions.some((option) => option.id === product.bedding_type)
       ? (product.bedding_type as Product["beddingType"])
       : undefined,
-    koreaType: ["plush", "pajamas", "fashion", "snacks", "beauty", "dutyFree", "socks"].includes(product.korea_type ?? "")
+    koreaType: koreaTypeOptions.some((option) => option.id === product.korea_type)
       ? (product.korea_type as Product["koreaType"])
       : undefined,
-    plushType: ["sanrio", "chiikawa", "pokemon", "miffy", "pingu", "regional", "other"].includes(product.plush_type ?? "")
+    plushType: plushTypeOptions.some((option) => option.id === product.plush_type)
       ? (product.plush_type as Product["plushType"])
       : undefined,
     details: product.details ?? "商品介紹請洽 LINE@ 官方帳號確認。",

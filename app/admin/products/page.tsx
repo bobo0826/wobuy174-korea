@@ -3,37 +3,42 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import {
+  beddingTypeOptions,
+  categoryLabel,
+  koreaTypeOptions,
+  plushTypeOptions,
+  productCategoryOptions,
+} from "../../lib/product-categories";
 import { getSupabaseClient, isSupabaseConfigured } from "../../lib/supabase";
 
 const categoryFilters = [
-  { id: "all", label: "全部商品" },
-  { id: "popular", label: "熱門商品" },
-  { id: "bedding", label: "韓國棉被" },
-  { id: "korea", label: "韓國選品" },
-  { id: "japan", label: "日本選品" },
-  { id: "other", label: "其他選品" },
+  { id: "all", label: "所有商品" },
+  ...productCategoryOptions,
 ] as const;
 
 type CategoryFilter = (typeof categoryFilters)[number]["id"];
 
 const beddingTypeFilters = [
   { id: "all", label: "全部" },
-  { id: "cool", label: "涼感被" },
-  { id: "allSeason", label: "四季被" },
-  { id: "pillow", label: "秒睡枕" },
+  ...beddingTypeOptions,
 ] as const;
 
 type BeddingTypeFilter = (typeof beddingTypeFilters)[number]["id"];
 
-const plushTypeFilters = [
-  { id: "sanrio", label: "三麗鷗" },
-  { id: "chiikawa", label: "吉伊卡哇" },
-  { id: "pokemon", label: "寶可夢" },
-  { id: "miffy", label: "米飛兔" },
-  { id: "pingu", label: "PINGU" },
-  { id: "regional", label: "地區限定" },
-  { id: "other", label: "其他" },
+const koreaTypeFilters = [
+  { id: "all", label: "全部" },
+  ...koreaTypeOptions,
 ] as const;
+
+type KoreaTypeFilter = (typeof koreaTypeFilters)[number]["id"];
+
+const plushTypeFilters = [
+  { id: "all", label: "全部子分類" },
+  ...plushTypeOptions,
+] as const;
+
+type PlushTypeFilter = (typeof plushTypeFilters)[number]["id"];
 
 type ManagedProduct = {
   id: string;
@@ -146,7 +151,11 @@ export default function AdminProductsPage() {
   const [products, setProducts] = useState<ManagedProduct[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>("all");
   const [activeBeddingType, setActiveBeddingType] = useState<BeddingTypeFilter>("all");
+  const [activeKoreaType, setActiveKoreaType] = useState<KoreaTypeFilter>("all");
+  const [activePlushType, setActivePlushType] = useState<PlushTypeFilter>("all");
   const [sortValues, setSortValues] = useState<Record<string, string>>({});
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [batchSortStart, setBatchSortStart] = useState("0");
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -170,6 +179,7 @@ export default function AdminProductsPage() {
 
     const loadedProducts = (data ?? []) as ManagedProduct[];
     setProducts(loadedProducts);
+    setSelectedProductIds([]);
     setSortValues(
       Object.fromEntries(loadedProducts.map((product) => [product.id, String(product.sort_order ?? 0)])),
     );
@@ -320,9 +330,100 @@ export default function AdminProductsPage() {
       activeCategory !== "bedding" ||
       activeBeddingType === "all" ||
       product.bedding_type === activeBeddingType;
+    const koreaTypeMatches =
+      activeCategory !== "korea" ||
+      activeKoreaType === "all" ||
+      product.korea_type === activeKoreaType;
+    const plushTypeMatches =
+      activeCategory !== "korea" ||
+      activeKoreaType !== "plush" ||
+      activePlushType === "all" ||
+      product.plush_type === activePlushType;
 
-    return categoryMatches && beddingTypeMatches;
+    return categoryMatches && beddingTypeMatches && koreaTypeMatches && plushTypeMatches;
   });
+  const selectedProducts = visibleProducts.filter((product) => selectedProductIds.includes(product.id));
+  const allVisibleProductsSelected = Boolean(visibleProducts.length) && selectedProducts.length === visibleProducts.length;
+
+  const toggleProductSelection = (productId: string) => {
+    setSelectedProductIds((current) =>
+      current.includes(productId)
+        ? current.filter((id) => id !== productId)
+        : [...current, productId],
+    );
+  };
+
+  const toggleVisibleProductsSelection = () => {
+    setSelectedProductIds((current) => {
+      const visibleIds = visibleProducts.map((product) => product.id);
+      if (allVisibleProductsSelected) return current.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...current, ...visibleIds]));
+    });
+  };
+
+  const applyBatchSortOrder = async () => {
+    const startingOrder = Number(batchSortStart);
+    if (!Number.isInteger(startingOrder) || startingOrder < 0) {
+      setMessage("批量排序起始值請填寫 0 以上的整數。");
+      return;
+    }
+    if (!selectedProducts.length) return;
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    setIsBusy(true);
+    setMessage("");
+    const errors: string[] = [];
+    for (const [index, product] of selectedProducts.entries()) {
+      const { error } = await supabase
+        .from("products")
+        .update({ sort_order: startingOrder + index })
+        .eq("id", product.id);
+      if (error) errors.push(product.name);
+    }
+
+    await loadProducts();
+    if (errors.length) {
+      setMessage(`部分商品排序調整失敗：${errors.join("、")}`);
+    } else {
+      setMessage(`已依目前列表順序，完成 ${selectedProducts.length} 件商品的批量排序。`);
+    }
+    setIsBusy(false);
+  };
+
+  const deleteSelectedProducts = async () => {
+    if (!selectedProducts.length) return;
+    const confirmed = window.confirm(
+      `確定要刪除選取的 ${selectedProducts.length} 件商品嗎？\n\n商品資料與上傳的商品照片都會一併刪除，且無法復原。`,
+    );
+    if (!confirmed) return;
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    setIsBusy(true);
+    setMessage("");
+    const { error } = await supabase
+      .from("products")
+      .delete()
+      .in("id", selectedProducts.map((product) => product.id));
+    if (error) {
+      setMessage(`批量刪除失敗：${error.message}`);
+      setIsBusy(false);
+      return;
+    }
+
+    const imagePaths = selectedProducts.flatMap((product) => storagePathsFromUrls(product.image_urls ?? []));
+    let storageErrorMessage = "";
+    if (imagePaths.length) {
+      const { error: storageError } = await supabase.storage.from("product-images").remove(imagePaths);
+      if (storageError) storageErrorMessage = `商品已刪除，但部分商品照片未能清除：${storageError.message}`;
+    }
+    await loadProducts();
+    if (storageErrorMessage) setMessage(storageErrorMessage);
+    setIsBusy(false);
+  };
 
   if (!isSupabaseConfigured) {
     return (
@@ -371,7 +472,7 @@ export default function AdminProductsPage() {
             {categoryFilters.map((filter) => {
               const count = filter.id === "all" ? products.length : products.filter((product) => product.categories?.includes(filter.id)).length;
               const selected = activeCategory === filter.id;
-              return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#605B51]"}`} key={filter.id} onClick={() => { setActiveCategory(filter.id); setActiveBeddingType("all"); }}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
+              return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#605B51]"}`} key={filter.id} onClick={() => { setActiveCategory(filter.id); setActiveBeddingType("all"); setActiveKoreaType("all"); setActivePlushType("all"); setSelectedProductIds([]); }}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
             })}
           </div>
           {activeCategory === "bedding" && (
@@ -381,11 +482,47 @@ export default function AdminProductsPage() {
                   ? products.filter((product) => product.categories?.includes("bedding")).length
                   : products.filter((product) => product.categories?.includes("bedding") && product.bedding_type === filter.id).length;
                 const selected = activeBeddingType === filter.id;
-                return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#7D2F35] bg-[#7D2F35] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#7D2F35]"}`} key={filter.id} onClick={() => setActiveBeddingType(filter.id)}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
+                return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#7D2F35] bg-[#7D2F35] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#7D2F35]"}`} key={filter.id} onClick={() => { setActiveBeddingType(filter.id); setSelectedProductIds([]); }}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
+              })}
+            </div>
+          )}
+          {activeCategory === "korea" && (
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-[#D9D6D0] pt-3">
+              {koreaTypeFilters.map((filter) => {
+                const count = filter.id === "all"
+                  ? products.filter((product) => product.categories?.includes("korea")).length
+                  : products.filter((product) => product.categories?.includes("korea") && product.korea_type === filter.id).length;
+                const selected = activeKoreaType === filter.id;
+                return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#7D2F35] bg-[#7D2F35] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#7D2F35]"}`} key={filter.id} onClick={() => { setActiveKoreaType(filter.id); setActivePlushType("all"); setSelectedProductIds([]); }}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
+              })}
+            </div>
+          )}
+          {activeCategory === "korea" && activeKoreaType === "plush" && (
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-[#D9D6D0] pt-3">
+              {plushTypeFilters.map((filter) => {
+                const count = filter.id === "all"
+                  ? products.filter((product) => product.categories?.includes("korea") && product.korea_type === "plush").length
+                  : products.filter((product) => product.categories?.includes("korea") && product.korea_type === "plush" && product.plush_type === filter.id).length;
+                const selected = activePlushType === filter.id;
+                return <button aria-pressed={selected} className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${selected ? "border-[#7D2F35] bg-[#7D2F35] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#7D2F35]"}`} key={filter.id} onClick={() => { setActivePlushType(filter.id); setSelectedProductIds([]); }}>{filter.label} <span className="ml-1 text-xs opacity-70">{count}</span></button>;
               })}
             </div>
           )}
         </div>
+
+        {selectedProducts.length > 0 && (
+          <section className="mt-5 flex flex-wrap items-end justify-between gap-4 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-4 sm:p-5">
+            <div>
+              <p className="text-sm font-semibold">已選取 {selectedProducts.length} 件商品</p>
+              <p className="mt-1 text-xs leading-5 text-[#605B51]/70">批量排序會依照目前列表的順序，從起始值開始連續編號。</p>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="block text-xs font-medium">排序起始值<input aria-label="批量排序起始值" className="mt-1 w-28 rounded border border-[#D9D6D0] bg-[#F5F5F5] px-2.5 py-2 text-sm outline-none focus:border-[#605B51]" disabled={isBusy} inputMode="numeric" min="0" onChange={(event) => setBatchSortStart(event.target.value)} type="number" value={batchSortStart} /></label>
+              <button className="rounded-full bg-[#605B51] px-4 py-2 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy} onClick={() => void applyBatchSortOrder()} type="button">批量調整排序</button>
+              <button className="rounded-full border border-[#A81515] px-4 py-2 text-sm font-medium text-[#A81515] disabled:opacity-50" disabled={isBusy} onClick={() => void deleteSelectedProducts()} type="button">刪除選取商品</button>
+            </div>
+          </section>
+        )}
 
         {message && <p className="mt-5 text-sm leading-6 text-[#A81515]">{message}</p>}
         {!message && !visibleProducts.length && <p className="mt-8 text-sm leading-7 text-[#605B51]/65">這個分類目前沒有商品。</p>}
@@ -395,6 +532,7 @@ export default function AdminProductsPage() {
           <table className="min-w-[940px] w-full text-left text-sm">
             <thead className="border-b border-[#D9D6D0] bg-[#EAE8E4] text-xs font-semibold tracking-[0.08em] text-[#605B51]/70">
               <tr>
+                <th className="w-14 px-4 py-3 text-center"><input aria-label="全選目前列表商品" checked={allVisibleProductsSelected} disabled={isBusy || !visibleProducts.length} onChange={toggleVisibleProductsSelection} type="checkbox" /></th>
                 <th className="w-24 px-4 py-3">排序</th>
                 <th className="min-w-80 px-4 py-3">商品</th>
                 <th className="min-w-36 px-4 py-3">分類</th>
@@ -408,13 +546,16 @@ export default function AdminProductsPage() {
                 const labels: string[] = categoryFilters
                   .filter((filter) => filter.id !== "all" && product.categories?.includes(filter.id))
                   .map((filter) => filter.label);
-                const beddingTypeLabel = beddingTypeFilters.find((filter) => filter.id === product.bedding_type)?.label;
+                const beddingTypeLabel = categoryLabel(beddingTypeOptions, product.bedding_type);
                 if (beddingTypeLabel) labels.push(beddingTypeLabel);
-                const plushTypeLabel = plushTypeFilters.find((filter) => filter.id === product.plush_type)?.label;
+                const koreaTypeLabel = categoryLabel(koreaTypeOptions, product.korea_type);
+                if (koreaTypeLabel) labels.push(koreaTypeLabel);
+                const plushTypeLabel = categoryLabel(plushTypeOptions, product.plush_type);
                 if (plushTypeLabel) labels.push(plushTypeLabel);
                 const productVariantCount = variantCount(product.variants);
                 return (
                   <tr className="align-middle" key={product.id}>
+                    <td className="px-4 py-3 text-center"><input aria-label={`選取 ${product.name}`} checked={selectedProductIds.includes(product.id)} disabled={isBusy} onChange={() => toggleProductSelection(product.id)} type="checkbox" /></td>
                     <td className="px-4 py-3">
                       <input aria-label={`${product.name} 的排序`} className="w-16 rounded border border-[#D9D6D0] bg-[#F5F5F5] px-2 py-1.5 text-center text-sm outline-none focus:border-[#605B51]" disabled={isBusy} inputMode="numeric" min="0" onBlur={() => void saveSortOrder(product)} onChange={(event) => setSortValues((current) => ({ ...current, [product.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} type="number" value={sortValues[product.id] ?? String(product.sort_order ?? 0)} />
                     </td>

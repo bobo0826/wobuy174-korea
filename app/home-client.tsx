@@ -3,32 +3,18 @@
 import Image from "next/image";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getSupabaseClient, isSupabaseConfigured } from "./lib/supabase";
+import {
+  beddingTypeOptions,
+  koreaTypeOptions,
+  plushTypeOptions,
+  productCategoryOptions,
+  type BeddingType,
+  type KoreaType,
+  type PlushType,
+  type ProductCategory,
+} from "./lib/product-categories";
 
-export type Category =
-  | "latest"
-  | "popular"
-  | "bedding"
-  | "korea"
-  | "japan"
-  | "other";
-
-type KoreaType =
-  | "plush"
-  | "pajamas"
-  | "fashion"
-  | "snacks"
-  | "beauty"
-  | "dutyFree"
-  | "socks";
-
-type PlushType =
-  | "sanrio"
-  | "chiikawa"
-  | "pokemon"
-  | "miffy"
-  | "pingu"
-  | "regional"
-  | "other";
+export type Category = "latest" | ProductCategory;
 
 type ProductVariant = {
   name: string;
@@ -52,7 +38,7 @@ export type Product = {
   image: string;
   images?: string[];
   categories: Category[];
-  beddingType?: "cool" | "allSeason" | "pillow";
+  beddingType?: BeddingType;
   koreaType?: KoreaType;
   plushType?: PlushType;
   details: string;
@@ -104,11 +90,7 @@ function getPageSizeSnapshot() {
 
 const categories: { id: Category; label: string }[] = [
   { id: "latest", label: "所有商品" },
-  { id: "popular", label: "熱門商品" },
-  { id: "bedding", label: "韓國棉被" },
-  { id: "korea", label: "韓國選品" },
-  { id: "japan", label: "日本選品" },
-  { id: "other", label: "其他選品" },
+  ...productCategoryOptions,
 ];
 
 export const products: Product[] = [
@@ -507,25 +489,8 @@ const categoryTitles: Record<Category, string> = {
   other: "其他選品",
 };
 
-const koreaTypes: { id: KoreaType; label: string }[] = [
-  { id: "plush", label: "正版玩偶" },
-  { id: "pajamas", label: "正韓睡衣" },
-  { id: "fashion", label: "時尚潮牌" },
-  { id: "snacks", label: "零食糖果" },
-  { id: "beauty", label: "藥局美妝" },
-  { id: "dutyFree", label: "免稅精選" },
-  { id: "socks", label: "純棉襪子" },
-];
-
-const plushTypes: { id: PlushType; label: string }[] = [
-  { id: "sanrio", label: "三麗鷗" },
-  { id: "chiikawa", label: "吉伊卡哇" },
-  { id: "pokemon", label: "寶可夢" },
-  { id: "miffy", label: "米飛兔" },
-  { id: "pingu", label: "PINGU" },
-  { id: "regional", label: "地區限定" },
-  { id: "other", label: "其他" },
-];
+const koreaTypes = koreaTypeOptions;
+const plushTypes = plushTypeOptions;
 
 function normalizeProductVariants(value: unknown): ProductVariant[] {
   if (!Array.isArray(value)) return [];
@@ -548,7 +513,7 @@ function storedProductToProduct(product: StoredProduct): Product {
     ? (product.country as Product["country"])
     : "SELECT";
   const categoriesFromDatabase = (product.categories ?? []).filter((category) =>
-    ["popular", "bedding", "korea", "japan", "other"].includes(category),
+    productCategoryOptions.some((option) => option.id === category),
   ) as Category[];
 
   return {
@@ -567,7 +532,7 @@ function storedProductToProduct(product: StoredProduct): Product {
     image: product.image_urls?.[0] ?? "",
     images: product.image_urls?.filter(Boolean).slice(0, 3) ?? [],
     categories: categoriesFromDatabase,
-    beddingType: ["cool", "allSeason", "pillow"].includes(product.bedding_type ?? "")
+    beddingType: beddingTypeOptions.some((option) => option.id === product.bedding_type)
       ? (product.bedding_type as Product["beddingType"])
       : undefined,
     koreaType: koreaTypes.some((type) => type.id === product.korea_type)
@@ -773,9 +738,7 @@ export function ProductCatalog({
             <div className="flex flex-wrap gap-2 border-b border-[#D9D6D0] py-4">
               {[
                 { id: "all", label: "全部" },
-                { id: "cool", label: "涼感被" },
-                { id: "allSeason", label: "四季被" },
-                { id: "pillow", label: "秒睡枕" },
+                ...beddingTypeOptions,
               ].map((item) => (
                 <button
                   className={`rounded-full px-3.5 py-2 text-xs transition-colors ${

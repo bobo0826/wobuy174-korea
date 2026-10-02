@@ -4,101 +4,21 @@ import Link from "next/link";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import {
+  beddingTypeAliases,
+  beddingTypeOptions,
+  koreaTypeAliases,
+  koreaTypeOptions,
+  plushTypeAliases,
+  plushTypeOptions,
+  productCategoryAliases as categoryAliases,
+  productCategoryOptions as categoryOptions,
+} from "../lib/product-categories";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
 
 const inputClass =
   "mt-2 w-full rounded-[4px] border border-[#D9D6D0] bg-[#F5F5F5] px-3 py-2.5 text-sm outline-none transition focus:border-[#605B51]";
 
-const categoryAliases: Record<string, string> = {
-  "熱門商品": "popular",
-  popular: "popular",
-  "韓國棉被": "bedding",
-  bedding: "bedding",
-  "韓國選品": "korea",
-  korea: "korea",
-  "日本選品": "japan",
-  japan: "japan",
-  "其他選品": "other",
-  other: "other",
-};
-
-const koreaTypeAliases: Record<string, string> = {
-  "正版玩偶": "plush",
-  plush: "plush",
-  "正韓睡衣": "pajamas",
-  pajamas: "pajamas",
-  "時尚潮牌": "fashion",
-  fashion: "fashion",
-  "零食糖果": "snacks",
-  snacks: "snacks",
-  "藥局美妝": "beauty",
-  beauty: "beauty",
-  "免稅精選": "dutyFree",
-  dutyfree: "dutyFree",
-  "純棉襪子": "socks",
-  socks: "socks",
-};
-
-const plushTypeAliases: Record<string, string> = {
-  "三麗鷗": "sanrio",
-  sanrio: "sanrio",
-  "吉伊卡哇": "chiikawa",
-  chiikawa: "chiikawa",
-  "寶可夢": "pokemon",
-  pokemon: "pokemon",
-  "米飛兔": "miffy",
-  miffy: "miffy",
-  pingu: "pingu",
-  "地區限定": "regional",
-  regional: "regional",
-  "其他": "other",
-  other: "other",
-};
-
-const beddingTypeAliases: Record<string, string> = {
-  "-18°C 涼被": "cool",
-  "涼被": "cool",
-  cool: "cool",
-  "四季被": "allSeason",
-  allseason: "allSeason",
-  "抗蟎秒睡枕": "pillow",
-  "秒睡枕": "pillow",
-  pillow: "pillow",
-};
-
-const categoryOptions = [
-  { value: "popular", label: "熱門商品" },
-  { value: "bedding", label: "韓國棉被" },
-  { value: "korea", label: "韓國選品" },
-  { value: "japan", label: "日本選品" },
-  { value: "other", label: "其他選品" },
-];
-
-const koreaTypeOptions = [
-  { value: "plush", label: "正版玩偶" },
-  { value: "pajamas", label: "正韓睡衣" },
-  { value: "fashion", label: "時尚潮牌" },
-  { value: "snacks", label: "零食糖果" },
-  { value: "beauty", label: "藥局美妝" },
-  { value: "dutyFree", label: "免稅精選" },
-  { value: "socks", label: "純棉襪子" },
-];
-
-const plushTypeOptions = [
-  { value: "sanrio", label: "三麗鷗" },
-  { value: "chiikawa", label: "吉伊卡哇" },
-  { value: "pokemon", label: "寶可夢" },
-  { value: "miffy", label: "米飛兔" },
-  { value: "pingu", label: "PINGU" },
-  { value: "regional", label: "地區限定" },
-  { value: "other", label: "其他" },
-];
-
-const beddingTypeOptions = [
-  { value: "cool", label: "涼感被" },
-  { value: "allSeason", label: "四季被" },
-  { value: "pillow", label: "秒睡枕" },
-];
 
 type CsvRow = Record<string, string>;
 
@@ -738,7 +658,7 @@ export default function AdminPage() {
               <p className="mt-2 text-xs leading-5 text-[#605B51]/65">可複選「熱門商品」與其他主分類；其餘分類請依商品選擇。</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {categoryOptions.map((option) => (
-                  <button aria-pressed={hasCategory(option.value)} className={optionClass(hasCategory(option.value))} key={option.value} onClick={() => toggleCategory(option.value)} type="button">
+                  <button aria-pressed={hasCategory(option.id)} className={optionClass(hasCategory(option.id))} key={option.id} onClick={() => toggleCategory(option.id)} type="button">
                     {option.label}
                   </button>
                 ))}
@@ -749,7 +669,7 @@ export default function AdminPage() {
                 <legend className="text-sm font-medium">韓國選品子分類</legend>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {koreaTypeOptions.map((option) => (
-                  <button aria-pressed={draft.koreaType === option.value} className={optionClass(draft.koreaType === option.value)} key={option.value} onClick={() => setDraft((current) => ({ ...current, koreaType: current.koreaType === option.value ? "" : option.value, plushType: current.koreaType === option.value || option.value !== "plush" ? "" : current.plushType }))} type="button">
+                  <button aria-pressed={draft.koreaType === option.id} className={optionClass(draft.koreaType === option.id)} key={option.id} onClick={() => setDraft((current) => ({ ...current, koreaType: current.koreaType === option.id ? "" : option.id, plushType: current.koreaType === option.id || option.id !== "plush" ? "" : current.plushType }))} type="button">
                     {option.label}
                   </button>
                 ))}
@@ -762,7 +682,7 @@ export default function AdminPage() {
                 <p className="mt-2 text-xs leading-5 text-[#605B51]/65">請先選擇「正版玩偶」後，再選擇商品角色或系列。</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {plushTypeOptions.map((option) => (
-                    <button aria-pressed={draft.plushType === option.value} className={optionClass(draft.plushType === option.value)} key={option.value} onClick={() => setDraft((current) => ({ ...current, plushType: current.plushType === option.value ? "" : option.value }))} type="button">
+                    <button aria-pressed={draft.plushType === option.id} className={optionClass(draft.plushType === option.id)} key={option.id} onClick={() => setDraft((current) => ({ ...current, plushType: current.plushType === option.id ? "" : option.id }))} type="button">
                       {option.label}
                     </button>
                   ))}
@@ -774,7 +694,7 @@ export default function AdminPage() {
                 <legend className="text-sm font-medium">韓國棉被子分類</legend>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {beddingTypeOptions.map((option) => (
-                    <button aria-pressed={draft.beddingType === option.value} className={optionClass(draft.beddingType === option.value)} key={option.value} onClick={() => setDraft((current) => ({ ...current, beddingType: current.beddingType === option.value ? "" : option.value }))} type="button">
+                    <button aria-pressed={draft.beddingType === option.id} className={optionClass(draft.beddingType === option.id)} key={option.id} onClick={() => setDraft((current) => ({ ...current, beddingType: current.beddingType === option.id ? "" : option.id }))} type="button">
                       {option.label}
                     </button>
                   ))}
