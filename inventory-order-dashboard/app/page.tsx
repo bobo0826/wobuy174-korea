@@ -382,8 +382,8 @@ function ProductSubcategoryPicker({ country, category, value, onChange, inputCla
       {options.map((option) => <option key={option}>{option}</option>)}
     </select>
     <div className="mt-2 flex flex-wrap items-center gap-2">
-      <button type="button" disabled={!canChooseParent || saving} onClick={() => { setAdding((current) => !current); setError(""); }} className="text-xs font-semibold text-[#5E7665] disabled:cursor-not-allowed disabled:opacity-45">{adding ? "取消新增" : "＋ 新增自訂子分類"}</button>
-      <small className="font-normal text-xs text-[#938D84]">新增後會儲存，可在同一國家與商品分類下重複選用。</small>
+      <button type="button" disabled={!canChooseParent || saving} onClick={() => { setAdding((current) => !current); setError(""); }} className="text-xs font-semibold text-[#5E7665] disabled:cursor-not-allowed disabled:opacity-45">{adding ? "取消新增" : `＋ 新增「${category || "此主分類"}」子分類`}</button>
+      <small className="font-normal text-xs text-[#938D84]">新增後會儲存，之後可在同一主分類下重複選用。</small>
     </div>
     {adding && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void add(); } }} maxLength={60} placeholder="例如：限定合作款" className="h-10 min-w-0 flex-1 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /><button type="button" disabled={saving} onClick={() => { void add(); }} className="h-10 rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">{saving ? "新增中…" : "儲存子分類"}</button></div>}
     {error && <small className="mt-2 block font-normal text-xs text-[#A35F37]">{error}</small>}
@@ -422,12 +422,16 @@ function Products({ catalog, openProduct, openNewProduct, openImportProducts, de
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState("");
+  const [addingSubcategory, setAddingSubcategory] = useState(false);
+  const [newSubcategory, setNewSubcategory] = useState("");
+  const [subcategorySaving, setSubcategorySaving] = useState(false);
+  const [subcategoryError, setSubcategoryError] = useState("");
   const countries = Object.keys(productCategoriesByCountry);
   const canChooseCategory = countryFilter !== "全部國家";
   const categoryOptions = canChooseCategory ? productCategoriesByCountry[countryFilter] ?? [] : [];
   const selectedCountry = canChooseCategory ? countryFilter : "";
   const selectedCategory = categoryFilter === "全部商品種類" ? "" : categoryFilter;
-  const { options: customSubcategoryOptions } = useProductSubcategoryOptions(selectedCountry, selectedCategory);
+  const { options: customSubcategoryOptions, addCustomSubcategory } = useProductSubcategoryOptions(selectedCountry, selectedCategory);
   const subcategoryOptions = canChooseCategory && selectedCategory ? customSubcategoryOptions : [];
   const canChooseSubcategory = subcategoryOptions.length > 0;
   const visibleProducts = catalog.filter((product) => {
@@ -440,6 +444,25 @@ function Products({ catalog, openProduct, openNewProduct, openImportProducts, de
       && matchesQuery;
   });
   const selectClass = "h-9 w-full rounded-xl border border-[#E5E1DB] bg-white px-3 text-xs font-semibold text-[#58544D] outline-none disabled:cursor-not-allowed disabled:bg-[#F4F1EC] disabled:text-[#AAA39A]";
+  const addSubcategoryToSelectedParent = async () => {
+    if (!newSubcategory.trim()) {
+      setSubcategoryError("請填寫子分類名稱。");
+      return;
+    }
+    setSubcategorySaving(true);
+    setSubcategoryError("");
+    try {
+      const savedName = await addCustomSubcategory(newSubcategory);
+      setSubcategoryFilter(savedName);
+      setNewSubcategory("");
+      setAddingSubcategory(false);
+      setNotice(`已在「${selectedCountry} · ${selectedCategory}」新增子分類「${savedName}」。`);
+    } catch (reason) {
+      setSubcategoryError(reason instanceof Error ? reason.message : "無法新增自訂子分類。");
+    } finally {
+      setSubcategorySaving(false);
+    }
+  };
   const removeProduct = async (product: Product) => {
     if (typeof product.id !== "string") {
       setError("示範商品無法刪除；只有已儲存到資料庫的商品可以刪除。");
@@ -464,7 +487,7 @@ function Products({ catalog, openProduct, openNewProduct, openImportProducts, de
     {notice && <Card className="mb-5 border-[#D9E5DB] bg-[#EEF5EF] p-4 text-sm font-semibold text-[#45634C]">{notice}</Card>}
     {error && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{error}</Card>}
     <Card className="overflow-hidden">
-      <div className="flex flex-col gap-3 border-b border-[#F0EDE8] p-5 sm:p-6"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><Search value={query} onChange={setQuery} placeholder="搜尋商品名稱、商品編號或條碼" /><span className="text-xs text-[#807A71]">顯示 {visibleProducts.length} 項商品</span></div><div className="grid w-full gap-2 sm:max-w-[665px] sm:grid-cols-4"><select aria-label="國家篩選" value={countryFilter} onChange={(event) => { setCountryFilter(event.target.value); setCategoryFilter("全部商品種類"); setSubcategoryFilter("全部子分類"); }} className={selectClass}><option>全部國家</option>{countries.map((country) => <option key={country}>{country}</option>)}</select><select aria-label="商品分類篩選" value={categoryFilter} disabled={!canChooseCategory} onChange={(event) => { setCategoryFilter(event.target.value); setSubcategoryFilter("全部子分類"); }} className={selectClass}><option value="全部商品種類">{canChooseCategory ? "全部商品分類" : "請先選擇國家"}</option>{categoryOptions.map((category) => <option key={category}>{category}</option>)}</select><select aria-label="商品子分類篩選" value={subcategoryFilter} disabled={!canChooseSubcategory} onChange={(event) => setSubcategoryFilter(event.target.value)} className={selectClass}><option value="全部子分類">{canChooseSubcategory ? "全部子分類" : categoryFilter === "全部商品種類" ? "請先選擇商品分類" : "此分類沒有子分類"}</option>{subcategoryOptions.map((subcategory) => <option key={subcategory}>{subcategory}</option>)}</select><select aria-label="商品狀態篩選" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={selectClass}><option>全部狀態</option><option>正常庫存</option><option>低庫存</option></select></div></div>
+      <div className="flex flex-col gap-3 border-b border-[#F0EDE8] p-5 sm:p-6"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><Search value={query} onChange={setQuery} placeholder="搜尋商品名稱、商品編號或條碼" /><span className="text-xs text-[#807A71]">顯示 {visibleProducts.length} 項商品</span></div><div className="grid w-full gap-2 sm:max-w-[665px] sm:grid-cols-4"><select aria-label="國家篩選" value={countryFilter} onChange={(event) => { setCountryFilter(event.target.value); setCategoryFilter("全部商品種類"); setSubcategoryFilter("全部子分類"); setAddingSubcategory(false); setNewSubcategory(""); setSubcategoryError(""); }} className={selectClass}><option>全部國家</option>{countries.map((country) => <option key={country}>{country}</option>)}</select><select aria-label="商品分類篩選" value={categoryFilter} disabled={!canChooseCategory} onChange={(event) => { setCategoryFilter(event.target.value); setSubcategoryFilter("全部子分類"); setAddingSubcategory(false); setNewSubcategory(""); setSubcategoryError(""); }} className={selectClass}><option value="全部商品種類">{canChooseCategory ? "全部商品分類" : "請先選擇國家"}</option>{categoryOptions.map((category) => <option key={category}>{category}</option>)}</select><select aria-label="商品子分類篩選" value={subcategoryFilter} disabled={!canChooseSubcategory} onChange={(event) => setSubcategoryFilter(event.target.value)} className={selectClass}><option value="全部子分類">{canChooseSubcategory ? "全部子分類" : categoryFilter === "全部商品種類" ? "請先選擇商品分類" : "此分類沒有子分類"}</option>{subcategoryOptions.map((subcategory) => <option key={subcategory}>{subcategory}</option>)}</select><select aria-label="商品狀態篩選" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={selectClass}><option>全部狀態</option><option>正常庫存</option><option>低庫存</option></select></div>{selectedCountry && selectedCategory && <div className="rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 py-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold text-[#5D584F]">主分類：{selectedCountry} · {selectedCategory}</p><p className="mt-1 text-xs text-[#938D84]">可直接新增此主分類專用的子分類，新增後會立即出現在篩選與商品表單中。</p></div><button type="button" disabled={subcategorySaving} onClick={() => { setAddingSubcategory((current) => !current); setSubcategoryError(""); }} className="shrink-0 text-xs font-semibold text-[#5E7665] disabled:cursor-not-allowed disabled:opacity-45">{addingSubcategory ? "取消新增" : `＋ 新增「${selectedCategory}」子分類`}</button></div>{subcategoryOptions.length > 0 && <p className="mt-2 text-xs text-[#746D63]">現有子分類：{subcategoryOptions.join("、")}</p>}{addingSubcategory && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input aria-label="新增子分類名稱" value={newSubcategory} onChange={(event) => setNewSubcategory(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addSubcategoryToSelectedParent(); } }} maxLength={60} placeholder="例如：限定合作款" className="h-10 min-w-0 flex-1 rounded-xl border border-[#E6E1DB] bg-white px-3 text-sm outline-none placeholder:text-[#AAA39A]" /><button type="button" disabled={subcategorySaving} onClick={() => { void addSubcategoryToSelectedParent(); }} className="h-10 rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">{subcategorySaving ? "新增中…" : "儲存子分類"}</button></div>}{subcategoryError && <p className="mt-2 text-xs font-semibold text-[#A35F37]">{subcategoryError}</p>}</div>}</div>
       <div className="overflow-x-auto"><table className="w-full min-w-[990px] text-left"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">商品</th><th className="px-3 py-3">商品編號</th><th className="px-3 py-3">分類</th><th className="px-3 py-3">一般售價</th><th className="px-3 py-3">可售庫存</th><th className="px-3 py-3">狀態</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8] text-sm">{visibleProducts.length ? visibleProducts.map((product) => <tr key={product.id} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4"><button onClick={() => openProduct(product)} className="text-left"><b className="block text-[#4A4640]">{product.name}</b><small className="block pt-1 text-xs text-[#938D84]">{product.specification}</small></button></td><td className="px-3 py-4 font-mono text-xs text-[#6E695F]">{product.sku}</td><td className="px-3 py-4 text-[#625D55]">{taxonomyLabel(product)}</td><td className="px-3 py-4 font-medium">{currency(product.retailPrice)}</td><td className={`px-3 py-4 font-semibold ${product.available <= product.safety ? "text-[#A66932]" : "text-[#476B51]"}`}>{product.available}</td><td className="px-3 py-4"><Pill tone={product.available <= product.safety ? "orange" : "green"}>{product.available <= product.safety ? "低庫存" : "已上架"}</Pill></td><td className="px-6 py-4"><div className="flex items-center justify-end gap-4"><button onClick={() => openProduct(product)} className="text-sm font-semibold text-[#5E7665]">查看商品</button>{typeof product.id === "string" && <button onClick={() => { void removeProduct(product); }} disabled={deletingId === product.id} className="text-sm font-semibold text-[#A35F37] disabled:cursor-not-allowed disabled:opacity-45">{deletingId === product.id ? "刪除中…" : "刪除"}</button>}</div></td></tr>) : <tr><td colSpan={7} className="px-6 py-10 text-center text-sm text-[#8D877E]">找不到符合條件的商品。</td></tr>}</tbody></table></div>
     </Card>
   </>;
