@@ -35,6 +35,12 @@ const paymentMethods = ["銀行轉帳", "信用卡", "現金", "貨到付款"];
 const reconciliationStatuses = ["未付款", "已付款"];
 const deliveryMethods = ["門市自取", "賣貨便"];
 
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error && typeof error.message === "string") return error.message;
+  return fallback;
+}
+
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const nonNegativeInteger = (value: unknown) => {
   const number = Number(value);
@@ -138,7 +144,7 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ orders: data }), auth.context);
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "無法讀取訂單資料。" }, { status: 503 });
+    return NextResponse.json({ message: errorMessage(error, "無法讀取訂單資料。") }, { status: 503 });
   }
 }
 
@@ -196,6 +202,6 @@ export async function POST(request: NextRequest) {
 
     return withRefreshedSession(NextResponse.json({ order }, { status: 201 }), auth.context);
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "無法建立訂單。" }, { status: 500 });
+    return NextResponse.json({ message: errorMessage(error, "無法建立訂單。") }, { status: 500 });
   }
 }
