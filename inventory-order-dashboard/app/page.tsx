@@ -1137,6 +1137,23 @@ function LegacyStockOverview({ stock, openProduct, adjustStock }: { stock: Recor
 
 type ReportSummary = { revenue: number; netProfit: number; orderCount: number };
 type ReportRow = ReportSummary & { date: string };
+type ReportOrder = {
+  id: string;
+  order_number: string;
+  order_date: string;
+  status: string;
+  order_method: string;
+  payment_method: string;
+  reconciliation_status: string;
+  delivery_method: string;
+  delivery_fee: number;
+  subtotal: number;
+  total: number;
+  net_profit: number;
+  note: string | null;
+  customers: { name: string; line_name: string | null } | null;
+  order_items: { product_name: string; category: string | null; quantity: number; unit_price: number }[];
+};
 
 function ReportCenter() {
   const today = taipeiToday();
@@ -1146,6 +1163,7 @@ function ReportCenter() {
   const [appliedRange, setAppliedRange] = useState({ startDate: monthStart, endDate: today });
   const [summary, setSummary] = useState<ReportSummary>({ revenue: 0, netProfit: 0, orderCount: 0 });
   const [rows, setRows] = useState<ReportRow[]>([]);
+  const [orders, setOrders] = useState<ReportOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -1161,6 +1179,7 @@ function ReportCenter() {
         if (!active) return;
         setSummary(result.summary ?? { revenue: 0, netProfit: 0, orderCount: 0 });
         setRows(result.rows ?? []);
+        setOrders(result.orders ?? []);
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : "無法讀取營運報表。");
       } finally {
@@ -1177,10 +1196,37 @@ function ReportCenter() {
     setAppliedRange({ startDate, endDate });
   };
   const rangeLabel = `${appliedRange.startDate.replaceAll("-", ".")} — ${appliedRange.endDate.replaceAll("-", ".")}`;
+  const exportOrderOverview = () => {
+    const header = ["訂單日期", "訂單編號", "訂單狀態", "下單方式", "客戶姓名", "LINE@名稱", "商品明細", "商品小計", "運費", "訂單總額", "淨利", "付款方式", "付款狀態", "配送方式", "訂單備註"];
+    const exportRows = orders.map((order) => [
+      order.order_date,
+      order.order_number,
+      order.status,
+      order.order_method,
+      order.customers?.name ?? "",
+      order.customers?.line_name ?? "",
+      (order.order_items ?? []).map((item) => `${item.category ? `${item.category}｜` : ""}${item.product_name} × ${item.quantity}`).join("；"),
+      order.subtotal,
+      order.delivery_fee,
+      order.total,
+      order.net_profit,
+      order.payment_method,
+      order.reconciliation_status,
+      order.delivery_method,
+      order.note ?? "",
+    ]);
+    const csv = `\uFEFF${[header, ...exportRows].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `wobuy174_訂單總覽_${appliedRange.startDate}_至_${appliedRange.endDate}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return <>
-    <Header eyebrow="ANALYTICS" title="報表中心" description="依日期區間檢視營收、淨利與訂單筆數；已取消訂單不會計入報表。" />
-    <Card className="mb-5 p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold text-[#58534C]">開始日期<input aria-label="報表開始日期" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">結束日期<input aria-label="報表結束日期" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label></div><Primary onClick={applyRange} disabled={loading} className="w-full lg:w-auto">{loading ? "查詢中…" : "查詢報表"}</Primary></div></Card>
+    <Header eyebrow="ANALYTICS" title="報表中心" description="依日期區間檢視營收、淨利與訂單筆數；已取消訂單不會計入報表。"><Secondary onClick={exportOrderOverview} disabled={loading}>匯出訂單總覽</Secondary></Header>
+    <Card className="mb-5 p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold text-[#58534C]">開始日期<input aria-label="報表開始日期" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">結束日期<input aria-label="報表結束日期" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label></div><div className="flex flex-col gap-2 sm:flex-row"><Primary onClick={applyRange} disabled={loading} className="w-full lg:w-auto">{loading ? "查詢中…" : "查詢報表"}</Primary><p className="self-center text-xs leading-5 text-[#8B847A]">匯出會使用目前已查詢的日期區間，並包含已取消訂單。</p></div></div></Card>
     {error && <Card className="mb-5 border-[#F1D4C4] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{error}</Card>}
     <div className="grid gap-5 md:grid-cols-3"><Metric label="區間總營收" value={loading ? "載入中…" : currency(summary.revenue)} note={`${rangeLabel} · 不含已取消`} accent /><Metric label="區間淨利" value={loading ? "載入中…" : currency(summary.netProfit)} note="訂單總額減商品成本" /><Metric label="訂單筆數" value={loading ? "載入中…" : `${summary.orderCount} 筆`} note="區間內已建立訂單" /></div>
     <Card className="mt-5 overflow-hidden"><div className="border-b border-[#F0EDE8] p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">DAILY PERFORMANCE</p><h2 className="mt-1 text-lg font-semibold">每日營運明細</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">日期</th><th className="px-3 py-3 text-right">總營收</th><th className="px-3 py-3 text-right">淨利</th><th className="px-6 py-3 text-right">訂單筆數</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={4} className="px-6 py-10 text-center text-[#8D877E]">載入報表資料中…</td></tr> : rows.length ? rows.map((row) => <tr key={row.date} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4 font-semibold text-[#4A4640]">{row.date.replaceAll("-", ".")}</td><td className="px-3 py-4 text-right font-medium">{currency(row.revenue)}</td><td className={`px-3 py-4 text-right font-semibold ${row.netProfit < 0 ? "text-[#A66932]" : "text-[#45634C]"}`}>{currency(row.netProfit)}</td><td className="px-6 py-4 text-right">{row.orderCount} 筆</td></tr>) : <tr><td colSpan={4} className="px-6 py-10 text-center text-[#8D877E]">此區間尚無訂單資料。</td></tr>}</tbody></table></div></Card>

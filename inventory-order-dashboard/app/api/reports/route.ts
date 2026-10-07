@@ -37,14 +37,17 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await getSupabaseAdmin()
       .from("orders")
-      .select("order_date, total, net_profit")
+      .select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, subtotal, total, net_profit, note, customers(name, line_name), order_items(product_name, category, quantity, unit_price)")
       .gte("order_date", startDate)
       .lte("order_date", endDate)
-      .neq("status", "已取消");
+      .order("order_date", { ascending: false })
+      .order("order_number", { ascending: false });
     if (error) throw error;
 
     const grouped = new Map<string, { revenue: number; netProfit: number; orderCount: number }>();
-    for (const order of data ?? []) {
+    const orders = data ?? [];
+    for (const order of orders) {
+      if (order.status === "已取消") continue;
       const date = order.order_date;
       if (!date) continue;
       const current = grouped.get(date) ?? { revenue: 0, netProfit: 0, orderCount: 0 };
@@ -56,7 +59,7 @@ export async function GET(request: NextRequest) {
 
     const rows = dateRange(startDate, endDate).reverse().map((date) => ({ date, ...(grouped.get(date) ?? { revenue: 0, netProfit: 0, orderCount: 0 }) }));
     const summary = rows.reduce((totals, row) => ({ revenue: totals.revenue + row.revenue, netProfit: totals.netProfit + row.netProfit, orderCount: totals.orderCount + row.orderCount }), { revenue: 0, netProfit: 0, orderCount: 0 });
-    return withRefreshedSession(NextResponse.json({ startDate, endDate, summary, rows }), auth.context);
+    return withRefreshedSession(NextResponse.json({ startDate, endDate, summary, rows, orders }), auth.context);
   } catch (error) {
     return NextResponse.json({ message: error instanceof Error ? error.message : "無法讀取營運報表。" }, { status: 503 });
   }
