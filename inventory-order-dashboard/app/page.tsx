@@ -1135,7 +1135,60 @@ function LegacyStockOverview({ stock, openProduct, adjustStock }: { stock: Recor
   </>;
 }
 
+type ReportSummary = { revenue: number; netProfit: number; orderCount: number };
+type ReportRow = ReportSummary & { date: string };
+
+function ReportCenter() {
+  const today = taipeiToday();
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const [startDate, setStartDate] = useState(monthStart);
+  const [endDate, setEndDate] = useState(today);
+  const [appliedRange, setAppliedRange] = useState({ startDate: monthStart, endDate: today });
+  const [summary, setSummary] = useState<ReportSummary>({ revenue: 0, netProfit: 0, orderCount: 0 });
+  const [rows, setRows] = useState<ReportRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const loadReport = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch(`/api/reports?${new URLSearchParams(appliedRange).toString()}`);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message ?? "無法讀取營運報表。");
+        if (!active) return;
+        setSummary(result.summary ?? { revenue: 0, netProfit: 0, orderCount: 0 });
+        setRows(result.rows ?? []);
+      } catch (reason) {
+        if (active) setError(reason instanceof Error ? reason.message : "無法讀取營運報表。");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void loadReport();
+    return () => { active = false; };
+  }, [appliedRange]);
+
+  const applyRange = () => {
+    if (!startDate || !endDate) return setError("請選擇完整的查詢日期區間。");
+    if (startDate > endDate) return setError("結束日期不可早於開始日期。");
+    setAppliedRange({ startDate, endDate });
+  };
+  const rangeLabel = `${appliedRange.startDate.replaceAll("-", ".")} — ${appliedRange.endDate.replaceAll("-", ".")}`;
+
+  return <>
+    <Header eyebrow="ANALYTICS" title="報表中心" description="依日期區間檢視營收、淨利與訂單筆數；已取消訂單不會計入報表。" />
+    <Card className="mb-5 p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold text-[#58534C]">開始日期<input aria-label="報表開始日期" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">結束日期<input aria-label="報表結束日期" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label></div><Primary onClick={applyRange} disabled={loading} className="w-full lg:w-auto">{loading ? "查詢中…" : "查詢報表"}</Primary></div></Card>
+    {error && <Card className="mb-5 border-[#F1D4C4] bg-[#FFF7F0] p-4 text-sm font-semibold text-[#9B562A]">{error}</Card>}
+    <div className="grid gap-5 md:grid-cols-3"><Metric label="區間總營收" value={loading ? "載入中…" : currency(summary.revenue)} note={`${rangeLabel} · 不含已取消`} accent /><Metric label="區間淨利" value={loading ? "載入中…" : currency(summary.netProfit)} note="訂單總額減商品成本" /><Metric label="訂單筆數" value={loading ? "載入中…" : `${summary.orderCount} 筆`} note="區間內已建立訂單" /></div>
+    <Card className="mt-5 overflow-hidden"><div className="border-b border-[#F0EDE8] p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">DAILY PERFORMANCE</p><h2 className="mt-1 text-lg font-semibold">每日營運明細</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-6 py-3">日期</th><th className="px-3 py-3 text-right">總營收</th><th className="px-3 py-3 text-right">淨利</th><th className="px-6 py-3 text-right">訂單筆數</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={4} className="px-6 py-10 text-center text-[#8D877E]">載入報表資料中…</td></tr> : rows.length ? rows.map((row) => <tr key={row.date} className="hover:bg-[#FCFBF9]"><td className="px-6 py-4 font-semibold text-[#4A4640]">{row.date.replaceAll("-", ".")}</td><td className="px-3 py-4 text-right font-medium">{currency(row.revenue)}</td><td className={`px-3 py-4 text-right font-semibold ${row.netProfit < 0 ? "text-[#A66932]" : "text-[#45634C]"}`}>{currency(row.netProfit)}</td><td className="px-6 py-4 text-right">{row.orderCount} 筆</td></tr>) : <tr><td colSpan={4} className="px-6 py-10 text-center text-[#8D877E]">此區間尚無訂單資料。</td></tr>}</tbody></table></div></Card>
+  </>;
+}
+
 function GenericPage({ view, go }: { view: "purchases" | "reports" | "settings"; go: (view: View) => void }) {
+  if ((view as string) === "reports") return <ReportCenter />;
   const info = { purchases: ["PURCHASING", "採購與供應商", "管理供應商資料、採購單與進貨作業。", "＋ 建立採購單"], reports: ["ANALYTICS", "報表中心", "從銷售與庫存資料中掌握補貨、商品與營運表現。", "匯出報表"], settings: ["SETTINGS", "系統設定", "管理倉庫、訂單編號、權限與通知規則。", "儲存設定"] }[view];
   return <><Header eyebrow={info[0]} title={info[1]} description={info[2]}><Primary onClick={view === "purchases" ? () => go("newPurchase") : undefined}>{info[3]}</Primary></Header><div className="grid gap-5 md:grid-cols-2">{view === "purchases" ? <><Card className="p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE ORDERS</p><h2 className="mt-2 text-xl font-semibold">進行中的採購單</h2><div className="mt-5 space-y-4">{[["#PO-260721-04", "Seoul Daily", "今天", "待收貨"], ["#PO-260718-03", "Mori Select", "7/22", "部分收貨"], ["#PO-260716-02", "Atelier Home", "7/25", "已發送"]].map(([id, vendor, date, state]) => <div key={id} className="flex items-center justify-between border-b border-[#F0EDE8] pb-4"><span><b className="block text-sm">{id}</b><small className="mt-1 block text-xs text-[#938D84]">{vendor} · 預計 {date} 到貨</small></span><Pill tone="blue">{state}</Pill></div>)}</div></Card><Card className="p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">SUPPLIERS</p><h2 className="mt-2 text-xl font-semibold">常用供應商</h2><p className="mt-2 text-sm text-[#898379]">集中管理供應商資料、交易條件與最低訂購量。</p><Secondary onClick={() => go("suppliers")} className="mt-6">管理供應商</Secondary></Card></> : view === "reports" ? <><Metric label="銷售總額" value="NT$ 284,600" note="本月累計 · +16.8%" accent/><Metric label="商品售罄率" value="72.4%" note="售出／可售庫存"/><Card className="p-6"><h2 className="font-semibold">銷售概況</h2><div className="mt-8 flex h-40 items-end gap-2">{[35,58,48,72,52,88,65,92,74,83,68,95].map((h,i) => <span key={i} className={`flex-1 rounded-t-md ${i===11?"bg-[#738C7A]":"bg-[#DFE8E1]"}`} style={{height:`${h}%`}} />)}</div></Card><Card className="p-6"><h2 className="font-semibold">本月熱銷商品</h2><div className="mt-5 space-y-4">{products.slice(0,3).map((product,i)=><div key={product.id}><div className="flex justify-between text-sm"><b>{product.name}</b><span className="text-[#5E7665]">{86-i*12} 件</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-[#F0EDE8]"><span className="block h-full rounded-full bg-[#86A28E]" style={{width:`${94-i*13}%`}}/></div></div>)}</div></Card></> : <><Card className="p-6"><h2 className="font-semibold">基本設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-2">{[["品牌名稱","MUSE STOCK"],["預設幣別","TWD · 新台幣"],["時區","Asia/Taipei"],["訂單編號前綴","WB"]].map(([label,value])=><label key={label} className="text-sm font-semibold text-[#58534C]">{label}<input defaultValue={value} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"/></label>)}</div></Card><Card className="p-6"><h2 className="font-semibold">通知設定</h2><div className="mt-4 divide-y divide-[#F0EDE8]">{["低庫存提醒","待確認訂單提醒","取消訂單自動回補庫存"].map(title=><div key={title} className="flex items-center justify-between py-4"><span><b className="block text-sm">{title}</b><small className="mt-1 block text-xs text-[#938D84]">系統將在需要處理時通知管理人員。</small></span><span className="relative h-6 w-11 rounded-full bg-[#78957E]"><i className="absolute right-1 top-1 h-4 w-4 rounded-full bg-white"/></span></div>)}</div></Card></>}</div></>;
 }
