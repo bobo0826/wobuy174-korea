@@ -18,7 +18,7 @@ const paymentStatuses = ["未付款", "已付款"];
 const deliveryMethods = ["門市自取", "賣貨便"];
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const integer = (value: unknown) => { const number = Number(value); return Number.isInteger(number) && number >= 0 ? number : null; };
-const orderSelect = "id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(id, name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity)";
+const orderSelect = "id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(id, name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity, products(specification))";
 
 function validateUpdate(input: UpdateOrderInput) {
   const orderNumber = text(input.orderNumber); const customerId = text(input.customerId); const orderDate = text(input.orderDate); const status = text(input.status); const orderMethod = text(input.orderMethod); const paymentMethod = text(input.paymentMethod); const paymentStatus = text(input.paymentStatus); const deliveryMethod = text(input.deliveryMethod); const note = text(input.note);
@@ -53,6 +53,28 @@ async function completeOrder(id: string) {
   for (const [productId, item] of quantities) { const { error } = await supabase.from("products").update({ available_stock: (stocks.get(productId) ?? 0) - item.quantity, updated_at: new Date().toISOString() }).eq("id", productId); if (error) throw error; }
   if (ids.length) { const { error } = await supabase.from("inventory_adjustments").insert(ids.map((productId) => ({ product_id: productId, quantity_change: -(quantities.get(productId)?.quantity ?? 0), reason: "訂單完成扣庫存", note: `訂單 ${id}` }))); if (error) throw error; }
   const { data, error } = await supabase.from("orders").update({ status: "已出貨", updated_at: new Date().toISOString() }).eq("id", id).select(orderSelect).single();
+  if (error) throw error;
+  return data;
+}
+
+async function markOrderArrived(id: string) {
+  const supabase = getSupabaseAdmin();
+  const { data: current, error: currentError } = await supabase
+    .from("orders")
+    .select("id, status")
+    .eq("id", id)
+    .single();
+  if (currentError || !current) throw new Error("找不到訂單。");
+  if (current.status === "已取消") throw new Error("已取消的訂單無法標記到貨。");
+  if (current.status === "已出貨") throw new Error("已出貨的訂單無法標記到貨。");
+  if (current.status !== "預購中") throw new Error("只有預購中的訂單可以標記到貨。");
+
+  const { data, error } = await supabase
+    .from("orders")
+    .update({ status: "未出貨", updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select(orderSelect)
+    .single();
   if (error) throw error;
   return data;
 }
@@ -140,7 +162,7 @@ export async function GET(request: NextRequest, { params }: Context) {
 }
 
 export async function PATCH(request: NextRequest, { params }: Context) {
-  try { const auth = await requireSignedIn(request); if (!auth.context) return auth.response!; const { id } = await params; if (!uuidPattern.test(id)) return NextResponse.json({ message: "訂單資料不正確。" }, { status: 400 }); const body = await request.json() as UpdateOrderInput; if (body.action === "complete") return withRefreshedSession(NextResponse.json({ order: await completeOrder(id) }), auth.context); if (body.action === "update") return withRefreshedSession(NextResponse.json({ order: await updateOrder(id, body) }), auth.context); if (body.action === "updatePayment") return withRefreshedSession(NextResponse.json({ order: await updateShippedOrderPayment(id, body) }), auth.context); if (body.action === "restore") return withRefreshedSession(NextResponse.json({ order: await restoreCancelledOrder(id) }), auth.context); return NextResponse.json({ message: "不支援的訂單操作。" }, { status: 400 }); } catch (error) { return NextResponse.json({ message: error instanceof Error ? error.message : "無法更新訂單。" }, { status: 500 }); }
+  try { const auth = await requireSignedIn(request); if (!auth.context) return auth.response!; const { id } = await params; if (!uuidPattern.test(id)) return NextResponse.json({ message: "訂單資料不正確。" }, { status: 400 }); const body = await request.json() as UpdateOrderInput; if (body.action === "complete") return withRefreshedSession(NextResponse.json({ order: await completeOrder(id) }), auth.context); if (body.action === "arrive") return withRefreshedSession(NextResponse.json({ order: await markOrderArrived(id) }), auth.context); if (body.action === "update") return withRefreshedSession(NextResponse.json({ order: await updateOrder(id, body) }), auth.context); if (body.action === "updatePayment") return withRefreshedSession(NextResponse.json({ order: await updateShippedOrderPayment(id, body) }), auth.context); if (body.action === "restore") return withRefreshedSession(NextResponse.json({ order: await restoreCancelledOrder(id) }), auth.context); return NextResponse.json({ message: "不支援的訂單操作。" }, { status: 400 }); } catch (error) { return NextResponse.json({ message: error instanceof Error ? error.message : "無法更新訂單。" }, { status: 500 }); }
 }
 
 export async function DELETE(request: NextRequest, { params }: Context) {
