@@ -135,14 +135,16 @@ export async function POST(request: NextRequest) {
     let customerId: string | null = null;
     let supplierId: string | null = null;
     let orderId: string | null = null;
+    let linkedOrderNumber = "";
     const direction = validation.majorCategory === "expense" ? "expense" : "income";
     const entryType = validation.majorCategory === "expense" ? "supplier_payment" : validation.majorCategory === "income" ? "customer_payment" : "opening_cash";
 
     if (validation.majorCategory === "income" && validation.subCategory === "訂單結帳") {
-      const { data: order, error } = await supabase.from("orders").select("id, order_number, customer_id, customers(name)").eq("id", validation.orderId).maybeSingle();
+      const { data: order, error } = await supabase.from("orders").select("id, order_number, customer_id, reconciliation_status, customers(name)").eq("id", validation.orderId).maybeSingle();
       if (error) throw error;
       if (!order) return NextResponse.json({ message: "找不到選擇的訂單。" }, { status: 400 });
       if (!order.customer_id) return NextResponse.json({ message: "這張訂單尚未連結客戶，無法建立訂單結帳紀錄。" }, { status: 400 });
+      if (order.reconciliation_status === "已付款") return NextResponse.json({ message: "這張訂單已完成結帳。" }, { status: 409 });
       const linkedCustomer = order.customers as unknown;
       const customerName = Array.isArray(linkedCustomer)
         ? (linkedCustomer[0] as { name?: string } | undefined)?.name
@@ -150,6 +152,7 @@ export async function POST(request: NextRequest) {
       counterpartyName = `訂單 ${order.order_number}${customerName ? ` · ${customerName}` : ""}`;
       customerId = order.customer_id;
       orderId = order.id;
+      linkedOrderNumber = order.order_number;
     }
     if (validation.majorCategory === "expense" && validation.subCategory === "供應商貨款") {
       const { data: supplier, error } = await supabase.from("suppliers").select("id, name").eq("id", validation.supplierId).maybeSingle();
@@ -178,7 +181,19 @@ export async function POST(request: NextRequest) {
       created_by: auth.context.profile.displayName,
     }).select(transactionSelect).single();
     if (error) throw error;
-    return withRefreshedSession(NextResponse.json({ transaction: data }, { status: 201 }), auth.context);
+
+    if (orderId) {
+      const { error: orderUpdateError } = await supabase
+        .from("orders")
+        .update({ reconciliation_status: "已付款", updated_at: new Date().toISOString() })
+        .eq("id", orderId);
+      if (orderUpdateError) {
+        await supabase.from("financial_transactions").delete().eq("id", data.id);
+        throw orderUpdateError;
+      }
+    }
+
+    return withRefreshedSession(NextResponse.json({ transaction: data, paidOrderNumber: linkedOrderNumber || null }, { status: 201 }), auth.context);
   } catch (error) {
     if (missingFinancialSetup(error)) return NextResponse.json({ message: "收支資料庫需要更新，請先執行本次資料庫設定。", setupRequired: true }, { status: 503 });
     return NextResponse.json({ message: errorMessage(error, "無法儲存收支紀錄。") }, { status: 500 });
