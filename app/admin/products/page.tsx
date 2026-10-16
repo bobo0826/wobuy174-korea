@@ -48,6 +48,38 @@ type ManagedProduct = {
   published: boolean;
 };
 
+type ProductVariant = {
+  name: string;
+  code: string;
+  price: string;
+};
+
+const exportHeaders = [
+  "商品編號",
+  "品名",
+  "原價",
+  "基本優惠價",
+  "子分類規格價格",
+  "排序",
+  "貨況",
+  "國別",
+  "分類",
+  "韓國子分類",
+  "正版玩偶子分類",
+  "棉被子分類",
+  "日本子分類",
+  "收單日",
+  "預計到貨",
+  "顏色",
+  "尺寸",
+  "商品介紹",
+  "規格",
+  "是否發布",
+  "圖片網址 1",
+  "圖片網址 2",
+  "圖片網址 3",
+] as const;
+
 function storagePathFromUrl(imageUrl: string) {
   const marker = "/product-images/";
   const index = imageUrl.indexOf(marker);
@@ -67,6 +99,32 @@ function variantCount(value: unknown) {
     const record = variant as Record<string, unknown>;
     return typeof record.name === "string" && Boolean(record.name.trim()) && typeof record.price === "string" && Boolean(record.price.trim());
   }).length;
+}
+
+function normalizeVariants(value: unknown): ProductVariant[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((variant) => {
+    if (!variant || typeof variant !== "object") return [];
+    const record = variant as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const code = typeof record.code === "string" ? record.code.trim().toUpperCase() : "";
+    const price = typeof record.price === "string" ? record.price.trim() : "";
+    return name && price ? [{ name, code, price }] : [];
+  });
+}
+
+function csvCell(value: string | number | null | undefined) {
+  const stringValue = String(value ?? "");
+  return /[",\n\r]/.test(stringValue) ? `"${stringValue.replaceAll('"', '""')}"` : stringValue;
+}
+
+function variantsToCsv(value: unknown) {
+  return normalizeVariants(value)
+    .map((variant) => (variant.code
+      ? `${variant.name}：${variant.code}：${variant.price}`
+      : `${variant.name}：${variant.price}`))
+    .join("｜");
 }
 
 function copiedVariants(value: unknown, copiedProductCode: string) {
@@ -436,6 +494,59 @@ export default function AdminProductsPage() {
     setIsBusy(false);
   };
 
+  const downloadProductsCsv = () => {
+    if (!products.length) {
+      setMessage("目前沒有可下載的商品資料。");
+      return;
+    }
+
+    const rows = products.map((product) => {
+      const categories = productCategoryOptions
+        .filter((category) => product.categories?.includes(category.id))
+        .map((category) => category.label)
+        .join("｜");
+      const imageUrls = product.image_urls ?? [];
+
+      return [
+        product.code,
+        product.name,
+        product.original_price,
+        product.price,
+        variantsToCsv(product.variants),
+        product.sort_order ?? 0,
+        product.status,
+        product.country,
+        categories,
+        subcategoryLabel(subcategories, "korea", product.korea_type),
+        subcategoryLabel(subcategories, "plush", product.plush_type),
+        subcategoryLabel(subcategories, "bedding", product.bedding_type),
+        subcategoryLabel(subcategories, "japan", product.japan_type),
+        product.deadline,
+        product.arrival,
+        product.colors,
+        product.sizes,
+        product.details,
+        product.specs,
+        product.published ? "是" : "否",
+        imageUrls[0],
+        imageUrls[1],
+        imageUrls[2],
+      ].map(csvCell).join(",");
+    });
+
+    const csv = `\uFEFF${[exportHeaders.join(","), ...rows].join("\r\n")}`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `wobuy174-products-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setMessage(`已下載 ${products.length} 件商品的 CSV。`);
+  };
+
   if (!isSupabaseConfigured) {
     return (
       <main className="min-h-screen bg-[#F5F5F5] px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
@@ -474,7 +585,10 @@ export default function AdminProductsPage() {
             <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">PRODUCT LIST</p>
             <h1 className="mt-3 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">商品列表</h1>
           </div>
-          <button className="rounded-full border border-[#D9D6D0] px-4 py-2 text-sm transition-colors hover:border-[#605B51]" disabled={isBusy} onClick={() => void loadProducts()}>重新整理</button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="rounded-full border border-[#D9D6D0] px-4 py-2 text-sm transition-colors hover:border-[#605B51] disabled:opacity-50" disabled={isBusy || !products.length} onClick={downloadProductsCsv} type="button">下載全部商品 CSV</button>
+            <button className="rounded-full border border-[#D9D6D0] px-4 py-2 text-sm transition-colors hover:border-[#605B51] disabled:opacity-50" disabled={isBusy} onClick={() => void loadProducts()} type="button">重新整理</button>
+          </div>
         </div>
 
         <div className="mt-7 border-y border-[#D9D6D0] py-5">
