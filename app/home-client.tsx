@@ -4,15 +4,16 @@ import Image from "next/image";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getSupabaseClient, isSupabaseConfigured } from "./lib/supabase";
 import {
-  beddingTypeOptions,
-  koreaTypeOptions,
-  plushTypeOptions,
   productCategoryOptions,
-  type BeddingType,
-  type KoreaType,
-  type PlushType,
   type ProductCategory,
 } from "./lib/product-categories";
+import {
+  defaultProductSubcategories,
+  subcategoriesFor,
+  toProductSubcategories,
+  type ProductSubcategory,
+  type StoredProductSubcategory,
+} from "./lib/product-subcategories";
 
 export type Category = "latest" | ProductCategory;
 
@@ -38,9 +39,10 @@ export type Product = {
   image: string;
   images?: string[];
   categories: Category[];
-  beddingType?: BeddingType;
-  koreaType?: KoreaType;
-  plushType?: PlushType;
+  beddingType?: string;
+  koreaType?: string;
+  plushType?: string;
+  japanType?: string;
   details: string;
   specs: string;
 };
@@ -62,6 +64,7 @@ type StoredProduct = {
   bedding_type: string | null;
   korea_type: string | null;
   plush_type: string | null;
+  japan_type: string | null;
   details: string | null;
   specs: string | null;
   variants: unknown;
@@ -489,9 +492,6 @@ const categoryTitles: Record<Category, string> = {
   other: "其他選品",
 };
 
-const koreaTypes = koreaTypeOptions;
-const plushTypes = plushTypeOptions;
-
 function normalizeProductVariants(value: unknown): ProductVariant[] {
   if (!Array.isArray(value)) return [];
 
@@ -532,15 +532,10 @@ function storedProductToProduct(product: StoredProduct): Product {
     image: product.image_urls?.[0] ?? "",
     images: product.image_urls?.filter(Boolean).slice(0, 3) ?? [],
     categories: categoriesFromDatabase,
-    beddingType: beddingTypeOptions.some((option) => option.id === product.bedding_type)
-      ? (product.bedding_type as Product["beddingType"])
-      : undefined,
-    koreaType: koreaTypes.some((type) => type.id === product.korea_type)
-      ? (product.korea_type as KoreaType)
-      : undefined,
-    plushType: plushTypes.some((type) => type.id === product.plush_type)
-      ? (product.plush_type as PlushType)
-      : undefined,
+    beddingType: product.bedding_type ?? undefined,
+    koreaType: product.korea_type ?? undefined,
+    plushType: product.plush_type ?? undefined,
+    japanType: product.japan_type ?? undefined,
     details: product.details ?? "商品介紹請洽 LINE@ 官方帳號確認。",
     specs: product.specs ?? "尺寸、花色與供貨狀況請以客服確認為準。",
   };
@@ -598,11 +593,10 @@ export function ProductCatalog({
   initialProducts?: Product[];
 }) {
   const [activeCategory, setActiveCategory] = useState<Category>(initialCategory);
-  const [activeBeddingType, setActiveBeddingType] = useState<
-    "all" | "cool" | "allSeason" | "pillow"
-  >("all");
-  const [activeKoreaType, setActiveKoreaType] = useState<"all" | KoreaType>("all");
-  const [activePlushType, setActivePlushType] = useState<"all" | PlushType>("all");
+  const [activeBeddingType, setActiveBeddingType] = useState("all");
+  const [activeKoreaType, setActiveKoreaType] = useState("all");
+  const [activePlushType, setActivePlushType] = useState("all");
+  const [activeJapanType, setActiveJapanType] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
@@ -613,6 +607,7 @@ export function ProductCatalog({
   const [remoteCatalogLoaded, setRemoteCatalogLoaded] = useState(
     initialProducts !== undefined,
   );
+  const [subcategories, setSubcategories] = useState<ProductSubcategory[]>(defaultProductSubcategories);
   const pageSize = useSyncExternalStore(
     subscribeToPageSizeChange,
     getPageSizeSnapshot,
@@ -622,6 +617,10 @@ export function ProductCatalog({
   const visibleCategories = showAllCategory
     ? categories
     : categories.filter((category) => category.id !== "latest");
+  const beddingTypes = subcategoriesFor(subcategories, "bedding");
+  const koreaTypes = subcategoriesFor(subcategories, "korea");
+  const plushTypes = subcategoriesFor(subcategories, "plush");
+  const japanTypes = subcategoriesFor(subcategories, "japan");
 
   useEffect(() => {
     if (initialProducts !== undefined) return;
@@ -631,7 +630,7 @@ export function ProductCatalog({
 
     void supabase
       .from("products")
-      .select("id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,plush_type,details,specs,variants")
+      .select("id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,plush_type,japan_type,details,specs,variants")
       .eq("published", true)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: false })
@@ -642,6 +641,20 @@ export function ProductCatalog({
         }
       });
   }, [initialProducts]);
+
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    void supabase
+      .from("product_subcategories")
+      .select("id,scope,value,label,sort_order")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (!error && data) setSubcategories(toProductSubcategories(data as StoredProductSubcategory[]));
+      });
+  }, []);
 
   const filteredProducts = catalogProducts.filter((product) => {
     const matchesCategory =
@@ -659,8 +672,12 @@ export function ProductCatalog({
       activeKoreaType !== "plush" ||
       activePlushType === "all" ||
       product.plushType === activePlushType;
+    const matchesJapan =
+      activeCategory !== "japan" ||
+      activeJapanType === "all" ||
+      product.japanType === activeJapanType;
 
-    return matchesCategory && matchesBedding && matchesKorea && matchesPlush;
+    return matchesCategory && matchesBedding && matchesKorea && matchesPlush && matchesJapan;
   });
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
   const activePage = Math.min(currentPage, totalPages);
@@ -684,6 +701,7 @@ export function ProductCatalog({
     setActiveBeddingType("all");
     setActiveKoreaType("all");
     setActivePlushType("all");
+    setActiveJapanType("all");
     setCurrentPage(1);
     scrollToProducts();
   };
@@ -736,19 +754,29 @@ export function ProductCatalog({
 
           {activeCategory === "bedding" && (
             <div className="flex flex-wrap gap-2 border-b border-[#D9D6D0] py-4">
-              {[
-                { id: "all", label: "全部" },
-                ...beddingTypeOptions,
-              ].map((item) => (
+              <button
+                className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
+                  activeBeddingType === "all"
+                    ? "bg-[#605B51] text-[#F5F5F5]"
+                    : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
+                }`}
+                onClick={() => {
+                  setActiveBeddingType("all");
+                  setCurrentPage(1);
+                }}
+              >
+                全部
+              </button>
+              {beddingTypes.map((item) => (
                 <button
                   className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
-                    activeBeddingType === item.id
+                    activeBeddingType === item.value
                       ? "bg-[#605B51] text-[#F5F5F5]"
                       : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
                   }`}
                   key={item.id}
                   onClick={() => {
-                    setActiveBeddingType(item.id as typeof activeBeddingType);
+                    setActiveBeddingType(item.value);
                     setCurrentPage(1);
                   }}
                 >
@@ -777,13 +805,13 @@ export function ProductCatalog({
               {koreaTypes.map((item) => (
                 <button
                   className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
-                    activeKoreaType === item.id
+                    activeKoreaType === item.value
                       ? "bg-[#605B51] text-[#F5F5F5]"
                       : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
                   }`}
                   key={item.id}
                   onClick={() => {
-                    setActiveKoreaType(item.id);
+                    setActiveKoreaType(item.value);
                     setActivePlushType("all");
                     setCurrentPage(1);
                   }}
@@ -812,13 +840,47 @@ export function ProductCatalog({
               {plushTypes.map((item) => (
                 <button
                   className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
-                    activePlushType === item.id
+                    activePlushType === item.value
                       ? "bg-[#7D2F35] text-[#F5F5F5]"
                       : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
                   }`}
                   key={item.id}
                   onClick={() => {
-                    setActivePlushType(item.id);
+                    setActivePlushType(item.value);
+                    setCurrentPage(1);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {activeCategory === "japan" && (
+            <div className="flex flex-wrap gap-2 border-b border-[#D9D6D0] py-4">
+              <button
+                className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
+                  activeJapanType === "all"
+                    ? "bg-[#605B51] text-[#F5F5F5]"
+                    : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
+                }`}
+                onClick={() => {
+                  setActiveJapanType("all");
+                  setCurrentPage(1);
+                }}
+              >
+                全部
+              </button>
+              {japanTypes.map((item) => (
+                <button
+                  className={`rounded-full px-3.5 py-2 text-xs transition-colors ${
+                    activeJapanType === item.value
+                      ? "bg-[#605B51] text-[#F5F5F5]"
+                      : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
+                  }`}
+                  key={item.id}
+                  onClick={() => {
+                    setActiveJapanType(item.value);
                     setCurrentPage(1);
                   }}
                 >

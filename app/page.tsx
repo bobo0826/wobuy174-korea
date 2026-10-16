@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 
 import Home, { type Category, type Product } from "./home-client";
-import { beddingTypeOptions, koreaTypeOptions, plushTypeOptions, productCategoryOptions } from "./lib/product-categories";
+import { productCategoryOptions } from "./lib/product-categories";
 
 export const revalidate = 60;
 
@@ -23,13 +23,14 @@ type StoredProduct = {
   bedding_type: string | null;
   korea_type: string | null;
   plush_type: string | null;
+  japan_type: string | null;
   details: string | null;
   specs: string | null;
   variants: unknown;
 };
 
 const productFields =
-  "id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,plush_type,details,specs,variants";
+  "id,name,price,original_price,code,deadline,arrival,colors,sizes,status,country,image_urls,categories,bedding_type,korea_type,plush_type,japan_type,details,specs,variants";
 
 function normalizeVariants(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -69,15 +70,10 @@ function toProduct(product: StoredProduct): Product {
     image: product.image_urls?.[0] ?? "",
     images: product.image_urls?.filter(Boolean).slice(0, 3) ?? [],
     categories,
-    beddingType: beddingTypeOptions.some((option) => option.id === product.bedding_type)
-      ? (product.bedding_type as Product["beddingType"])
-      : undefined,
-    koreaType: koreaTypeOptions.some((option) => option.id === product.korea_type)
-      ? (product.korea_type as Product["koreaType"])
-      : undefined,
-    plushType: plushTypeOptions.some((option) => option.id === product.plush_type)
-      ? (product.plush_type as Product["plushType"])
-      : undefined,
+    beddingType: product.bedding_type ?? undefined,
+    koreaType: product.korea_type ?? undefined,
+    plushType: product.plush_type ?? undefined,
+    japanType: product.japan_type ?? undefined,
     details: product.details ?? "商品介紹請洽 LINE@ 官方帳號確認。",
     specs: product.specs ?? "尺寸、花色與供貨狀況請以客服確認為準。",
   };

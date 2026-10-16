@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import {
   beddingTypeAliases,
+  japanTypeAliases,
   koreaTypeAliases,
   plushTypeAliases,
   productCategoryAliases as categoryAliases,
@@ -150,6 +151,9 @@ function toProductRecord(product: SheetProduct, existing?: ExistingProduct) {
   const plushType = plushTypeAliases[
     getValue(product, "正版玩偶子分類", "plush_type").toLowerCase()
   ];
+  const japanType = japanTypeAliases[
+    getValue(product, "日本子分類", "japan_type").toLowerCase()
+  ];
   const detailsFromSheet = getValue(product, "商品介紹", "details");
   const specsFromSheet = getValue(product, "規格", "規格與注意事項", "specs");
 
@@ -165,6 +169,7 @@ function toProductRecord(product: SheetProduct, existing?: ExistingProduct) {
     korea_type: koreaType ?? null,
     plush_type: koreaType === "plush" ? (plushType ?? null) : null,
     bedding_type: beddingType ?? null,
+    japan_type: categories.includes("japan") ? (japanType ?? null) : null,
     deadline: getValue(product, "收單日", "deadline") || null,
     arrival: getValue(product, "預計到貨", "arrival") || "依商品頁或客服通知",
     colors: getValue(product, "顏色", "colors") || null,
@@ -248,7 +253,7 @@ export async function POST(request: Request) {
     .upsert(records, { onConflict: "code" });
 
   if (upsertError) {
-    const schemaHint = upsertError.message.includes("original_price") || upsertError.message.includes("colors") || upsertError.message.includes("sizes") || upsertError.message.includes("sort_order") || upsertError.message.includes("variants") || upsertError.message.includes("plush_type")
+    const schemaHint = upsertError.message.includes("original_price") || upsertError.message.includes("colors") || upsertError.message.includes("sizes") || upsertError.message.includes("sort_order") || upsertError.message.includes("variants") || upsertError.message.includes("plush_type") || upsertError.message.includes("japan_type")
       ? "請先在 Supabase SQL Editor 重新執行 supabase/schema.sql。"
       : "";
     return NextResponse.json(

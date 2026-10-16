@@ -28,6 +28,18 @@ export const koreaTypeOptions = [
 
 export type KoreaType = (typeof koreaTypeOptions)[number]["id"];
 
+export const japanTypeOptions = [
+  { id: "sanrio", label: "三麗鷗" },
+  { id: "chiikawa", label: "吉伊卡哇" },
+  { id: "officialIp", label: "正版IP" },
+  { id: "fashion", label: "時尚潮牌" },
+  { id: "snacks", label: "零食糖果" },
+  { id: "beauty", label: "藥妝美妝" },
+  { id: "dutyFree", label: "免稅精選" },
+] as const;
+
+export type JapanType = (typeof japanTypeOptions)[number]["id"];
+
 export const plushTypeOptions = [
   { id: "sanrio", label: "三麗鷗" },
   { id: "chiikawa", label: "吉伊卡哇" },
@@ -61,6 +73,8 @@ export const beddingTypeAliases: Record<string, string> = {
 };
 
 export const koreaTypeAliases: Record<string, string> = aliasesFor(koreaTypeOptions);
+
+export const japanTypeAliases: Record<string, string> = aliasesFor(japanTypeOptions);
 
 export const plushTypeAliases: Record<string, string> = aliasesFor(plushTypeOptions);
 

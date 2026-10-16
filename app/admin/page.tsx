@@ -2,22 +2,35 @@
 
 import Link from "next/link";
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import {
   beddingTypeAliases,
-  beddingTypeOptions,
+  japanTypeAliases,
   koreaTypeAliases,
-  koreaTypeOptions,
   plushTypeAliases,
-  plushTypeOptions,
   productCategoryAliases as categoryAliases,
   productCategoryOptions as categoryOptions,
 } from "../lib/product-categories";
+import {
+  defaultProductSubcategories,
+  subcategoriesFor,
+  toProductSubcategories,
+  type ProductSubcategory,
+  type StoredProductSubcategory,
+  type SubcategoryScope,
+} from "../lib/product-subcategories";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
 
 const inputClass =
   "mt-2 w-full rounded-[4px] border border-[#D9D6D0] bg-[#F5F5F5] px-3 py-2.5 text-sm outline-none transition focus:border-[#605B51]";
+
+const subcategoryScopes: { value: SubcategoryScope; label: string; description: string }[] = [
+  { value: "bedding", label: "韓國棉被子分類", description: "前台的「韓國棉被」" },
+  { value: "korea", label: "韓國選品子分類", description: "前台的「韓國選品」" },
+  { value: "plush", label: "正版玩偶子分類", description: "韓國選品 → 正版玩偶" },
+  { value: "japan", label: "日本選品子分類", description: "前台的「日本選品」" },
+];
 
 
 type CsvRow = Record<string, string>;
@@ -41,6 +54,7 @@ type ProductDraft = {
   koreaType: string;
   plushType: string;
   beddingType: string;
+  japanType: string;
   deadline: string;
   arrival: string;
   colors: string;
@@ -63,6 +77,7 @@ type ManagedProduct = {
   korea_type: string | null;
   plush_type: string | null;
   bedding_type: string | null;
+  japan_type: string | null;
   deadline: string | null;
   arrival: string | null;
   colors: string | null;
@@ -87,6 +102,7 @@ const emptyDraft: ProductDraft = {
   koreaType: "",
   plushType: "",
   beddingType: "",
+  japanType: "",
   deadline: "",
   arrival: "依商品頁或客服通知",
   colors: "",
@@ -145,6 +161,11 @@ function toList(value: string, aliases: Record<string, string>) {
     .split(/[,，、|/；;]+/)
     .map((item) => aliases[item.trim()] ?? aliases[item.trim().toLowerCase()])
     .filter((item): item is string => Boolean(item));
+}
+
+function toSubcategoryValue(value: string, aliases: Record<string, string>) {
+  const trimmed = value.trim();
+  return aliases[trimmed] ?? aliases[trimmed.toLowerCase()] ?? trimmed;
 }
 
 function toSortOrder(value: string, fallback = 0) {
@@ -217,6 +238,8 @@ function toDraft(row: CsvRow): ProductDraft {
       toList(getValue(row, "正版玩偶子分類", "plush_type"), plushTypeAliases)[0] ?? "",
     beddingType:
       toList(getValue(row, "棉被子分類", "bedding_type"), beddingTypeAliases)[0] ?? "",
+    japanType:
+      toSubcategoryValue(getValue(row, "日本子分類", "japan_type"), japanTypeAliases),
     deadline: getValue(row, "收單日", "deadline"),
     arrival: getValue(row, "預計到貨", "arrival") || "依商品頁或客服通知",
     colors: getValue(row, "顏色", "colors"),
@@ -243,12 +266,16 @@ function toRecord(draft: ProductDraft, imageUrls: string[], fallbackSortOrder = 
       ? draft.country
       : "SELECT",
     categories: toList(draft.categories, categoryAliases),
-    korea_type: toList(draft.koreaType, koreaTypeAliases)[0] ?? null,
+    korea_type: toSubcategoryValue(draft.koreaType, koreaTypeAliases) || null,
     plush_type:
       draft.koreaType === "plush"
-        ? (toList(draft.plushType, plushTypeAliases)[0] ?? null)
+        ? (toSubcategoryValue(draft.plushType, plushTypeAliases) || null)
         : null,
-    bedding_type: toList(draft.beddingType, beddingTypeAliases)[0] ?? null,
+    bedding_type: toSubcategoryValue(draft.beddingType, beddingTypeAliases) || null,
+    japan_type:
+      toList(draft.categories, categoryAliases).includes("japan")
+        ? (toSubcategoryValue(draft.japanType, japanTypeAliases) || null)
+        : null,
     deadline: draft.deadline.trim() || null,
     arrival: draft.arrival.trim() || null,
     colors: draft.colors.trim() || null,
@@ -274,6 +301,7 @@ function toDraftFromProduct(product: ManagedProduct): ProductDraft {
     koreaType: product.korea_type ?? "",
     plushType: product.plush_type ?? "",
     beddingType: product.bedding_type ?? "",
+    japanType: product.japan_type ?? "",
     deadline: product.deadline ?? "",
     arrival: product.arrival ?? "依商品頁或客服通知",
     colors: product.colors ?? "",
@@ -345,8 +373,8 @@ async function saveProduct(
     .from("products")
     .upsert(toRecord({ ...draft, code }, imageUrls, existing?.sort_order ?? 0), { onConflict: "code" });
   if (error) {
-    if (error.message.includes("variants")) {
-      throw new Error("請先在 Supabase SQL Editor 執行「子分類規格」資料庫更新後再儲存商品。");
+    if (error.message.includes("variants") || error.message.includes("japan_type")) {
+      throw new Error("請先在 Supabase SQL Editor 執行最新資料庫更新後再儲存商品。");
     }
     throw error;
   }
@@ -363,19 +391,48 @@ export default function AdminPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [batchImages, setBatchImages] = useState<File[]>([]);
   const [batchResult, setBatchResult] = useState("");
+  const [subcategories, setSubcategories] = useState<ProductSubcategory[]>(defaultProductSubcategories);
+  const [subcategoriesLoaded, setSubcategoriesLoaded] = useState(false);
+  const [subcategoryScope, setSubcategoryScope] = useState<SubcategoryScope>("japan");
+  const [subcategoryLabel, setSubcategoryLabel] = useState("");
+  const [subcategoryMessage, setSubcategoryMessage] = useState("");
+
+  const loadSubcategories = useCallback(async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .from("product_subcategories")
+      .select("id,scope,value,label,sort_order")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      setSubcategoriesLoaded(false);
+      setSubcategoryMessage("子分類管理尚未啟用，請先在 Supabase SQL Editor 執行最新資料庫更新。");
+      return;
+    }
+
+    setSubcategories(toProductSubcategories((data ?? []) as StoredProductSubcategory[]));
+    setSubcategoriesLoaded(true);
+    setSubcategoryMessage("");
+  }, []);
+
   useEffect(() => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
     void supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
+      if (data.session?.user) void loadSubcategories();
     });
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      if (session?.user) void loadSubcategories();
     });
 
     return () => authListener.subscription.unsubscribe();
-  }, []);
+  }, [loadSubcategories]);
 
   const signIn = async () => {
     const supabase = getSupabaseClient();
@@ -413,6 +470,59 @@ export default function AdminPage() {
     if (!supabase) return;
     await supabase.auth.signOut();
     setMessage("已登出。");
+  };
+
+  const createSubcategory = async () => {
+    const label = subcategoryLabel.trim();
+    if (!label) {
+      setSubcategoryMessage("請先輸入子分類名稱。");
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    setIsBusy(true);
+    setSubcategoryMessage("");
+    const nextSortOrder = Math.max(
+      0,
+      ...subcategoriesFor(subcategories, subcategoryScope).map((subcategory) => subcategory.sortOrder),
+    ) + 1;
+    const { error } = await supabase.from("product_subcategories").insert({
+      scope: subcategoryScope,
+      value: `custom-${Date.now().toString(36)}`,
+      label,
+      sort_order: nextSortOrder,
+    });
+    if (error) {
+      setSubcategoryMessage(`新增子分類失敗：${error.message}`);
+    } else {
+      setSubcategoryLabel("");
+      await loadSubcategories();
+      setSubcategoryMessage(`已新增「${label}」。`);
+    }
+    setIsBusy(false);
+  };
+
+  const deleteSubcategory = async (subcategory: ProductSubcategory) => {
+    const confirmed = window.confirm(
+      `確定要刪除「${subcategory.label}」嗎？\n\n已套用此子分類的商品不會被刪除，但之後不會再顯示這個選項。`,
+    );
+    if (!confirmed) return;
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    setIsBusy(true);
+    setSubcategoryMessage("");
+    const { error } = await supabase.from("product_subcategories").delete().eq("id", subcategory.id);
+    if (error) {
+      setSubcategoryMessage(`刪除子分類失敗：${error.message}`);
+    } else {
+      await loadSubcategories();
+      setSubcategoryMessage(`已刪除「${subcategory.label}」。`);
+    }
+    setIsBusy(false);
   };
 
   const saveSingleProduct = async (event: FormEvent<HTMLFormElement>) => {
@@ -499,6 +609,10 @@ export default function AdminPage() {
 
   const selectedCategories = toList(draft.categories, categoryAliases);
   const hasCategory = (category: string) => selectedCategories.includes(category);
+  const beddingTypes = subcategoriesFor(subcategories, "bedding");
+  const koreaTypes = subcategoriesFor(subcategories, "korea");
+  const plushTypes = subcategoriesFor(subcategories, "plush");
+  const japanTypes = subcategoriesFor(subcategories, "japan");
   const toggleCategory = (category: string) => {
     setDraft((current) => {
       const currentCategories = toList(current.categories, categoryAliases);
@@ -519,6 +633,7 @@ export default function AdminPage() {
         koreaType: isSelected && category === "korea" ? "" : current.koreaType,
         plushType: isSelected && category === "korea" ? "" : current.plushType,
         beddingType: isSelected && category === "bedding" ? "" : current.beddingType,
+        japanType: isSelected && category === "japan" ? "" : current.japanType,
       };
     });
   };
@@ -617,6 +732,40 @@ export default function AdminPage() {
           <Link className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5]" href="/admin/products">前往商品列表</Link>
         </section>
 
+        <section className="mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="subcategory-management">
+          <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">SUBCATEGORY MANAGEMENT</p>
+          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">子分類管理</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">這裡新增或刪除的選項，會同步出現在後台新增商品、商品列表篩選與前台商品分類。刪除選項不會刪除既有商品。</p>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            {subcategoryScopes.map((scope) => {
+              const options = subcategoriesFor(subcategories, scope.value);
+              return (
+                <section className="rounded-[5px] border border-[#D9D6D0] bg-[#F5F5F5] p-4" key={scope.value}>
+                  <p className="text-sm font-semibold">{scope.label}</p>
+                  <p className="mt-1 text-xs text-[#605B51]/65">{scope.description}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {options.map((option) => (
+                      <span className="inline-flex items-center gap-2 rounded-full border border-[#D9D6D0] bg-[#FAF7F0] py-1.5 pl-3 pr-2 text-sm" key={option.id}>
+                        {option.label}
+                        <button aria-label={`刪除 ${option.label}`} className="rounded-full px-1 text-[#A81515] transition-colors hover:bg-[#F1D8D8] disabled:opacity-40" disabled={isBusy || !subcategoriesLoaded} onClick={() => void deleteSubcategory(option)} type="button">×</button>
+                      </span>
+                    ))}
+                    {!options.length && <p className="text-sm text-[#605B51]/65">尚未建立選項。</p>}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-end gap-3 border-t border-[#D9D6D0] pt-5">
+            <label className="block text-sm font-medium">新增至<select className={inputClass} disabled={isBusy || !subcategoriesLoaded} onChange={(event) => setSubcategoryScope(event.target.value as SubcategoryScope)} value={subcategoryScope}>{subcategoryScopes.map((scope) => <option key={scope.value} value={scope.value}>{scope.label}</option>)}</select></label>
+            <label className="block min-w-[220px] flex-1 text-sm font-medium">子分類名稱<input className={inputClass} disabled={isBusy || !subcategoriesLoaded} onChange={(event) => setSubcategoryLabel(event.target.value)} placeholder="例如：角落小夥伴" value={subcategoryLabel} /></label>
+            <button className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !subcategoriesLoaded} onClick={() => void createSubcategory()} type="button">新增子分類</button>
+          </div>
+          {subcategoryMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{subcategoryMessage}</p>}
+        </section>
+
         <section className="mt-8 border-t border-[#D9D6D0] pt-8" id="single-product-form">
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">SINGLE PRODUCT</p>
           <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">單筆新增或更新</h2>
@@ -668,8 +817,8 @@ export default function AdminPage() {
               <fieldset className="md:col-span-2">
                 <legend className="text-sm font-medium">韓國選品子分類</legend>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {koreaTypeOptions.map((option) => (
-                  <button aria-pressed={draft.koreaType === option.id} className={optionClass(draft.koreaType === option.id)} key={option.id} onClick={() => setDraft((current) => ({ ...current, koreaType: current.koreaType === option.id ? "" : option.id, plushType: current.koreaType === option.id || option.id !== "plush" ? "" : current.plushType }))} type="button">
+                  {koreaTypes.map((option) => (
+                  <button aria-pressed={draft.koreaType === option.value} className={optionClass(draft.koreaType === option.value)} key={option.id} onClick={() => setDraft((current) => ({ ...current, koreaType: current.koreaType === option.value ? "" : option.value, plushType: current.koreaType === option.value || option.value !== "plush" ? "" : current.plushType }))} type="button">
                     {option.label}
                   </button>
                 ))}
@@ -681,8 +830,8 @@ export default function AdminPage() {
                 <legend className="text-sm font-medium">正版玩偶子分類</legend>
                 <p className="mt-2 text-xs leading-5 text-[#605B51]/65">請先選擇「正版玩偶」後，再選擇商品角色或系列。</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {plushTypeOptions.map((option) => (
-                    <button aria-pressed={draft.plushType === option.id} className={optionClass(draft.plushType === option.id)} key={option.id} onClick={() => setDraft((current) => ({ ...current, plushType: current.plushType === option.id ? "" : option.id }))} type="button">
+                  {plushTypes.map((option) => (
+                    <button aria-pressed={draft.plushType === option.value} className={optionClass(draft.plushType === option.value)} key={option.id} onClick={() => setDraft((current) => ({ ...current, plushType: current.plushType === option.value ? "" : option.value }))} type="button">
                       {option.label}
                     </button>
                   ))}
@@ -693,8 +842,20 @@ export default function AdminPage() {
               <fieldset className="md:col-span-2">
                 <legend className="text-sm font-medium">韓國棉被子分類</legend>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {beddingTypeOptions.map((option) => (
-                    <button aria-pressed={draft.beddingType === option.id} className={optionClass(draft.beddingType === option.id)} key={option.id} onClick={() => setDraft((current) => ({ ...current, beddingType: current.beddingType === option.id ? "" : option.id }))} type="button">
+                  {beddingTypes.map((option) => (
+                    <button aria-pressed={draft.beddingType === option.value} className={optionClass(draft.beddingType === option.value)} key={option.id} onClick={() => setDraft((current) => ({ ...current, beddingType: current.beddingType === option.value ? "" : option.value }))} type="button">
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            {hasCategory("japan") && (
+              <fieldset className="md:col-span-2">
+                <legend className="text-sm font-medium">日本選品子分類</legend>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {japanTypes.map((option) => (
+                    <button aria-pressed={draft.japanType === option.value} className={optionClass(draft.japanType === option.value)} key={option.id} onClick={() => setDraft((current) => ({ ...current, japanType: current.japanType === option.value ? "" : option.value }))} type="button">
                       {option.label}
                     </button>
                   ))}
