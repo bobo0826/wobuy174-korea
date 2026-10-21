@@ -7,20 +7,20 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
 type ClaimStatus = "待核對" | "待結帳" | "已結帳" | "已轉訂單" | "已取消";
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const campaignStatuses = ["進行中", "已結單", "已封存"];
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const nonNegativeInteger = (value: unknown) => value === null || value === "" || value === undefined ? null : (Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : undefined);
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
-function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Record<string, unknown>>, items: Array<Record<string, unknown>>, allocations: Array<Record<string, unknown>>, products: Array<Record<string, unknown>>) {
+function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Record<string, unknown>>, items: Array<Record<string, unknown>>, allocations: Array<Record<string, unknown>>) {
   const itemsByClaim = new Map<string, Array<Record<string, unknown>>>();
   for (const item of items) {
     const claimItems = itemsByClaim.get(item.claim_id as string) ?? [];
     claimItems.push(item);
     itemsByClaim.set(item.claim_id as string, claimItems);
   }
-  const productById = new Map(products.map((product) => [product.id as string, product]));
   const allocationByProduct = new Map(allocations.map((allocation) => [allocation.product_id as string, allocation]));
   const hydratedClaims: Array<Record<string, unknown> & { items: Array<Record<string, unknown>> }> = claims.map((claim) => ({ ...claim, items: itemsByClaim.get(claim.id as string) ?? [] }));
 
@@ -87,12 +87,8 @@ function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Re
         if (unavailable) affectedCustomers.push({ ...source, quantity: unavailable });
       }
     }
-    const product = line.productId ? productById.get(line.productId) : undefined;
     return {
       ...line,
-      productName: product?.name ? String(product.name) : line.productName,
-      specification: product?.specification ? String(product.specification) : line.specification,
-      category: product?.category ? String(product.category) : line.category,
       availableQuantity,
       availabilityNote: String(allocation?.note ?? ""),
       shortageQuantity: availableQuantity === null ? null : Math.max(0, line.demandQuantity - availableQuantity),
@@ -129,12 +125,7 @@ export async function GET(request: NextRequest, { params }: Context) {
       ? await supabase.from("live_sale_claim_items").select("id, claim_id, product_id, product_name, category, specification, unit_price, quantity, created_at").in("claim_id", claimIds)
       : { data: [], error: null };
     if (itemError) throw itemError;
-    const productIds = [...new Set([...(items ?? []).map((item) => item.product_id), ...(allocations ?? []).map((allocation) => allocation.product_id)].filter((productId): productId is string => typeof productId === "string" && productId.length > 0))];
-    const { data: products, error: productError } = productIds.length
-      ? await supabase.from("products").select("id, name, category, specification, available_stock").in("id", productIds)
-      : { data: [], error: null };
-    if (productError) throw productError;
-    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], allocations ?? [], products ?? [])), auth.context);
+    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], allocations ?? [])), auth.context);
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法讀取連線檔期內容。") }, { status: 503 });
   }
@@ -167,10 +158,14 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     if (action === "updateCampaign") {
       const status = text(body.status);
       const note = text(body.note);
+      const name = text(body.name);
+      const startDate = text(body.startDate);
       const endDate = text(body.endDate);
       if (!campaignStatuses.includes(status)) return NextResponse.json({ message: "檔期狀態不正確。" }, { status: 400 });
-      if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return NextResponse.json({ message: "結束日期格式不正確。" }, { status: 400 });
-      const { data, error } = await supabase.from("live_sale_campaigns").update({ status, note, end_date: endDate || null, updated_at: new Date().toISOString() }).eq("id", id).select("id, name, campaign_code, status, start_date, end_date, note, created_by, created_at, updated_at").single();
+      if (!name || name.length > 80) return NextResponse.json({ message: "請輸入 1 至 80 字的連線檔期名稱。" }, { status: 400 });
+      if (!datePattern.test(startDate) || (endDate && !datePattern.test(endDate))) return NextResponse.json({ message: "檔期日期格式不正確。" }, { status: 400 });
+      if (endDate && endDate < startDate) return NextResponse.json({ message: "結束日期不可早於開始日期。" }, { status: 400 });
+      const { data, error } = await supabase.from("live_sale_campaigns").update({ name, status, note, start_date: startDate, end_date: endDate || null, updated_at: new Date().toISOString() }).eq("id", id).select("id, name, campaign_code, status, start_date, end_date, note, created_by, created_at, updated_at").single();
       if (error) throw error;
       return withRefreshedSession(NextResponse.json({ campaign: data }), auth.context);
     }
@@ -178,5 +173,28 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     return NextResponse.json({ message: "不支援的連線檔期操作。" }, { status: 400 });
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法更新連線檔期。") }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: Context) {
+  try {
+    const auth = await requireSignedIn(request);
+    if (!auth.context) return auth.response!;
+    const { id } = await params;
+    if (!uuidPattern.test(id)) return NextResponse.json({ message: "連線檔期資料不正確。" }, { status: 400 });
+
+    const supabase = getSupabaseAdmin();
+    const { count, error: countError } = await supabase
+      .from("live_sale_claims")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", id);
+    if (countError) throw countError;
+    if ((count ?? 0) > 0) return NextResponse.json({ message: "此檔期已有喊單紀錄，為保留歷史與避免影響後續訂單，不能刪除；請改用「已封存」。" }, { status: 409 });
+
+    const { error } = await supabase.from("live_sale_campaigns").delete().eq("id", id);
+    if (error) throw error;
+    return withRefreshedSession(NextResponse.json({ ok: true, id }), auth.context);
+  } catch (error) {
+    return NextResponse.json({ message: errorMessage(error, "無法刪除連線檔期。") }, { status: 500 });
   }
 }

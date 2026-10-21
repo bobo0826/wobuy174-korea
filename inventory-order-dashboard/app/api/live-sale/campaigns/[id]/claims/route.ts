@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
 type ItemInput = { productId?: unknown; productName?: unknown; specification?: unknown; unitPrice?: unknown; quantity?: unknown };
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const integer = (value: unknown) => Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;

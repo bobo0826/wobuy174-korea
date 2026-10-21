@@ -161,15 +161,19 @@ function ClaimEditor({ campaignId, catalog, customers, initial, inbox, onCancel,
   </form>;
 }
 
-function CampaignDetailPage({ campaignId, catalog, openOrder, back }: { campaignId: string; catalog: Product[]; openOrder: (id: string) => void; back: () => void }) {
+function CampaignDetailPage({ campaignId, catalog, openOrder, back, onDeleted }: { campaignId: string; catalog: Product[]; openOrder: (id: string) => void; back: () => void; onDeleted: () => Promise<void> }) {
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customersLoaded, setCustomersLoaded] = useState(false);
   const [inbox, setInbox] = useState<Inbox[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openingEditor, setOpeningEditor] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [editor, setEditor] = useState<{ claim?: Claim; inbox?: Inbox | null } | null>(null);
+  const [campaignName, setCampaignName] = useState("");
   const [campaignStatus, setCampaignStatus] = useState<Campaign["status"]>("進行中");
+  const [campaignStartDate, setCampaignStartDate] = useState("");
   const [campaignNote, setCampaignNote] = useState("");
   const [campaignEndDate, setCampaignEndDate] = useState("");
   const [supplyInputs, setSupplyInputs] = useState<Record<string, string>>({});
@@ -178,16 +182,16 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back }: { campaign
     setLoading(true);
     setError("");
     try {
-      const [detailResponse, customerResponse, inboxResponse] = await Promise.all([fetch(`/api/live-sale/campaigns/${campaignId}`), fetch("/api/customers"), fetch("/api/live-sale/inbox?status=%E5%BE%85%E8%99%95%E7%90%86")]);
-      const [detailResult, customerResult, inboxResult] = await Promise.all([detailResponse.json(), customerResponse.json(), inboxResponse.json()]);
+      const [detailResponse, inboxResponse] = await Promise.all([fetch(`/api/live-sale/campaigns/${campaignId}`), fetch("/api/live-sale/inbox?status=%E5%BE%85%E8%99%95%E7%90%86")]);
+      const [detailResult, inboxResult] = await Promise.all([detailResponse.json(), inboxResponse.json()]);
       if (!detailResponse.ok) throw new Error(detailResult.message ?? "無法讀取連線檔期。 ");
-      if (!customerResponse.ok) throw new Error(customerResult.message ?? "無法讀取客戶資料。 ");
       if (!inboxResponse.ok) throw new Error(inboxResult.message ?? "無法讀取 LINE 截圖收件匣。 ");
       const nextDetail = detailResult as CampaignDetail;
       setDetail(nextDetail);
-      setCustomers((customerResult.customers ?? []) as Customer[]);
       setInbox((inboxResult.inbox ?? []) as Inbox[]);
+      setCampaignName(nextDetail.campaign.name);
       setCampaignStatus(nextDetail.campaign.status);
+      setCampaignStartDate(nextDetail.campaign.start_date);
       setCampaignNote(nextDetail.campaign.note);
       setCampaignEndDate(nextDetail.campaign.end_date ?? "");
       setSupplyInputs(Object.fromEntries(nextDetail.procurement.filter((line) => line.productId).map((line) => [line.productId as string, line.availableQuantity === null ? "" : String(line.availableQuantity)])));
@@ -198,7 +202,29 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back }: { campaign
     }
   };
 
-  useEffect(() => { void load(); }, [campaignId]);
+  useEffect(() => { setCustomers([]); setCustomersLoaded(false); void load(); }, [campaignId]);
+
+  const loadCustomers = async () => {
+    if (customersLoaded) return;
+    const response = await fetch("/api/customers");
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message ?? "無法讀取客戶資料。 ");
+    setCustomers((result.customers ?? []) as Customer[]);
+    setCustomersLoaded(true);
+  };
+
+  const openEditor = async (nextEditor: { claim?: Claim; inbox?: Inbox | null }) => {
+    setError("");
+    setOpeningEditor(true);
+    try {
+      await loadCustomers();
+      setEditor(nextEditor);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法讀取客戶資料。 ");
+    } finally {
+      setOpeningEditor(false);
+    }
+  };
 
   const changeClaimStatus = async (claim: Claim, action: "markPaid" | "markUnpaid" | "cancel" | "restore" | "convert") => {
     const confirmations: Partial<Record<typeof action, string>> = {
@@ -221,12 +247,27 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back }: { campaign
   const saveCampaign = async () => {
     setError(""); setNotice("");
     try {
-      const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updateCampaign", status: campaignStatus, note: campaignNote, endDate: campaignEndDate || undefined }) });
+      const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updateCampaign", name: campaignName, status: campaignStatus, startDate: campaignStartDate, note: campaignNote, endDate: campaignEndDate || undefined }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message ?? "無法更新檔期。 ");
       setNotice("檔期資訊已更新。 ");
       await load();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "無法更新檔期。 "); }
+  };
+
+  const deleteCampaign = async () => {
+    if (!detail) return;
+    if (!window.confirm(`確定刪除空白檔期「${detail.campaign.name}」嗎？此動作只會刪除這個檔期資料夾，無法復原。`)) return;
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法刪除連線檔期。 ");
+      await onDeleted();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法刪除連線檔期。 ");
+    }
   };
 
   const saveSupply = async (line: Procurement) => {
@@ -247,14 +288,14 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back }: { campaign
   const { campaign, summary, claims, procurement } = detail;
 
   return <>
-    <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><button onClick={back} className="text-sm font-semibold text-[#5E7665]">← 返回連線檔期</button><p className="mt-5 text-[11px] font-bold tracking-[.18em] text-[#A09A90]">LIVE SALE CAMPAIGN</p><h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em]">{campaign.name}</h1><p className="mt-2 text-sm text-[#7B766E]">檔期編號 {campaign.campaign_code} · {dateOnly(campaign.start_date)} 開始</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setEditor({ inbox: null })} disabled={campaign.status === "已封存"} className={primary}>＋ 建立喊單</button><button onClick={back} className={outline}>一般訂單管理</button></div></div>
+    <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><button onClick={back} className="text-sm font-semibold text-[#5E7665]">← 返回連線檔期</button><p className="mt-5 text-[11px] font-bold tracking-[.18em] text-[#A09A90]">LIVE SALE CAMPAIGN</p><h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em]">{campaign.name}</h1><p className="mt-2 text-sm text-[#7B766E]">檔期編號 {campaign.campaign_code} · {dateOnly(campaign.start_date)} 開始</p></div><div className="flex flex-wrap gap-2"><button onClick={() => { void openEditor({ inbox: null }); }} disabled={campaign.status === "已封存" || openingEditor} className={primary}>{openingEditor ? "準備中…" : "＋ 建立喊單"}</button><button onClick={back} className={outline}>一般訂單管理</button></div></div>
     {error && <p role="alert" className="mb-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] px-4 py-3 text-sm font-semibold text-[#9B562A]">{error}</p>}
     {notice && <p role="status" className="mb-5 rounded-xl border border-[#D9E5DB] bg-[#EEF5EF] px-4 py-3 text-sm font-semibold text-[#477154]">{notice}</p>}
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Metric label="目前連線業績" value={currency(summary.activeAmount)} note="未取消喊單總額" accent/><Metric label="已結帳" value={currency(summary.paidAmount)} note="人員已確認收款"/><Metric label="待結帳" value={currency(summary.pendingAmount)} note="完成核對、等待私訊結帳"/><Metric label="喊單筆數" value={`${summary.claimCount} 筆`} note={summary.unresolvedCount ? `${summary.unresolvedCount} 筆待核對` : "皆已完成初步核對"}/><Metric label="採購商品" value={`${procurement.length} 項`} note="依商品與規格彙整"/></div>
-    <section className="mt-5 rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-end"><label className="min-w-32 text-sm font-semibold text-[#58534C]">檔期狀態<select value={campaignStatus} onChange={(event) => setCampaignStatus(event.target.value as Campaign["status"])} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>進行中</option><option>已結單</option><option>已封存</option></select></label><label className="min-w-44 text-sm font-semibold text-[#58534C]">結束日期<input type="date" value={campaignEndDate} onChange={(event) => setCampaignEndDate(event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="flex-1 text-sm font-semibold text-[#58534C]">檔期備註<input value={campaignNote} onChange={(event) => setCampaignNote(event.target.value)} placeholder="例如：10/30 晚上結單，先採購後統一結帳" className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><button onClick={() => { void saveCampaign(); }} className={outline}>儲存檔期設定</button></div></section>
+    <section className="mt-5 rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><div className="grid gap-4 lg:grid-cols-4"><label className="text-sm font-semibold text-[#58534C]">檔期名稱<input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">開始日期<input type="date" value={campaignStartDate} onChange={(event) => setCampaignStartDate(event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">結束日期<input type="date" value={campaignEndDate} onChange={(event) => setCampaignEndDate(event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><label className="text-sm font-semibold text-[#58534C]">檔期狀態<select value={campaignStatus} onChange={(event) => setCampaignStatus(event.target.value as Campaign["status"])} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"><option>進行中</option><option>已結單</option><option>已封存</option></select></label><label className="text-sm font-semibold text-[#58534C] lg:col-span-3">檔期備註<input value={campaignNote} onChange={(event) => setCampaignNote(event.target.value)} placeholder="例如：10/30 晚上結單，先採購後統一結帳" className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none" /></label><div className="flex flex-wrap items-end justify-end gap-2"><button onClick={() => { void saveCampaign(); }} className={outline}>儲存檔期設定</button><button onClick={() => { void deleteCampaign(); }} disabled={summary.claimCount > 0} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#F0D6C2] bg-white px-3 text-sm font-semibold text-[#A35F37] disabled:cursor-not-allowed disabled:opacity-45">刪除空白檔期</button></div></div><p className="mt-4 text-xs text-[#8D877E]">檔期編號 {campaign.campaign_code} 會保留作為喊單編號依據；已有喊單的檔期為保留歷史不可刪除，可改為封存。</p></section>
     {editor && <section className="mt-5"><ClaimEditor campaignId={campaignId} catalog={catalog} customers={customers} initial={editor.claim} inbox={editor.inbox} onCancel={() => setEditor(null)} onSaved={async () => { setEditor(null); setNotice(editor.claim ? "喊單已更新。" : "已建立喊單；核對完成後可由人員標記結帳。 "); await load(); }} /></section>}
-    <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white"><div className="flex flex-col gap-2 border-b border-[#F0EDE8] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">LINE INBOX</p><h2 className="mt-1 text-lg font-semibold">記事本截圖收件匣</h2><p className="mt-1 text-xs text-[#8D877E]">客人傳至官方帳號的截圖會先留在此處；第一次核對後可建立社群名稱與 LINE@ 配對。</p></div><span className="text-sm font-semibold text-[#5E7665]">待處理 {inbox.length} 張</span></div>{inbox.length ? <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3">{inbox.map((item) => <article key={item.id} className="overflow-hidden rounded-xl border border-[#E9E5DF] bg-[#FCFBF9]"><img src={item.screenshot_url} alt="LINE 記事本喊單截圖" className="h-44 w-full border-b border-[#E9E5DF] object-contain bg-white" /><div className="p-3"><p className="text-xs text-[#8D877E]">{dateTime(item.received_at)}</p><p className="mt-1 text-sm font-semibold">{item.matched_customer ? `已配對：${item.matched_customer.name}${item.matched_customer.line_name ? ` · ${item.matched_customer.line_name}` : ""}` : "尚未配對客戶"}</p><button onClick={() => setEditor({ inbox: item })} disabled={campaign.status === "已封存"} className="mt-3 text-sm font-semibold text-[#5E7665]">由此截圖建立喊單 →</button></div></article>)}</div> : <p className="px-5 py-8 text-center text-sm text-[#8D877E]">目前沒有待處理的 LINE 記事本截圖。客人私訊官方帳號圖片後會顯示在這裡。</p>}</section>
-    <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white"><div className="border-b border-[#F0EDE8] px-5 py-5 sm:px-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CLAIMS</p><h2 className="mt-1 text-lg font-semibold">連線喊單列表</h2><p className="mt-1 text-xs text-[#8D877E]">只有「已結帳」喊單可以手動轉為一般訂單；轉單前不會扣除一般庫存。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[1060px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="px-5 py-3">喊單編號</th><th className="px-3 py-3">社群名稱／客戶</th><th className="px-3 py-3">商品</th><th className="px-3 py-3">金額</th><th className="px-3 py-3">狀態</th><th className="px-3 py-3">建立時間</th><th className="px-5 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{claims.length ? claims.map((claim) => <tr key={claim.id}><td className="px-5 py-4 font-semibold">{claim.claim_number}</td><td className="px-3 py-4"><b className="block">{claim.community_name || "—"}</b><small className="mt-1 block text-xs text-[#8D877E]">{claim.customer_name || "未配對客戶"}{claim.line_name ? ` · ${claim.line_name}` : ""}</small></td><td className="px-3 py-4"><b className="block">{claim.items.map((item) => item.product_name || "待確認商品").join("、")}</b><small className="mt-1 block text-xs text-[#8D877E]">共 {claim.items.reduce((sum, item) => sum + item.quantity, 0)} 件</small></td><td className="px-3 py-4 font-semibold">{currency(claim.claim_total)}</td><td className="px-3 py-4"><ClaimPill status={claim.status} /></td><td className="px-3 py-4 text-xs text-[#777168]">{dateTime(claim.created_at)}</td><td className="px-5 py-4 text-right"><div className="flex justify-end gap-2"><button onClick={() => setEditor({ claim })} disabled={claim.status === "已轉訂單"} className="text-sm font-semibold text-[#5E7665] disabled:opacity-40">修改</button>{claim.status === "待結帳" && <button onClick={() => { void changeClaimStatus(claim, "markPaid"); }} className="text-sm font-semibold text-[#477154]">確認結帳</button>}{claim.status === "已結帳" && <><button onClick={() => { void changeClaimStatus(claim, "convert"); }} className="text-sm font-semibold text-[#5E7665]">轉一般訂單</button><button onClick={() => { void changeClaimStatus(claim, "markUnpaid"); }} className="text-sm font-semibold text-[#8A6A36]">回待結帳</button></>}{claim.status === "已轉訂單" && claim.converted_order_id && <button onClick={() => openOrder(claim.converted_order_id as string)} className="text-sm font-semibold text-[#5E7665]">查看訂單</button>}{claim.status === "已取消" ? <button onClick={() => { void changeClaimStatus(claim, "restore"); }} className="text-sm font-semibold text-[#5E7665]">復原</button> : claim.status !== "已轉訂單" && <button onClick={() => { void changeClaimStatus(claim, "cancel"); }} className="text-sm font-semibold text-[#A35F37]">取消</button>}</div></td></tr>) : <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-[#8D877E]">尚未建立喊單。可從 LINE 截圖收件匣或右上角建立。</td></tr>}</tbody></table></div></section>
+    <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white"><div className="flex flex-col gap-2 border-b border-[#F0EDE8] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">LINE INBOX</p><h2 className="mt-1 text-lg font-semibold">記事本截圖收件匣</h2><p className="mt-1 text-xs text-[#8D877E]">客人傳至官方帳號的截圖會先留在此處；第一次核對後可建立社群名稱與 LINE@ 配對。</p></div><span className="text-sm font-semibold text-[#5E7665]">待處理 {inbox.length} 張</span></div>{inbox.length ? <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3">{inbox.map((item) => <article key={item.id} className="overflow-hidden rounded-xl border border-[#E9E5DF] bg-[#FCFBF9]"><img src={item.screenshot_url} alt="LINE 記事本喊單截圖" className="h-44 w-full border-b border-[#E9E5DF] object-contain bg-white" /><div className="p-3"><p className="text-xs text-[#8D877E]">{dateTime(item.received_at)}</p><p className="mt-1 text-sm font-semibold">{item.matched_customer ? `已配對：${item.matched_customer.name}${item.matched_customer.line_name ? ` · ${item.matched_customer.line_name}` : ""}` : "尚未配對客戶"}</p><button onClick={() => { void openEditor({ inbox: item }); }} disabled={campaign.status === "已封存" || openingEditor} className="mt-3 text-sm font-semibold text-[#5E7665] disabled:opacity-45">{openingEditor ? "準備中…" : "由此截圖建立喊單 →"}</button></div></article>)}</div> : <p className="px-5 py-8 text-center text-sm text-[#8D877E]">目前沒有待處理的 LINE 記事本截圖。客人私訊官方帳號圖片後會顯示在這裡。</p>}</section>
+    <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white"><div className="border-b border-[#F0EDE8] px-5 py-5 sm:px-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CLAIMS</p><h2 className="mt-1 text-lg font-semibold">連線喊單列表</h2><p className="mt-1 text-xs text-[#8D877E]">只有「已結帳」喊單可以手動轉為一般訂單；轉單前不會扣除一般庫存。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[1060px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="px-5 py-3">喊單編號</th><th className="px-3 py-3">社群名稱／客戶</th><th className="px-3 py-3">商品</th><th className="px-3 py-3">金額</th><th className="px-3 py-3">狀態</th><th className="px-3 py-3">建立時間</th><th className="px-5 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{claims.length ? claims.map((claim) => <tr key={claim.id}><td className="px-5 py-4 font-semibold">{claim.claim_number}</td><td className="px-3 py-4"><b className="block">{claim.community_name || "—"}</b><small className="mt-1 block text-xs text-[#8D877E]">{claim.customer_name || "未配對客戶"}{claim.line_name ? ` · ${claim.line_name}` : ""}</small></td><td className="px-3 py-4"><b className="block">{claim.items.map((item) => item.product_name || "待確認商品").join("、")}</b><small className="mt-1 block text-xs text-[#8D877E]">共 {claim.items.reduce((sum, item) => sum + item.quantity, 0)} 件</small></td><td className="px-3 py-4 font-semibold">{currency(claim.claim_total)}</td><td className="px-3 py-4"><ClaimPill status={claim.status} /></td><td className="px-3 py-4 text-xs text-[#777168]">{dateTime(claim.created_at)}</td><td className="px-5 py-4 text-right"><div className="flex justify-end gap-2"><button onClick={() => { void openEditor({ claim }); }} disabled={claim.status === "已轉訂單" || openingEditor} className="text-sm font-semibold text-[#5E7665] disabled:opacity-40">修改</button>{claim.status === "待結帳" && <button onClick={() => { void changeClaimStatus(claim, "markPaid"); }} className="text-sm font-semibold text-[#477154]">確認結帳</button>}{claim.status === "已結帳" && <><button onClick={() => { void changeClaimStatus(claim, "convert"); }} className="text-sm font-semibold text-[#5E7665]">轉一般訂單</button><button onClick={() => { void changeClaimStatus(claim, "markUnpaid"); }} className="text-sm font-semibold text-[#8A6A36]">回待結帳</button></>}{claim.status === "已轉訂單" && claim.converted_order_id && <button onClick={() => openOrder(claim.converted_order_id as string)} className="text-sm font-semibold text-[#5E7665]">查看訂單</button>}{claim.status === "已取消" ? <button onClick={() => { void changeClaimStatus(claim, "restore"); }} className="text-sm font-semibold text-[#5E7665]">復原</button> : claim.status !== "已轉訂單" && <button onClick={() => { void changeClaimStatus(claim, "cancel"); }} className="text-sm font-semibold text-[#A35F37]">取消</button>}</div></td></tr>) : <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-[#8D877E]">尚未建立喊單。可從 LINE 截圖收件匣或右上角建立。</td></tr>}</tbody></table></div></section>
     <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white"><div className="border-b border-[#F0EDE8] px-5 py-5 sm:px-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASING SUMMARY</p><h2 className="mt-1 text-lg font-semibold">商品採購與缺貨統整</h2><p className="mt-1 text-xs text-[#8D877E]">需求量統計所有未取消喊單；填入「可供應」後會依喊單時間列出需通知的客人。未填代表尚未確認，不會誤判缺貨。</p></div><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="px-5 py-3">商品／規格</th><th className="px-3 py-3">需採購</th><th className="px-3 py-3">已結帳</th><th className="px-3 py-3">待核對</th><th className="px-3 py-3">可供應數量</th><th className="px-3 py-3">缺貨／需通知客人</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{procurement.length ? procurement.map((line) => <tr key={line.productId ?? `${line.productName}-${line.specification}`}><td className="px-5 py-4"><b>{line.productName}</b><small className="mt-1 block text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small></td><td className="px-3 py-4 font-semibold">{line.demandQuantity}</td><td className="px-3 py-4 text-[#477154]">{line.paidQuantity}</td><td className="px-3 py-4 text-[#A66932]">{line.unresolvedQuantity || "—"}</td><td className="px-3 py-4">{line.productId ? <div className="flex items-center gap-2"><input aria-label={`${line.productName} 可供應數量`} type="number" min="0" value={supplyInputs[line.productId] ?? ""} onChange={(event) => setSupplyInputs((current) => ({ ...current, [line.productId as string]: event.target.value }))} onBlur={() => { void saveSupply(line); }} placeholder="尚未確認" className="h-9 w-24 rounded-lg border border-[#E2DED8] bg-[#FCFBF9] px-2 text-sm outline-none" /><span className="text-xs text-[#8D877E]">離開欄位即儲存</span></div> : <span className="text-xs text-[#A66932]">請先核對商品</span>}</td><td className="px-3 py-4">{line.shortageQuantity === null ? <span className="text-[#8D877E]">尚未確認</span> : line.shortageQuantity ? <div><b className="text-[#A35F37]">缺 {line.shortageQuantity}</b><p className="mt-1 max-w-xs text-xs leading-5 text-[#7E6657]">{line.affectedCustomers.map((customer) => `${customer.customerName}（${customer.quantity}）`).join("、")}</p></div> : <span className="font-semibold text-[#477154]">供應足夠</span>}</td></tr>) : <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-[#8D877E]">建立喊單後，這裡會依商品規格自動統整採購數量。</td></tr>}</tbody></table></div></section>
   </>;
 }
@@ -293,7 +334,7 @@ export function LiveSalePage({ catalog, openOrder, back }: { catalog: Product[];
     } catch (reason) { setError(reason instanceof Error ? reason.message : "無法建立連線檔期。 "); } finally { setSaving(false); }
   };
 
-  if (selectedCampaignId) return <CampaignDetailPage campaignId={selectedCampaignId} catalog={catalog} openOrder={openOrder} back={() => { setSelectedCampaignId(""); void load(); }} />;
+  if (selectedCampaignId) return <CampaignDetailPage campaignId={selectedCampaignId} catalog={catalog} openOrder={openOrder} back={() => { setSelectedCampaignId(""); void load(); }} onDeleted={async () => { setSelectedCampaignId(""); await load(); }} />;
 
   return <>
     <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><button onClick={back} className="text-sm font-semibold text-[#5E7665]">← 返回一般訂單</button><p className="mt-5 text-[11px] font-bold tracking-[.18em] text-[#A09A90]">LIVE SALES</p><h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em]">連線檔期</h1><p className="mt-2 text-sm text-[#7B766E]">以 LINE 記事本截圖建立喊單；資料與一般訂單分開，已結帳後可手動轉入既有訂單流程。</p></div><button onClick={() => setShowCreate((current) => !current)} className={primary}>＋ 新增連線檔期</button></div>
