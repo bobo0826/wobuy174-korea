@@ -132,7 +132,7 @@ function OrderDetail({ order, back, onUpdated, onDeleted, onInventoryChanged }: 
   </>;
 }
 
-export function OrdersV2({ created, go, onInventoryChanged, initialQuery = "", initialOrderId = "" }: { created: boolean; go: (view: "create") => void; onInventoryChanged: () => Promise<void>; initialQuery?: string; initialOrderId?: string }) {
+export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQuery = "", initialOrderId = "" }: { created: boolean; go: (view: "create") => void; goLiveSale: () => void; onInventoryChanged: () => Promise<void>; initialQuery?: string; initialOrderId?: string }) {
   const [orders, setOrders] = useState<StoredOrder[]>([]);
   const [selected, setSelected] = useState<StoredOrder | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -231,7 +231,7 @@ export function OrdersV2({ created, go, onInventoryChanged, initialQuery = "", i
   if (selected) return <OrderDetail order={selected} back={() => setSelected(null)} onUpdated={(updated) => { updateOrder(updated); setSelected(updated); void onInventoryChanged().catch(() => undefined); }} onDeleted={(id) => { setOrders((current) => current.filter((order) => order.id !== id)); setSelected(null); }} onInventoryChanged={onInventoryChanged} />;
 
   return <>
-    <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[11px] font-bold tracking-[.18em] text-[#A09A90]">ORDERS</p><h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em]">訂單管理</h1><p className="mt-2 text-sm text-[#7B766E]">可勾選訂單後批量列印、標記到貨或完成出貨；出貨時才會扣除庫存。</p></div><button onClick={() => go("create")} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white">＋ 建立訂單</button></div>
+    <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[11px] font-bold tracking-[.18em] text-[#A09A90]">ORDERS</p><h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em]">訂單管理</h1><p className="mt-2 text-sm text-[#7B766E]">可勾選訂單後批量列印、標記到貨或完成出貨；出貨時才會扣除庫存。</p></div><div className="flex flex-wrap gap-2"><button onClick={goLiveSale} className={outlineButton}>連線檔期</button><button onClick={() => go("create")} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white">＋ 建立訂單</button></div></div>
     {error && <p role="alert" className="mb-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] px-4 py-3 text-sm font-semibold text-[#9B562A]">{error}</p>}
     {notice && <p role="status" className="mb-5 rounded-xl border border-[#D9E5DB] bg-[#EEF5EF] px-4 py-3 text-sm font-semibold text-[#477154]">{notice}</p>}
     <section className="overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">

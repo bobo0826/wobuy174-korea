@@ -9,8 +9,8 @@ export const runtime = "nodejs";
 type LineEvent = {
   type?: string;
   replyToken?: string;
-  source?: { userId?: string };
-  message?: { type?: string; text?: string };
+  source?: { type?: string; userId?: string; groupId?: string; roomId?: string };
+  message?: { type?: string; id?: string; text?: string };
 };
 
 type LineWebhookBody = { events?: LineEvent[] };
@@ -212,6 +212,47 @@ async function handleTextEvent(event: LineEvent) {
   }
 }
 
+// 記事本截圖會由客人私訊官方帳號。系統只保存圖片與 LINE 使用者識別，
+// 不會直接建立訂單；管理者仍需在連線檔期內核對商品、數量與客戶。
+async function handleLiveSaleScreenshot(event: LineEvent) {
+  const messageId = event.message?.id ?? "";
+  const userId = event.source?.userId ?? "";
+  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!messageId || !userId || !accessToken) return;
+
+  const supabase = getSupabaseAdmin();
+  const { data: existing, error: lookupError } = await supabase
+    .from("live_sale_inbox")
+    .select("id")
+    .eq("line_message_id", messageId)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (existing) return;
+
+  const content = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (!content.ok) throw new Error(`LINE 截圖下載失敗（${content.status}）。`);
+  const contentType = (content.headers.get("content-type") ?? "image/jpeg").split(";", 1)[0].toLowerCase();
+  const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+  if (!extensions[contentType]) throw new Error("LINE 傳來的檔案不是支援的圖片格式。 ");
+  const contentLength = Number(content.headers.get("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > 15 * 1024 * 1024) throw new Error("LINE 截圖超過 15MB 限制。 ");
+  const bytes = Buffer.from(await content.arrayBuffer());
+  if (bytes.byteLength > 15 * 1024 * 1024) throw new Error("LINE 截圖超過 15MB 限制。 ");
+  const receivedAt = new Date();
+  const path = `line/${receivedAt.getUTCFullYear()}/${String(receivedAt.getUTCMonth() + 1).padStart(2, "0")}/${messageId}.${extensions[contentType]}`;
+  const { error: uploadError } = await supabase.storage.from("live-sale-screenshots").upload(path, bytes, { contentType, upsert: false });
+  if (uploadError) throw uploadError;
+  const { error: inboxError } = await supabase.from("live_sale_inbox").insert({ line_message_id: messageId, line_user_id: userId, screenshot_path: path, content_type: contentType });
+  if (inboxError) {
+    await supabase.storage.from("live-sale-screenshots").remove([path]);
+    if (inboxError.code === "23505") return;
+    throw inboxError;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
   if (!verifySignature(rawBody, request.headers.get("x-line-signature"))) {
@@ -221,8 +262,12 @@ export async function POST(request: NextRequest) {
   try {
     const payload = JSON.parse(rawBody) as LineWebhookBody;
     await Promise.all((payload.events ?? [])
-      .filter((event) => event.type === "message" && event.message?.type === "text")
-      .map((event) => handleTextEvent(event)));
+      .filter((event) => event.type === "message")
+      .map((event) => {
+        if (event.message?.type === "text") return handleTextEvent(event);
+        if (event.message?.type === "image" && event.source?.type === "user") return handleLiveSaleScreenshot(event);
+        return Promise.resolve();
+      }));
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("LINE webhook failed", error);
