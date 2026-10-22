@@ -86,7 +86,7 @@ async function updateClaim(id: string, body: Record<string, unknown>) {
   const customerId = text(body.customerId);
   const communityName = text(body.communityName);
   const note = text(body.note);
-  if (!communityName || communityName.length > 80) throw new Error("請填寫社群記事本名稱。 ");
+  if (!communityName || communityName.length > 80) throw new Error("請填寫喊單來源。 ");
   const customer = customerId ? await ensureCustomer(customerId) : null;
   const items = await resolveItems(body.items);
   const total = items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);

@@ -61,6 +61,7 @@ const template = `請用以下格式傳送：
 備註：`;
 
 const normalize = (value: string) => value.trim().toLowerCase().replaceAll(/\s/g, "");
+const normalizeProductLabel = (value: string) => normalize(value).replaceAll(/[｜|·・/／_－-]/g, "");
 
 function allowedUserIds() {
   return new Set(
@@ -156,7 +157,7 @@ async function reply(replyToken: string | undefined, text: string) {
   }
 }
 
-async function handleTextEvent(event: LineEvent) {
+async function handleProductTextEvent(event: LineEvent) {
   const text = event.message?.text?.trim() ?? "";
   if (!text) return;
 
@@ -212,13 +213,60 @@ async function handleTextEvent(event: LineEvent) {
   }
 }
 
-// 記事本截圖會由客人私訊官方帳號。系統只保存圖片與 LINE 使用者識別，
-// 不會直接建立訂單；管理者仍需在連線檔期內核對商品、數量與客戶。
-async function handleLiveSaleScreenshot(event: LineEvent) {
+type CatalogProduct = { id: string; name: string; category: string; specification: string; retail_price: number; cost: number };
+type ParsedClaimItem = {
+  raw: string;
+  product_id: string | null;
+  product_name: string;
+  specification: string;
+  unit_price: number;
+  unit_cost: number;
+  quantity: number;
+  match_status: "matched" | "unmatched" | "ambiguous";
+};
+
+function parseClaimCandidates(message: string) {
+  return message
+    .replace(/\r/g, "")
+    .split(/\n|[，,；;]/)
+    .map((line) => line.trim())
+    .flatMap((line) => {
+      const match = line.match(/^(.+?)(?:\s*[＋+]\s*|\s*[xX×]\s*)(\d{1,3})\s*$/);
+      if (!match) return [];
+      const label = match[1].trim();
+      const quantity = Number(match[2]);
+      return label && quantity > 0 ? [{ raw: line, label, quantity }] : [];
+    });
+}
+
+function matchClaimProduct(label: string, products: CatalogProduct[]) {
+  const normalizedLabel = normalizeProductLabel(label);
+  const matches = products.filter((product) => {
+    const productName = normalizeProductLabel(product.name);
+    const productWithSpecification = normalizeProductLabel(`${product.name}${product.specification || ""}`);
+    return normalizedLabel === productName || normalizedLabel === productWithSpecification;
+  });
+  return [...new Map(matches.map((product) => [product.id, product])).values()];
+}
+
+async function nextClaimNumber(campaignId: string, campaignCode: string) {
+  const prefix = `LS-${campaignCode}-`;
+  const { data, error } = await getSupabaseAdmin().from("live_sale_claims").select("claim_number").eq("campaign_id", campaignId).like("claim_number", `${prefix}%`);
+  if (error) throw error;
+  const sequence = (data ?? []).reduce((highest, claim) => {
+    const number = Number(String(claim.claim_number ?? "").slice(prefix.length));
+    return Number.isInteger(number) ? Math.max(highest, number) : highest;
+  }, 0);
+  return `${prefix}${String(sequence + 1).padStart(3, "0")}`;
+}
+
+async function handleLiveSaleDirectMessage(event: LineEvent) {
   const messageId = event.message?.id ?? "";
   const userId = event.source?.userId ?? "";
-  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  if (!messageId || !userId || !accessToken) return;
+  const messageText = event.message?.text?.trim() ?? "";
+  if (!messageId || !userId || !messageText || event.source?.type !== "user") return;
+  const candidates = parseClaimCandidates(messageText);
+  if (!candidates.length) return;
 
   const supabase = getSupabaseAdmin();
   const { data: existing, error: lookupError } = await supabase
@@ -229,28 +277,95 @@ async function handleLiveSaleScreenshot(event: LineEvent) {
   if (lookupError) throw lookupError;
   if (existing) return;
 
-  const content = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    cache: "no-store",
+  const [{ data: products, error: productError }, { data: activeCampaigns, error: campaignError }, { data: aliases, error: aliasError }] = await Promise.all([
+    supabase.from("products").select("id, name, category, specification, retail_price, cost"),
+    supabase.from("live_sale_campaigns").select("id, campaign_code").eq("status", "進行中"),
+    supabase.from("live_sale_customer_aliases").select("customer_id, customers(id, name, line_name)").eq("community_name", "LINE 私訊").eq("line_user_id", userId),
+  ]);
+  if (productError) throw productError;
+  if (campaignError) throw campaignError;
+  if (aliasError) throw aliasError;
+
+  const parsedItems: ParsedClaimItem[] = candidates.map((candidate) => {
+    const matches = matchClaimProduct(candidate.label, (products ?? []) as CatalogProduct[]);
+    if (matches.length === 1) {
+      const product = matches[0];
+      return { raw: candidate.raw, product_id: product.id, product_name: product.name, specification: product.specification || "", unit_price: Number(product.retail_price) || 0, unit_cost: Number(product.cost) || 0, quantity: candidate.quantity, match_status: "matched" };
+    }
+    return { raw: candidate.raw, product_id: null, product_name: candidate.label, specification: "", unit_price: 0, unit_cost: 0, quantity: candidate.quantity, match_status: matches.length ? "ambiguous" : "unmatched" };
   });
-  if (!content.ok) throw new Error(`LINE 截圖下載失敗（${content.status}）。`);
-  const contentType = (content.headers.get("content-type") ?? "image/jpeg").split(";", 1)[0].toLowerCase();
-  const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-  if (!extensions[contentType]) throw new Error("LINE 傳來的檔案不是支援的圖片格式。 ");
-  const contentLength = Number(content.headers.get("content-length") ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > 15 * 1024 * 1024) throw new Error("LINE 截圖超過 15MB 限制。 ");
-  const bytes = Buffer.from(await content.arrayBuffer());
-  if (bytes.byteLength > 15 * 1024 * 1024) throw new Error("LINE 截圖超過 15MB 限制。 ");
-  const receivedAt = new Date();
-  const path = `line/${receivedAt.getUTCFullYear()}/${String(receivedAt.getUTCMonth() + 1).padStart(2, "0")}/${messageId}.${extensions[contentType]}`;
-  const { error: uploadError } = await supabase.storage.from("live-sale-screenshots").upload(path, bytes, { contentType, upsert: false });
-  if (uploadError) throw uploadError;
-  const { error: inboxError } = await supabase.from("live_sale_inbox").insert({ line_message_id: messageId, line_user_id: userId, screenshot_path: path, content_type: contentType });
+
+  const campaignMatches = (activeCampaigns ?? []).filter((campaign) => campaign.campaign_code && normalizeProductLabel(messageText).includes(normalizeProductLabel(String(campaign.campaign_code))));
+  const campaign = campaignMatches.length === 1 ? campaignMatches[0] : campaignMatches.length === 0 && (activeCampaigns ?? []).length === 1 ? activeCampaigns![0] : null;
+  const aliasCustomers = new Map<string, { id: string; name: string; line_name: string }>();
+  for (const alias of aliases ?? []) {
+    const customer = alias.customers as unknown as { id: string; name: string; line_name: string } | null;
+    if (customer) aliasCustomers.set(customer.id, customer);
+  }
+  const customer = aliasCustomers.size === 1 ? [...aliasCustomers.values()][0] : null;
+  const { data: inbox, error: inboxError } = await supabase
+    .from("live_sale_inbox")
+    .insert({
+      line_message_id: messageId,
+      line_user_id: userId,
+      screenshot_path: null,
+      content_type: "text/plain",
+      source_type: "text",
+      message_text: messageText,
+      campaign_id: campaign?.id ?? null,
+      parsed_items: parsedItems,
+      customer_id: customer?.id ?? null,
+    })
+    .select("id")
+    .single();
   if (inboxError) {
-    await supabase.storage.from("live-sale-screenshots").remove([path]);
     if (inboxError.code === "23505") return;
     throw inboxError;
   }
+
+  if (!campaign || parsedItems.some((item) => item.match_status !== "matched" || !item.product_id)) return;
+  let claimId = "";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const claimNumber = await nextClaimNumber(campaign.id, campaign.campaign_code);
+    const total = parsedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
+    const { data: claim, error: claimError } = await supabase
+      .from("live_sale_claims")
+      .insert({
+        campaign_id: campaign.id,
+        claim_number: claimNumber,
+        customer_id: customer?.id ?? null,
+        customer_name: customer?.name ?? "",
+        line_name: customer?.line_name ?? "",
+        community_name: "LINE 私訊",
+        source_inbox_id: inbox.id,
+        status: "待核對",
+        claim_total: total,
+        note: "LINE 官方帳號文字私訊自動辨識；請確認客戶與商品後再結帳。",
+      })
+      .select("id")
+      .single();
+    if (claimError) {
+      if (claimError.code === "23505" && attempt < 2) continue;
+      if (claimError.code === "23505") return;
+      throw claimError;
+    }
+    claimId = claim.id;
+    const { error: itemError } = await supabase.from("live_sale_claim_items").insert(parsedItems.map((item) => ({ claim_id: claim.id, product_id: item.product_id, product_name: item.product_name, category: (products ?? []).find((product) => product.id === item.product_id)?.category ?? "", specification: item.specification, unit_price: item.unit_price, quantity: item.quantity })));
+    if (itemError) {
+      await supabase.from("live_sale_claims").delete().eq("id", claim.id);
+      throw itemError;
+    }
+    break;
+  }
+  if (claimId) {
+    const { error: processedError } = await supabase.from("live_sale_inbox").update({ status: "已建立喊單", processed_at: new Date().toISOString() }).eq("id", inbox.id);
+    if (processedError) throw processedError;
+  }
+}
+
+async function handleTextEvent(event: LineEvent) {
+  if (event.source?.type === "user") await handleLiveSaleDirectMessage(event);
+  await handleProductTextEvent(event);
 }
 
 export async function POST(request: NextRequest) {
@@ -265,7 +380,6 @@ export async function POST(request: NextRequest) {
       .filter((event) => event.type === "message")
       .map((event) => {
         if (event.message?.type === "text") return handleTextEvent(event);
-        if (event.message?.type === "image" && event.source?.type === "user") return handleLiveSaleScreenshot(event);
         return Promise.resolve();
       }));
     return NextResponse.json({ ok: true });

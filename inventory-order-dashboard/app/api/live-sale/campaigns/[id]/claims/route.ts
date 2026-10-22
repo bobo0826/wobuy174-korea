@@ -61,7 +61,7 @@ async function rememberCustomerAlias({ sourceInboxId, customerId, communityName 
   const supabase = getSupabaseAdmin();
   const { data: inbox, error: inboxError } = await supabase.from("live_sale_inbox").select("id, line_user_id").eq("id", sourceInboxId).maybeSingle();
   if (inboxError) throw inboxError;
-  if (!inbox) throw new Error("找不到選擇的 LINE 截圖。 ");
+  if (!inbox) throw new Error("找不到選擇的 LINE 私訊。 ");
   const now = new Date().toISOString();
   const userId = inbox.line_user_id || "";
   if (userId) {
@@ -88,9 +88,9 @@ export async function POST(request: NextRequest, { params }: Context) {
     const customerId = text(body.customerId);
     const sourceInboxId = text(body.sourceInboxId);
     const note = text(body.note);
-    if (!communityName || communityName.length > 80) return NextResponse.json({ message: "請填寫社群記事本名稱。" }, { status: 400 });
+    if (!communityName || communityName.length > 80) return NextResponse.json({ message: "請填寫喊單來源。" }, { status: 400 });
     if (customerId && !uuidPattern.test(customerId)) return NextResponse.json({ message: "選擇的客戶資料不正確。" }, { status: 400 });
-    if (sourceInboxId && !uuidPattern.test(sourceInboxId)) return NextResponse.json({ message: "LINE 截圖資料不正確。" }, { status: 400 });
+    if (sourceInboxId && !uuidPattern.test(sourceInboxId)) return NextResponse.json({ message: "LINE 私訊資料不正確。" }, { status: 400 });
 
     const supabase = getSupabaseAdmin();
     const [{ data: campaign, error: campaignError }, items] = await Promise.all([
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest, { params }: Context) {
         .single();
       if (claimError) {
         if (claimError.code === "23505" && attempt < 2) continue;
-        if (claimError.code === "23505" && sourceInboxId) return NextResponse.json({ message: "這張 LINE 截圖已建立過喊單。" }, { status: 409 });
+        if (claimError.code === "23505" && sourceInboxId) return NextResponse.json({ message: "這則 LINE 私訊已建立過喊單。" }, { status: 409 });
         throw claimError;
       }
       createdId = claim.id;
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest, { params }: Context) {
     if (!createdId) throw new Error("無法取得新的喊單編號，請再試一次。 ");
 
     if (sourceInboxId) {
-      const { error: inboxError } = await supabase.from("live_sale_inbox").update({ customer_id: customer?.id ?? null, status: "已建立喊單", processed_at: new Date().toISOString() }).eq("id", sourceInboxId);
+      const { error: inboxError } = await supabase.from("live_sale_inbox").update({ campaign_id: campaignId, customer_id: customer?.id ?? null, status: "已建立喊單", processed_at: new Date().toISOString() }).eq("id", sourceInboxId);
       if (inboxError) throw inboxError;
       if (customer) await rememberCustomerAlias({ sourceInboxId, customerId: customer.id, communityName });
     }
