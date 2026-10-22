@@ -14,6 +14,14 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const nonNegativeInteger = (value: unknown) => value === null || value === "" || value === undefined ? null : (Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : undefined);
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
+function validHttpsUrl(value: string) {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Record<string, unknown>>, items: Array<Record<string, unknown>>, allocations: Array<Record<string, unknown>>) {
   const itemsByClaim = new Map<string, Array<Record<string, unknown>>>();
   for (const item of items) {
@@ -114,18 +122,20 @@ export async function GET(request: NextRequest, { params }: Context) {
     if (campaignError) throw campaignError;
     if (!campaign) return NextResponse.json({ message: "找不到連線檔期。" }, { status: 404 });
 
-    const [{ data: claims, error: claimError }, { data: allocations, error: allocationError }] = await Promise.all([
+    const [{ data: claims, error: claimError }, { data: allocations, error: allocationError }, { data: notebooks, error: notebookError }] = await Promise.all([
       supabase.from("live_sale_claims").select("id, campaign_id, claim_number, customer_id, customer_name, line_name, community_name, source_inbox_id, status, claim_total, note, payment_marked_at, payment_marked_by, converted_order_id, created_at, updated_at, customers(id, name, line_name)").eq("campaign_id", id).order("created_at", { ascending: false }),
       supabase.from("live_sale_campaign_products").select("product_id, available_quantity, note, updated_at").eq("campaign_id", id),
+      supabase.from("live_sale_campaign_notebooks").select("id, name, url, note, created_at").eq("campaign_id", id).order("created_at", { ascending: true }),
     ]);
     if (claimError) throw claimError;
     if (allocationError) throw allocationError;
+    if (notebookError) throw notebookError;
     const claimIds = (claims ?? []).map((claim) => claim.id);
     const { data: items, error: itemError } = claimIds.length
       ? await supabase.from("live_sale_claim_items").select("id, claim_id, product_id, product_name, category, specification, unit_price, quantity, created_at").in("claim_id", claimIds)
       : { data: [], error: null };
     if (itemError) throw itemError;
-    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], allocations ?? [])), auth.context);
+    return withRefreshedSession(NextResponse.json({ ...buildCampaignDetail(campaign, claims ?? [], items ?? [], allocations ?? []), notebooks: notebooks ?? [] }), auth.context);
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法讀取連線檔期內容。") }, { status: 503 });
   }
@@ -168,6 +178,38 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       const { data, error } = await supabase.from("live_sale_campaigns").update({ name, status, note, start_date: startDate, end_date: endDate || null, updated_at: new Date().toISOString() }).eq("id", id).select("id, name, campaign_code, status, start_date, end_date, note, created_by, created_at, updated_at").single();
       if (error) throw error;
       return withRefreshedSession(NextResponse.json({ campaign: data }), auth.context);
+    }
+
+    if (action === "addNotebook") {
+      const name = text(body.name);
+      const url = text(body.url);
+      const note = text(body.note);
+      if (!name || name.length > 80) return NextResponse.json({ message: "請輸入 1 至 80 字的記事本名稱。" }, { status: 400 });
+      if (!url || url.length > 2048 || !validHttpsUrl(url)) return NextResponse.json({ message: "請輸入有效的 HTTPS 記事本連結。" }, { status: 400 });
+      if (note.length > 300) return NextResponse.json({ message: "內部備註不可超過 300 字。" }, { status: 400 });
+      const { data, error } = await supabase
+        .from("live_sale_campaign_notebooks")
+        .insert({ campaign_id: id, name, url, note, created_by: auth.context.profile.displayName, updated_at: new Date().toISOString() })
+        .select("id, name, url, note, created_at")
+        .single();
+      if (error?.code === "23505") return NextResponse.json({ message: "此記事本連結已加入這個檔期。" }, { status: 409 });
+      if (error) throw error;
+      return withRefreshedSession(NextResponse.json({ notebook: data }), auth.context);
+    }
+
+    if (action === "deleteNotebook") {
+      const notebookId = text(body.notebookId);
+      if (!uuidPattern.test(notebookId)) return NextResponse.json({ message: "記事本資料不正確。" }, { status: 400 });
+      const { data, error } = await supabase
+        .from("live_sale_campaign_notebooks")
+        .delete()
+        .eq("id", notebookId)
+        .eq("campaign_id", id)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return NextResponse.json({ message: "找不到此記事本連結。" }, { status: 404 });
+      return withRefreshedSession(NextResponse.json({ ok: true, id: notebookId }), auth.context);
     }
 
     return NextResponse.json({ message: "不支援的連線檔期操作。" }, { status: 400 });
