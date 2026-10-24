@@ -173,11 +173,13 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
     if (target) setSelected(target);
   }, [initialOrderId, orders]);
 
+  // 連線檔期從已確認訂單帶進來的資料只供直接編輯；離開詳情後不混入一般訂單列表。
   const visible = useMemo(() => orders.filter((order) => {
+    if (initialOrderId && order.id === initialOrderId) return false;
     const matchesStatus = status === "全部" || (status === "未付款" ? order.reconciliation_status === "未付款" : order.status === status);
     const matchesKeyword = !query.trim() || [order.order_number, order.customers?.name, order.customers?.line_name, ...order.order_items.map((item) => item.product_name)].join(" ").toLowerCase().includes(query.trim().toLowerCase());
     return matchesStatus && matchesKeyword && (!startDate || order.order_date >= startDate) && (!endDate || order.order_date <= endDate);
-  }), [endDate, orders, query, startDate, status]);
+  }), [endDate, initialOrderId, orders, query, startDate, status]);
   const selectedOrders = useMemo(() => orders.filter((order) => selectedIds.includes(order.id)), [orders, selectedIds]);
   const printableOrders = selectedOrders.filter((order) => order.status !== "已取消");
   const arrivalOrders = selectedOrders.filter((order) => order.status === "預購中");
