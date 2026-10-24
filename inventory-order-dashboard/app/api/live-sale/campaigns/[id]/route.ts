@@ -14,14 +14,14 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const nonNegativeInteger = (value: unknown) => value === null || value === "" || value === undefined ? null : (Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : undefined);
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
-function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Record<string, unknown>>, items: Array<Record<string, unknown>>, allocations: Array<Record<string, unknown>>) {
+function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Record<string, unknown>>, items: Array<Record<string, unknown>>, products: Array<Record<string, unknown>>) {
   const itemsByClaim = new Map<string, Array<Record<string, unknown>>>();
   for (const item of items) {
     const claimItems = itemsByClaim.get(item.claim_id as string) ?? [];
     claimItems.push(item);
     itemsByClaim.set(item.claim_id as string, claimItems);
   }
-  const allocationByProduct = new Map(allocations.map((allocation) => [allocation.product_id as string, allocation]));
+  const productById = new Map(products.map((product) => [product.id as string, product]));
   const hydratedClaims: Array<Record<string, unknown> & { items: Array<Record<string, unknown>> }> = claims.map((claim) => ({ ...claim, items: itemsByClaim.get(claim.id as string) ?? [] }));
 
   const summary = { claimCount: 0, activeAmount: 0, paidAmount: 0, pendingAmount: 0, unresolvedCount: 0 };
@@ -76,8 +76,8 @@ function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Re
   }
 
   const procurement = [...procurementLines.values()].map((line) => {
-    const allocation = line.productId ? allocationByProduct.get(line.productId) : undefined;
-    const availableQuantity = allocation && allocation.available_quantity !== null && allocation.available_quantity !== undefined ? Number(allocation.available_quantity) : null;
+    const product = line.productId ? productById.get(line.productId) : undefined;
+    const availableQuantity = product && product.available_stock !== null && product.available_stock !== undefined ? Number(product.available_stock) : null;
     let remaining = availableQuantity ?? 0;
     const affectedCustomers: Array<{ claimId: string; claimNumber: string; customerName: string; communityName: string; quantity: number }> = [];
     if (availableQuantity !== null) {
@@ -90,7 +90,8 @@ function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Re
     return {
       ...line,
       availableQuantity,
-      availabilityNote: String(allocation?.note ?? ""),
+      purchaseQuantity: availableQuantity === null ? null : Math.max(0, line.demandQuantity - availableQuantity),
+      availabilityNote: product ? "已同步商品資料庫可售庫存" : "",
       shortageQuantity: availableQuantity === null ? null : Math.max(0, line.demandQuantity - availableQuantity),
       affectedCustomers,
     };
@@ -114,18 +115,23 @@ export async function GET(request: NextRequest, { params }: Context) {
     if (campaignError) throw campaignError;
     if (!campaign) return NextResponse.json({ message: "找不到連線檔期。" }, { status: 404 });
 
-    const [{ data: claims, error: claimError }, { data: allocations, error: allocationError }] = await Promise.all([
-      supabase.from("live_sale_claims").select("id, campaign_id, claim_number, customer_id, customer_name, line_name, community_name, source_inbox_id, status, claim_total, note, payment_marked_at, payment_marked_by, converted_order_id, created_at, updated_at, customers(id, name, line_name)").eq("campaign_id", id).order("created_at", { ascending: false }),
-      supabase.from("live_sale_campaign_products").select("product_id, available_quantity, note, updated_at").eq("campaign_id", id),
-    ]);
+    const { data: claims, error: claimError } = await supabase
+      .from("live_sale_claims")
+      .select("id, campaign_id, claim_number, customer_id, customer_name, line_name, community_name, source_inbox_id, status, claim_total, note, payment_marked_at, payment_marked_by, converted_order_id, created_at, updated_at, customers(id, name, line_name)")
+      .eq("campaign_id", id)
+      .order("created_at", { ascending: false });
     if (claimError) throw claimError;
-    if (allocationError) throw allocationError;
     const claimIds = (claims ?? []).map((claim) => claim.id);
     const { data: items, error: itemError } = claimIds.length
       ? await supabase.from("live_sale_claim_items").select("id, claim_id, product_id, product_name, category, specification, unit_price, quantity, created_at").in("claim_id", claimIds)
       : { data: [], error: null };
     if (itemError) throw itemError;
-    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], allocations ?? [])), auth.context);
+    const productIds = [...new Set((items ?? []).map((item) => item.product_id).filter((item): item is string => typeof item === "string" && uuidPattern.test(item)))];
+    const { data: products, error: productError } = productIds.length
+      ? await supabase.from("products").select("id, available_stock").in("id", productIds)
+      : { data: [], error: null };
+    if (productError) throw productError;
+    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], products ?? [])), auth.context);
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法讀取連線檔期內容。") }, { status: 503 });
   }
