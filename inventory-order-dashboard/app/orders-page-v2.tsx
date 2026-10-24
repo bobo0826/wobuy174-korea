@@ -150,7 +150,9 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
     void (async () => {
       setLoading(true);
       try {
-        const response = await fetch("/api/orders");
+        const params = new URLSearchParams();
+        if (initialOrderId) params.set("includeId", initialOrderId);
+        const response = await fetch(`/api/orders${params.size ? `?${params.toString()}` : ""}`);
         const result = await response.json();
         if (!response.ok) throw new Error(result.message ?? "無法讀取訂單資料。");
         if (active) setOrders(result.orders ?? []);
@@ -161,7 +163,7 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
       }
     })();
     return () => { active = false; };
-  }, [created]);
+  }, [created, initialOrderId]);
 
   useEffect(() => { setQuery(initialQuery); }, [initialQuery]);
   useEffect(() => { setSelectedIds([]); }, [endDate, query, startDate, status]);

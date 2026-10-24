@@ -79,6 +79,48 @@ async function rememberAlias(sourceInboxId: string | null, customerId: string, c
   if (result.error) throw result.error;
 }
 
+type ResolvedItem = { product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
+
+function combineItems(items: ResolvedItem[]) {
+  const combined = new Map<string, ResolvedItem>();
+  for (const item of items) {
+    const itemKey = `${item.product_id ?? item.product_name}::${item.specification}::${item.unit_price}`;
+    const current = combined.get(itemKey);
+    combined.set(itemKey, current ? { ...current, quantity: current.quantity + item.quantity } : { ...item });
+  }
+  return [...combined.values()];
+}
+
+async function mergeIntoOpenClaim({ currentId, campaignId, customer, items, note }: { currentId: string; campaignId: string; customer: { id: string; name: string; line_name: string }; items: ResolvedItem[]; note: string }) {
+  const supabase = getSupabaseAdmin();
+  const { data: target, error: targetError } = await supabase
+    .from("live_sale_claims")
+    .select("id, claim_total, note")
+    .eq("campaign_id", campaignId)
+    .eq("customer_id", customer.id)
+    .in("status", ["待核對", "待結帳"])
+    .neq("id", currentId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (targetError) throw targetError;
+  if (!target) return null;
+  const { data: targetItems, error: targetItemsError } = await supabase.from("live_sale_claim_items").select("product_id, product_name, category, specification, unit_price, quantity").eq("claim_id", target.id);
+  if (targetItemsError) throw targetItemsError;
+  const mergedItems = combineItems([...(targetItems ?? []), ...items] as ResolvedItem[]);
+  const total = mergedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
+  const nextNote = note && !target.note.includes(note) ? [target.note, note].filter(Boolean).join("\n") : target.note;
+  const { error: headerError } = await supabase.from("live_sale_claims").update({ claim_total: total, note: nextNote, updated_at: new Date().toISOString() }).eq("id", target.id);
+  if (headerError) throw headerError;
+  const { error: deleteItemsError } = await supabase.from("live_sale_claim_items").delete().eq("claim_id", target.id);
+  if (deleteItemsError) throw deleteItemsError;
+  const { error: insertError } = await supabase.from("live_sale_claim_items").insert(mergedItems.map((item) => ({ claim_id: target.id, ...item })));
+  if (insertError) throw insertError;
+  const { error: deleteCurrentError } = await supabase.from("live_sale_claims").delete().eq("id", currentId);
+  if (deleteCurrentError) throw deleteCurrentError;
+  return target.id as string;
+}
+
 async function updateClaim(id: string, body: Record<string, unknown>) {
   const current = await fetchClaim(id);
   if (current.status === "已轉訂單") throw new Error("已轉為一般訂單的喊單不可再修改。 ");
@@ -100,6 +142,10 @@ async function updateClaim(id: string, body: Record<string, unknown>) {
   const { error: itemError } = await supabase.from("live_sale_claim_items").insert(items.map((item) => ({ claim_id: id, ...item })));
   if (itemError) throw itemError;
   if (customer) await rememberAlias(current.source_inbox_id, customer.id, communityName);
+  if (customer && resolved) {
+    const mergedId = await mergeIntoOpenClaim({ currentId: id, campaignId: current.campaign_id, customer, items, note });
+    if (mergedId) return { ...(await fetchClaim(mergedId)), items };
+  }
   return { ...current, customer_id: customer?.id ?? null, customer_name: customer?.name ?? "", line_name: customer?.line_name ?? "", community_name: communityName, note, status, claim_total: total, updated_at: new Date().toISOString(), items };
 }
 
@@ -191,6 +237,11 @@ async function convertToOrder(id: string) {
   }
 }
 
+async function confirmAndConvert(id: string, displayName: string) {
+  await markPaid(id, displayName);
+  return convertToOrder(id);
+}
+
 export async function PATCH(request: NextRequest, { params }: Context) {
   try {
     const auth = await requireSignedIn(request);
@@ -200,7 +251,7 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     const body = await request.json() as Record<string, unknown>;
     const action = text(body.action);
     if (action === "update") return withRefreshedSession(NextResponse.json({ claim: await updateClaim(id, body) }), auth.context);
-    if (action === "markPaid") return withRefreshedSession(NextResponse.json({ claim: await markPaid(id, auth.context.profile.displayName) }), auth.context);
+    if (action === "markPaid") return withRefreshedSession(NextResponse.json(await confirmAndConvert(id, auth.context.profile.displayName)), auth.context);
     if (action === "markUnpaid" || action === "cancel" || action === "restore") return withRefreshedSession(NextResponse.json({ claim: await setClaimStatus(id, action) }), auth.context);
     if (action === "convert") return withRefreshedSession(NextResponse.json(await convertToOrder(id)), auth.context);
     return NextResponse.json({ message: "不支援的連線喊單操作。" }, { status: 400 });

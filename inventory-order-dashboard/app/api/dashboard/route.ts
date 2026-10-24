@@ -20,23 +20,28 @@ export async function GET(request: NextRequest) {
     if (!auth.context) return auth.response!;
 
     const supabase = getSupabaseAdmin();
-    const [{ data: orders, error: ordersError }, { data: products, error: productsError }, { data: purchases, error: purchasesError }] = await Promise.all([
-      supabase.from("orders").select("order_date, status, total"),
+    const [{ data: orders, error: ordersError }, { data: products, error: productsError }, { data: purchases, error: purchasesError }, { data: linkedClaims, error: linkedClaimsError }] = await Promise.all([
+      supabase.from("orders").select("id, order_date, status, total"),
       supabase.from("products").select("available_stock, safety_stock"),
       supabase.from("purchase_orders").select("status"),
+      supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null),
     ]);
     if (ordersError) throw ordersError;
     if (productsError) throw productsError;
     if (purchasesError) throw purchasesError;
+    if (linkedClaimsError) throw linkedClaimsError;
+
+    const convertedOrderIds = new Set((linkedClaims ?? []).map((claim) => claim.converted_order_id).filter(Boolean));
+    const normalOrders = (orders ?? []).filter((order) => !convertedOrderIds.has(order.id));
 
     const month = taipeiMonth();
     const summary = {
-      preorders: (orders ?? []).filter((order) => order.status === "預購中").length,
+      preorders: normalOrders.filter((order) => order.status === "預購中").length,
       lowStock: (products ?? []).filter((product) => Number(product.available_stock) <= Number(product.safety_stock)).length,
       pendingPurchases: (purchases ?? []).filter((purchase) => purchase.status !== "已完成" && purchase.status !== "已取消").length,
-      monthlySales: (orders ?? []).filter((order) => order.order_date?.startsWith(month) && order.status !== "已取消").reduce((sum, order) => sum + (Number(order.total) || 0), 0),
-      shippedOrders: (orders ?? []).filter((order) => order.status === "已出貨").length,
-      orderCount: (orders ?? []).length,
+      monthlySales: normalOrders.filter((order) => order.order_date?.startsWith(month) && order.status !== "已取消").reduce((sum, order) => sum + (Number(order.total) || 0), 0),
+      shippedOrders: normalOrders.filter((order) => order.status === "已出貨").length,
+      orderCount: normalOrders.length,
     };
 
     return withRefreshedSession(NextResponse.json({ summary }), auth.context);

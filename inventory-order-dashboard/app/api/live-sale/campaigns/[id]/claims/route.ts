@@ -77,6 +77,48 @@ async function rememberCustomerAlias({ sourceInboxId, customerId, communityName 
   }
 }
 
+type ResolvedItem = { product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
+
+function combineItems(items: ResolvedItem[]) {
+  const combined = new Map<string, ResolvedItem>();
+  for (const item of items) {
+    const itemKey = `${item.product_id ?? item.product_name}::${item.specification}::${item.unit_price}`;
+    const current = combined.get(itemKey);
+    combined.set(itemKey, current ? { ...current, quantity: current.quantity + item.quantity } : { ...item });
+  }
+  return [...combined.values()];
+}
+
+async function appendToOpenClaim({ campaignId, customer, items, note }: { campaignId: string; customer: { id: string; name: string; line_name: string }; items: ResolvedItem[]; note: string }) {
+  const supabase = getSupabaseAdmin();
+  const { data: target, error: targetError } = await supabase
+    .from("live_sale_claims")
+    .select("id, claim_total, note")
+    .eq("campaign_id", campaignId)
+    .eq("customer_id", customer.id)
+    .in("status", ["待核對", "待結帳"])
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (targetError) throw targetError;
+  if (!target) return null;
+  const { data: existingItems, error: existingItemsError } = await supabase
+    .from("live_sale_claim_items")
+    .select("product_id, product_name, category, specification, unit_price, quantity")
+    .eq("claim_id", target.id);
+  if (existingItemsError) throw existingItemsError;
+  const mergedItems = combineItems([...(existingItems ?? []), ...items] as ResolvedItem[]);
+  const total = mergedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
+  const nextNote = note && !target.note.includes(note) ? [target.note, note].filter(Boolean).join("\n") : target.note;
+  const { error: headerError } = await supabase.from("live_sale_claims").update({ claim_total: total, note: nextNote, updated_at: new Date().toISOString() }).eq("id", target.id);
+  if (headerError) throw headerError;
+  const { error: deleteError } = await supabase.from("live_sale_claim_items").delete().eq("claim_id", target.id);
+  if (deleteError) throw deleteError;
+  const { error: insertError } = await supabase.from("live_sale_claim_items").insert(mergedItems.map((item) => ({ claim_id: target.id, ...item })));
+  if (insertError) throw insertError;
+  return target.id as string;
+}
+
 export async function POST(request: NextRequest, { params }: Context) {
   try {
     const auth = await requireSignedIn(request);
@@ -111,7 +153,11 @@ export async function POST(request: NextRequest, { params }: Context) {
     const status = resolved ? "待結帳" : "待核對";
     let createdId = "";
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    // 同檔期、同客戶且尚未結帳的喊單會自動合併。未辨識客戶或商品的訊息
+    // 仍保留為待核對，待人員完成配對後才會在修改流程中合併。
+    if (customer && resolved) createdId = await appendToOpenClaim({ campaignId, customer, items, note }) ?? "";
+
+    for (let attempt = 0; !createdId && attempt < 3; attempt += 1) {
       const claimNumber = await nextClaimNumber(campaignId, campaign.campaign_code);
       const { data: claim, error: claimError } = await supabase
         .from("live_sale_claims")

@@ -137,12 +137,17 @@ export async function GET(request: NextRequest) {
       return withRefreshedSession(NextResponse.json({ orderNumber: await nextOrderNumber(nextFor) }), auth.context);
     }
 
-    const { data, error } = await getSupabaseAdmin()
-      .from("orders")
-      .select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(id, name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity, products(specification))")
-      .order("created_at", { ascending: false });
+    const includeId = new URL(request.url).searchParams.get("includeId") ?? "";
+    const supabase = getSupabaseAdmin();
+    const [{ data, error }, { data: linkedClaims, error: linkedClaimsError }] = await Promise.all([
+      supabase.from("orders").select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(id, name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity, products(specification))").order("created_at", { ascending: false }),
+      supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null),
+    ]);
     if (error) throw error;
-    return withRefreshedSession(NextResponse.json({ orders: data }), auth.context);
+    if (linkedClaimsError) throw linkedClaimsError;
+    const liveSaleOrderIds = new Set((linkedClaims ?? []).map((claim) => claim.converted_order_id).filter(Boolean));
+    const orders = (data ?? []).filter((order) => !liveSaleOrderIds.has(order.id) || order.id === includeId);
+    return withRefreshedSession(NextResponse.json({ orders }), auth.context);
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法讀取訂單資料。") }, { status: 503 });
   }

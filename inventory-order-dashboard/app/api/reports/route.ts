@@ -35,17 +35,17 @@ export async function GET(request: NextRequest) {
     if (periodLength < 0) return NextResponse.json({ message: "結束日期不可早於開始日期。" }, { status: 400 });
     if (periodLength > 731) return NextResponse.json({ message: "查詢區間最多為兩年。" }, { status: 400 });
 
-    const { data, error } = await getSupabaseAdmin()
-      .from("orders")
-      .select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, subtotal, total, net_profit, note, customers(name, line_name), order_items(product_name, category, quantity, unit_price)")
-      .gte("order_date", startDate)
-      .lte("order_date", endDate)
-      .order("order_date", { ascending: false })
-      .order("order_number", { ascending: false });
+    const supabase = getSupabaseAdmin();
+    const [{ data, error }, { data: linkedClaims, error: linkedClaimsError }] = await Promise.all([
+      supabase.from("orders").select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, subtotal, total, net_profit, note, customers(name, line_name), order_items(product_name, category, quantity, unit_price)").gte("order_date", startDate).lte("order_date", endDate).order("order_date", { ascending: false }).order("order_number", { ascending: false }),
+      supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null),
+    ]);
     if (error) throw error;
+    if (linkedClaimsError) throw linkedClaimsError;
 
     const grouped = new Map<string, { revenue: number; netProfit: number; orderCount: number }>();
-    const orders = data ?? [];
+    const convertedOrderIds = new Set((linkedClaims ?? []).map((claim) => claim.converted_order_id).filter(Boolean));
+    const orders = (data ?? []).filter((order) => !convertedOrderIds.has(order.id));
     for (const order of orders) {
       if (order.status === "已取消") continue;
       const date = order.order_date;
