@@ -2170,9 +2170,7 @@ export default function Home() {
   }, [currentUser]);
   const go = (next: View) => { if (next === "orders") { setOrderSearchQuery(""); setOrderSearchTargetId(""); } setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); if (next === "stock") void refreshProducts(); };
   const openLiveSaleOrder = (orderId: string) => {
-    const url = new URL("/", window.location.origin);
-    url.searchParams.set("orderId", orderId);
-    window.open(url.toString(), "_blank", "noopener,noreferrer");
+    window.open(`/orders/${encodeURIComponent(orderId)}`, "_blank", "noopener,noreferrer");
   };
   const openProduct = (productOrId: Product | number | string) => { setSelectedProduct(typeof productOrId === "object" ? productOrId : databaseProducts.find((product) => String(product.id) === String(productOrId)) ?? blankProduct); go("product"); };
   const loadGlobalOrders = async () => {

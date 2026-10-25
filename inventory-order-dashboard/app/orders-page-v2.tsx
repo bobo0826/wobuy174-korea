@@ -15,7 +15,7 @@ type StoredItem = {
   quantity: number;
   products?: { specification: string } | null;
 };
-type StoredOrder = {
+export type StoredOrder = {
   id: string;
   order_number: string;
   order_date: string;
@@ -45,12 +45,13 @@ function Pill({ children, tone }: { children: React.ReactNode; tone: Tone }) {
   return <span className={`inline-flex min-h-6 items-center justify-center rounded-full px-2.5 py-1 text-center text-[11px] font-semibold leading-none ${tones[tone]}`}>{children}</span>;
 }
 
-function OrderDetail({ order, back, onUpdated, onDeleted, onInventoryChanged }: {
+export function OrderDetail({ order, back, onUpdated, onDeleted, onInventoryChanged, backLabel = "返回訂單管理" }: {
   order: StoredOrder;
   back: () => void;
   onUpdated: (order: StoredOrder) => void;
   onDeleted: (id: string) => void;
   onInventoryChanged: () => Promise<void>;
+  backLabel?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -95,7 +96,7 @@ function OrderDetail({ order, back, onUpdated, onDeleted, onInventoryChanged }: 
   return <>
     <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <button onClick={back} className="text-sm font-semibold text-[#5E7665]">← 返回訂單管理</button>
+        <button onClick={back} className="text-sm font-semibold text-[#5E7665]">← {backLabel}</button>
         <p className="mt-5 text-[11px] font-bold tracking-[.18em] text-[#A09A90]">ORDER DETAIL</p>
         <h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em]">訂單 {order.order_number}</h1>
         <p className="mt-2 text-sm text-[#7B766E]">訂單日期 {order.order_date.replaceAll("-", ".")}</p>

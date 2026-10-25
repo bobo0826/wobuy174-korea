@@ -1083,6 +1083,25 @@ function CampaignDetailPage({
     anchor.click();
     URL.revokeObjectURL(url);
   };
+  const printConfirmed = (claimsToPrint: Claim[]) => {
+    const orderIds = claimsToPrint
+      .filter(
+        (claim) =>
+          claim.converted_order_id &&
+          claim.converted_order?.status !== "已取消",
+      )
+      .map((claim) => claim.converted_order_id!);
+    if (!orderIds.length) {
+      setError("請選擇至少一筆可列印的已結單一般訂單。");
+      return;
+    }
+    const search = new URLSearchParams({ orderIds: orderIds.join(",") });
+    window.open(
+      `/shipping-slip?${search.toString()}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
   const applyBulkStatus = async (claimsToUpdate: Claim[]) => {
     const validClaims = claimsToUpdate.filter((claim) =>
       Boolean(claim.converted_order_id),
@@ -1220,6 +1239,10 @@ function CampaignDetailPage({
   const selectedConfirmedClaims = confirmedClaims.filter((claim) =>
     selectedConfirmedIds.includes(claim.id),
   );
+  const printableConfirmedClaims = selectedConfirmedClaims.filter(
+    (claim) =>
+      claim.converted_order_id && claim.converted_order?.status !== "已取消",
+  );
   const allConfirmedSelected =
     Boolean(confirmedClaims.length) &&
     confirmedClaims.every((claim) => selectedConfirmedIds.includes(claim.id));
@@ -1238,6 +1261,13 @@ function CampaignDetailPage({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => printConfirmed(selectedConfirmedClaims)}
+                disabled={!printableConfirmedClaims.length}
+                className={secondary}
+              >
+                批量列印出貨單
+              </button>
               <button
                 onClick={() => exportConfirmed(selectedConfirmedClaims)}
                 disabled={!selectedConfirmedClaims.length}
@@ -1285,7 +1315,7 @@ function CampaignDetailPage({
                       }
                     />
                   </th>
-                  <th className="px-3 py-3">訂單編號</th>
+                  <th className="px-3 py-3">一般訂單編號</th>
                   <th className="px-3 py-3">客戶</th>
                   <th className="px-3 py-3">訂單狀況</th>
                   <th className="px-3 py-3">付款方式</th>
@@ -1341,7 +1371,7 @@ function CampaignDetailPage({
                           onClick={() => openOrder(claim.converted_order_id!)}
                           className="text-sm font-semibold text-[#5E7665]"
                         >
-                          查看／修改 →
+                          開啟一般訂單 →
                         </button>
                       )}
                     </td>
@@ -1566,7 +1596,7 @@ function CampaignDetailPage({
                             onClick={() => openOrder(claim.converted_order_id!)}
                             className="text-sm font-semibold text-[#5E7665]"
                           >
-                            編輯訂單 →
+                            開啟一般訂單 →
                           </button>
                         ) : (
                           <button
