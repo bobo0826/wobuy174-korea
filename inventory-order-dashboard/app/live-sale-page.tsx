@@ -216,12 +216,13 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back, onDeleted }:
     const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${campaignId}-已確認訂單.csv`; anchor.click(); URL.revokeObjectURL(url);
   };
   const applyBulkStatus = async (claimsToUpdate: Claim[]) => {
-    if (!claimsToUpdate.length) return setError("請至少選擇一筆已確認訂單。 ");
-    const message = bulkStatus === "已出貨" ? `確認將 ${claimsToUpdate.length} 筆訂單設為已出貨？系統會逐筆扣除庫存。` : `確認將 ${claimsToUpdate.length} 筆訂單標記為「${bulkStatus}」？`;
+    const validClaims = claimsToUpdate.filter((claim) => Boolean(claim.converted_order_id));
+    if (!validClaims.length) return setError("選取的歷史喊單尚未連結一般訂單，無法批量更新。 ");
+    const message = bulkStatus === "已出貨" ? `確認將 ${validClaims.length} 筆訂單設為已出貨？系統會逐筆扣除庫存。` : `確認將 ${validClaims.length} 筆訂單標記為「${bulkStatus}」？`;
     if (!window.confirm(message)) return;
     setBulkSaving(true); setError("");
     const failures: string[] = [];
-    for (const claim of claimsToUpdate) {
+    for (const claim of validClaims) {
       try {
         const response = bulkStatus === "已出貨"
           ? await fetch(`/api/orders/${claim.converted_order_id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "complete" }) })
@@ -230,7 +231,7 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back, onDeleted }:
       } catch (reason) { failures.push(`${claim.claim_number}：${reason instanceof Error ? reason.message : "更新失敗。"}`); }
     }
     setSelectedConfirmedIds([]); await load(); setBulkSaving(false);
-    if (failures.length) setError(`${failures.length} 筆未更新：${failures.join("；")}`); else setNotice(`已更新 ${claimsToUpdate.length} 筆訂單為「${bulkStatus}」。`);
+    if (failures.length) setError(`${failures.length} 筆未更新：${failures.join("；")}`); else setNotice(`已更新 ${validClaims.length} 筆訂單為「${bulkStatus}」。`);
   };
   const saveCampaign = async () => {
     const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updateCampaign", name, status, startDate, endDate: endDate || undefined, note }) });
