@@ -175,12 +175,6 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
 
   useEffect(() => { setQuery(initialQuery); }, [initialQuery]);
   useEffect(() => { setSelectedIds([]); }, [endDate, query, startDate, status, page]);
-  useEffect(() => {
-    if (!initialOrderId || !orders.length) return;
-    const target = orders.find((order) => order.id === initialOrderId);
-    if (target) setSelected(target);
-  }, [initialOrderId, orders]);
-
   // 連線檔期從已確認訂單帶進來的資料只供直接編輯；離開詳情後不混入一般訂單列表。
   const visible = useMemo(() => orders.filter((order) => {
     if (initialOrderId && order.id === initialOrderId) return false;
@@ -196,6 +190,9 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
   const toggleOrder = (id: string) => setSelectedIds((current) => current.includes(id) ? current.filter((currentId) => currentId !== id) : [...current, id]);
   const toggleVisible = () => setSelectedIds((current) => allVisibleSelected ? current.filter((id) => !visible.some((order) => order.id === id)) : [...new Set([...current, ...visible.map((order) => order.id)])]);
   const updateOrder = (updated: StoredOrder) => setOrders((current) => current.map((order) => order.id === updated.id ? updated : order));
+  const directOrder = initialOrderId
+    ? orders.find((order) => order.id === initialOrderId) ?? null
+    : null;
 
   const printSelected = () => {
     if (!printableOrders.length) return setError("請至少選擇一筆未取消的訂單列印出貨單。");
@@ -238,6 +235,16 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
     if (failures.length) setError(`${failures.length} 筆訂單未完成：${failures.join("；")}`);
     setBulkSaving(null);
   };
+
+  if (initialOrderId) {
+    if (loading) {
+      return <section className="rounded-2xl border border-[#E9E5DF] bg-white p-8 text-center text-sm font-semibold text-[#7B766E]">正在開啟一般訂單…</section>;
+    }
+    if (!directOrder) {
+      return <section className="rounded-2xl border border-[#F1D4C4] bg-[#FFF7F0] p-8 text-center"><p className="text-sm font-semibold text-[#9B562A]">{error || "找不到這張一般訂單，可能尚未完成轉單。"}</p><button onClick={() => window.close()} className="mt-4 text-sm font-semibold text-[#5E7665]">關閉此頁</button></section>;
+    }
+    return <OrderDetail order={directOrder} back={() => window.close()} onUpdated={(updated) => { updateOrder(updated); void onInventoryChanged().catch(() => undefined); }} onDeleted={(id) => { setOrders((current) => current.filter((order) => order.id !== id)); }} onInventoryChanged={onInventoryChanged} />;
+  }
 
   if (selected) return <OrderDetail order={selected} back={() => setSelected(null)} onUpdated={(updated) => { updateOrder(updated); setSelected(updated); void onInventoryChanged().catch(() => undefined); }} onDeleted={(id) => { setOrders((current) => current.filter((order) => order.id !== id)); setSelected(null); }} onInventoryChanged={onInventoryChanged} />;
 

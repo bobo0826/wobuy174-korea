@@ -152,11 +152,11 @@ async function updateClaim(id: string, body: Record<string, unknown>) {
 async function markPaid(id: string, displayName: string) {
   const current = await fetchClaim(id);
   if (current.status === "已轉訂單") throw new Error("此喊單已轉為一般訂單。 ");
-  if (current.status === "已取消") throw new Error("已取消喊單不可確認結帳。 ");
-  if (!current.customer_id) throw new Error("請先配對客戶後再確認結帳。 ");
+  if (current.status === "已取消") throw new Error("已取消喊單不可確認結單。 ");
+  if (!current.customer_id) throw new Error("請先配對客戶後再確認結單。 ");
   const { data: items, error: itemError } = await getSupabaseAdmin().from("live_sale_claim_items").select("product_id, product_name, unit_price, quantity").eq("claim_id", id);
   if (itemError) throw itemError;
-  if (!(items ?? []).length || (items ?? []).some((item) => !item.product_id || Number(item.unit_price) < 0 || Number(item.quantity) < 1)) throw new Error("請先完成所有商品核對後再確認結帳。 ");
+  if (!(items ?? []).length || (items ?? []).some((item) => !item.product_id || Number(item.unit_price) < 0 || Number(item.quantity) < 1)) throw new Error("請先完成所有商品核對後再確認結單。 ");
   const timestamp = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin().from("live_sale_claims").update({ status: "已結帳", payment_marked_at: timestamp, payment_marked_by: displayName, updated_at: timestamp }).eq("id", id).select("id, status, payment_marked_at, payment_marked_by, converted_order_id").single();
   if (error) throw error;
@@ -186,7 +186,7 @@ async function setClaimStatus(id: string, action: string) {
 async function setNotificationStatus(id: string, notificationStatus: string) {
   if (!['未通知', '已通知'].includes(notificationStatus)) throw new Error("通知狀態不正確。 ");
   const current = await fetchClaim(id);
-  if (current.status !== "已轉訂單" || !current.converted_order_id) throw new Error("只有已確認訂單可以更新通知狀態。 ");
+  if (current.status !== "已轉訂單" || !current.converted_order_id) throw new Error("只有已結單可以更新通知狀態。 ");
   const { data, error } = await getSupabaseAdmin()
     .from("live_sale_claims")
     .update({ notification_status: notificationStatus, updated_at: new Date().toISOString() })
@@ -207,7 +207,7 @@ async function deleteClaim(id: string) {
       .eq("id", current.converted_order_id)
       .maybeSingle();
     if (orderError) throw orderError;
-    if (order?.status === "已出貨") throw new Error("這張已確認訂單已出貨並扣除庫存，不能直接刪除；請以庫存調整方式修正。 ");
+    if (order?.status === "已出貨") throw new Error("這張已結單已出貨並扣除庫存，不能直接刪除；請以庫存調整方式修正。 ");
     if (order) {
       const { error } = await supabase.from("orders").delete().eq("id", order.id);
       if (error) throw error;
@@ -220,7 +220,7 @@ async function deleteClaim(id: string) {
 
 async function convertToOrder(id: string) {
   const current = await fetchClaim(id);
-  if (current.status !== "已結帳") throw new Error("請先由人員確認已結帳後再轉一般訂單。 ");
+  if (current.status !== "已結帳") throw new Error("請先由人員確認已結單後再轉一般訂單。 ");
   if (!current.customer_id) throw new Error("此喊單尚未配對客戶。 ");
   const supabase = getSupabaseAdmin();
   const [customer, campaign, itemsResult] = await Promise.all([
@@ -247,7 +247,7 @@ async function convertToOrder(id: string) {
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const orderNumber = await nextOrderNumber(orderDate);
-      const { data: order, error: orderError } = await supabase.from("orders").insert({ order_number: orderNumber, customer_id: customer.id, order_date: orderDate, status: "預購中", order_method: "社群下單", payment_method: "銀行轉帳", reconciliation_status: "已付款", delivery_method: deliveryMethod, delivery_fee: deliveryFee, note: `連線檔期：${campaign.data.name}／喊單編號：${current.claim_number}${current.note ? `\n${current.note}` : ""}`, subtotal, total: subtotal + deliveryFee, net_profit: subtotal + deliveryFee - costTotal }).select("id, order_number, status, reconciliation_status, total").single();
+      const { data: order, error: orderError } = await supabase.from("orders").insert({ order_number: orderNumber, customer_id: customer.id, order_date: orderDate, status: "預購中", order_method: "社群下單", payment_method: "銀行轉帳", reconciliation_status: "未付款", delivery_method: deliveryMethod, delivery_fee: deliveryFee, note: `連線檔期：${campaign.data.name}／喊單編號：${current.claim_number}${current.note ? `\n${current.note}` : ""}`, subtotal, total: subtotal + deliveryFee, net_profit: subtotal + deliveryFee - costTotal }).select("id, order_number, status, reconciliation_status, total").single();
       if (orderError) {
         if (orderError.code === "23505" && attempt < 2) continue;
         throw orderError;

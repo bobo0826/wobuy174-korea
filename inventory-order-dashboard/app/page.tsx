@@ -2152,6 +2152,15 @@ export default function Home() {
     return () => { active = false; };
   }, []);
   useEffect(() => {
+    const orderId = new URLSearchParams(window.location.search)
+      .get("orderId")
+      ?.trim();
+    if (!orderId) return;
+    setOrderSearchQuery("");
+    setOrderSearchTargetId(orderId);
+    setView("orders");
+  }, []);
+  useEffect(() => {
     if (!currentUser) return;
     let active = true;
     void refreshProducts().catch(() => {
@@ -2160,7 +2169,11 @@ export default function Home() {
     return () => { active = false; };
   }, [currentUser]);
   const go = (next: View) => { if (next === "orders") { setOrderSearchQuery(""); setOrderSearchTargetId(""); } setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); if (next === "stock") void refreshProducts(); };
-  const openLiveSaleOrder = (orderId: string) => { setOrderSearchQuery(""); setOrderSearchTargetId(orderId); setView("orders"); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const openLiveSaleOrder = (orderId: string) => {
+    const url = new URL("/", window.location.origin);
+    url.searchParams.set("orderId", orderId);
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+  };
   const openProduct = (productOrId: Product | number | string) => { setSelectedProduct(typeof productOrId === "object" ? productOrId : databaseProducts.find((product) => String(product.id) === String(productOrId)) ?? blankProduct); go("product"); };
   const loadGlobalOrders = async () => {
     if (globalOrdersLoading || globalOrders.length) return;
