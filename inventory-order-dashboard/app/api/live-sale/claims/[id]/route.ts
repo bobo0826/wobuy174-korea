@@ -51,7 +51,7 @@ async function nextOrderNumber(orderDate: string) {
 }
 
 async function fetchClaim(id: string) {
-  const { data, error } = await getSupabaseAdmin().from("live_sale_claims").select("id, campaign_id, claim_number, customer_id, customer_name, line_name, community_name, source_inbox_id, status, claim_total, note, payment_marked_at, payment_marked_by, converted_order_id, created_at, updated_at").eq("id", id).maybeSingle();
+  const { data, error } = await getSupabaseAdmin().from("live_sale_claims").select("id, campaign_id, claim_number, customer_id, customer_name, line_name, community_name, source_inbox_id, status, notification_status, claim_total, note, payment_marked_at, payment_marked_by, converted_order_id, created_at, updated_at").eq("id", id).maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("找不到連線喊單。 ");
   return data;
@@ -183,6 +183,41 @@ async function setClaimStatus(id: string, action: string) {
   throw new Error("不支援的喊單狀態操作。 ");
 }
 
+async function setNotificationStatus(id: string, notificationStatus: string) {
+  if (!['未通知', '已通知'].includes(notificationStatus)) throw new Error("通知狀態不正確。 ");
+  const current = await fetchClaim(id);
+  if (current.status !== "已轉訂單" || !current.converted_order_id) throw new Error("只有已確認訂單可以更新通知狀態。 ");
+  const { data, error } = await getSupabaseAdmin()
+    .from("live_sale_claims")
+    .update({ notification_status: notificationStatus, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id, status, notification_status, converted_order_id")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteClaim(id: string) {
+  const current = await fetchClaim(id);
+  const supabase = getSupabaseAdmin();
+  if (current.converted_order_id) {
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("id, status, order_number")
+      .eq("id", current.converted_order_id)
+      .maybeSingle();
+    if (orderError) throw orderError;
+    if (order?.status === "已出貨") throw new Error("這張已確認訂單已出貨並扣除庫存，不能直接刪除；請以庫存調整方式修正。 ");
+    if (order) {
+      const { error } = await supabase.from("orders").delete().eq("id", order.id);
+      if (error) throw error;
+    }
+  }
+  const { error } = await supabase.from("live_sale_claims").delete().eq("id", id);
+  if (error) throw error;
+  return { id, convertedOrderId: current.converted_order_id };
+}
+
 async function convertToOrder(id: string) {
   const current = await fetchClaim(id);
   if (current.status !== "已結帳") throw new Error("請先由人員確認已結帳後再轉一般訂單。 ");
@@ -227,7 +262,7 @@ async function convertToOrder(id: string) {
       break;
     }
     if (!createdOrderId || !createdOrder) throw new Error("無法取得一般訂單編號，請再試一次。 ");
-    const { data: claim, error: claimError } = await supabase.from("live_sale_claims").update({ status: "已轉訂單", converted_order_id: createdOrderId, updated_at: new Date().toISOString() }).eq("id", id).eq("status", "已結帳").select("id, status, converted_order_id").maybeSingle();
+    const { data: claim, error: claimError } = await supabase.from("live_sale_claims").update({ status: "已轉訂單", notification_status: "未通知", converted_order_id: createdOrderId, updated_at: new Date().toISOString() }).eq("id", id).eq("status", "已結帳").select("id, status, notification_status, converted_order_id").maybeSingle();
     if (claimError) throw claimError;
     if (!claim) throw new Error("喊單狀態已變更，請重新整理後確認。 ");
     return { claim, order: createdOrder };
@@ -253,6 +288,8 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     if (action === "update") return withRefreshedSession(NextResponse.json({ claim: await updateClaim(id, body) }), auth.context);
     if (action === "markPaid") return withRefreshedSession(NextResponse.json(await confirmAndConvert(id, auth.context.profile.displayName)), auth.context);
     if (action === "markUnpaid" || action === "cancel" || action === "restore") return withRefreshedSession(NextResponse.json({ claim: await setClaimStatus(id, action) }), auth.context);
+    if (action === "setNotification") return withRefreshedSession(NextResponse.json({ claim: await setNotificationStatus(id, text(body.notificationStatus)) }), auth.context);
+    if (action === "delete") return withRefreshedSession(NextResponse.json({ deleted: await deleteClaim(id) }), auth.context);
     if (action === "convert") return withRefreshedSession(NextResponse.json(await convertToOrder(id)), auth.context);
     return NextResponse.json({ message: "不支援的連線喊單操作。" }, { status: 400 });
   } catch (error) {

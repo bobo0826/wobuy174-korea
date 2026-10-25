@@ -5,15 +5,17 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 type Product = { id: string | number; sku: string; name: string; country: string; category: string; subcategory: string; specification: string; cost: number; retailPrice: number };
 type Customer = { id: string; name: string; line_name: string; customer_category: "員工" | "社群"; preferred_delivery_method: "自取" | "賣貨便"; phone?: string; address?: string };
 type ClaimStatus = "待核對" | "待結帳" | "已結帳" | "已轉訂單" | "已取消";
+type NotificationStatus = "未通知" | "已通知";
 type ClaimItem = { id?: string; product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
-type Claim = { id: string; claim_number: string; customer_id: string | null; customer_name: string; line_name: string; community_name: string; source_inbox_id: string | null; status: ClaimStatus; claim_total: number; note: string; converted_order_id: string | null; created_at: string; items: ClaimItem[] };
+type ConvertedOrder = { id: string; order_number: string; status: "預購中" | "未出貨" | "已出貨" | "已取消"; payment_method: string; reconciliation_status: string; delivery_method: string; total: number };
+type Claim = { id: string; claim_number: string; customer_id: string | null; customer_name: string; line_name: string; community_name: string; source_inbox_id: string | null; status: ClaimStatus; notification_status: NotificationStatus; claim_total: number; note: string; converted_order_id: string | null; converted_order?: ConvertedOrder | null; created_at: string; items: ClaimItem[] };
 type Summary = { claimCount: number; activeAmount: number; paidAmount: number; pendingAmount: number; unresolvedCount: number };
 type Campaign = { id: string; name: string; campaign_code: string; status: "進行中" | "已結單" | "已封存"; start_date: string; end_date: string | null; note: string; summary: Summary };
 type Procurement = { productId: string | null; productName: string; specification: string; category: string; demandQuantity: number; paidQuantity: number; unresolvedQuantity: number; availableQuantity: number | null; purchaseQuantity: number | null; shortageQuantity: number | null; affectedCustomers: Array<{ claimId: string; claimNumber: string; customerName: string; quantity: number }> };
 type Detail = { campaign: Campaign; claims: Claim[]; summary: Summary; procurement: Procurement[] };
 type Inbox = { id: string; message_text: string; parsed_items: Array<{ product_id: string | null; product_name: string; specification: string; unit_price: number; quantity: number }>; matched_customer: { id: string; name: string; line_name: string } | null };
 type Line = { key: string; productId: string; productName: string; category: string; specification: string; unitPrice: number; quantity: number };
-type ActionName = "markPaid" | "markUnpaid" | "cancel" | "restore" | "convert";
+type ActionName = "markPaid" | "markUnpaid" | "cancel" | "restore" | "convert" | "delete";
 
 const money = (value: number) => `NT$ ${Number(value || 0).toLocaleString("zh-TW")}`;
 const day = (value: string | null) => value ? value.replaceAll("-", "/") : "—";
@@ -24,6 +26,12 @@ const tone: Record<ClaimStatus, string> = { "待核對": "bg-[#FAECDD] text-[#A6
 
 function Pill({ status }: { status: ClaimStatus }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone[status]}`}>{status}</span>;
+}
+
+function ConfirmedStatusPill({ claim }: { claim: Claim }) {
+  const label = claim.converted_order?.status === "已出貨" ? "已出貨" : claim.notification_status || "未通知";
+  const classes = label === "已出貨" ? "bg-[#E7F0E8] text-[#477154]" : label === "已通知" ? "bg-[#E5EEF2] text-[#4B6D79]" : "bg-[#FAECDD] text-[#A66932]";
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${classes}`}>{label}</span>;
 }
 
 function Metric({ label, value, note }: { label: string; value: string; note: string }) {
@@ -117,6 +125,7 @@ function ClaimEditor({ campaignId, catalog, customers, initial, inbox, onCancel,
         {initial.status === "已結帳" && <><button type="button" onClick={() => void onAction(initial, "convert")} className={button}>重新轉一般訂單</button><button type="button" onClick={() => void onAction(initial, "markUnpaid")} className={secondary}>回待結帳</button></>}
         {initial.status === "已取消" && <button type="button" onClick={() => void onAction(initial, "restore")} className={secondary}>復原喊單</button>}
         {initial.status !== "已取消" && initial.status !== "已轉訂單" && <button type="button" onClick={() => void onAction(initial, "cancel")} className="inline-flex h-10 items-center rounded-xl border border-[#F0D6C2] bg-white px-3 text-sm font-semibold text-[#A35F37]">取消喊單</button>}
+        <button type="button" onClick={() => void onAction(initial, "delete")} className="inline-flex h-10 items-center rounded-xl border border-[#F0D6C2] bg-white px-3 text-sm font-semibold text-[#A35F37]">刪除喊單</button>
         {initial.converted_order_id && <button type="button" onClick={() => openOrder(initial.converted_order_id!)} className={secondary}>編輯訂單</button>}
       </div>}
     </div>
@@ -146,6 +155,9 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back, onDeleted }:
   const [inbox, setInbox] = useState<Inbox[]>([]);
   const [editor, setEditor] = useState<{ claim?: Claim; inbox?: Inbox | null } | null>(null);
   const [claimTab, setClaimTab] = useState<"open" | "confirmed">("open");
+  const [selectedConfirmedIds, setSelectedConfirmedIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<NotificationStatus | "已出貨">("已通知");
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState("");
@@ -187,13 +199,38 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back, onDeleted }:
     } catch (reason) { setError(reason instanceof Error ? reason.message : "無法開啟喊單。"); } finally { setOpening(false); }
   };
   const action = async (claim: Claim, actionName: ActionName) => {
-    const message = actionName === "convert" ? `確認把 ${claim.claim_number} 重新轉為一般訂單？` : actionName === "cancel" ? `確定取消 ${claim.claim_number}？` : actionName === "markPaid" ? `確認結帳 ${claim.claim_number}？系統會立即建立連線專用訂單，並移至「已確認訂單」，一般訂單清單不會顯示。` : "";
+    const message = actionName === "convert" ? `確認把 ${claim.claim_number} 重新轉為一般訂單？` : actionName === "cancel" ? `確定取消 ${claim.claim_number}？` : actionName === "delete" ? claim.converted_order_id ? `確定刪除 ${claim.claim_number} 與它尚未出貨的已確認訂單？` : `確定刪除 ${claim.claim_number}？` : actionName === "markPaid" ? `確認結帳 ${claim.claim_number}？系統會立即建立連線專用訂單，並移至「已確認訂單」，一般訂單清單不會顯示。` : "";
     if (message && !window.confirm(message)) return;
     const response = await fetch(`/api/live-sale/claims/${claim.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: actionName }) });
     const result = await response.json();
     if (!response.ok) { setError(result.message ?? "無法更新喊單。"); return; }
-    if (actionName === "markPaid" || actionName === "convert") { setNotice(`已建立連線專用訂單 ${result.order?.order_number ?? ""}，可在已確認訂單編輯。`); setClaimTab("confirmed"); } else setNotice("喊單狀態已更新。");
+    if (actionName === "markPaid" || actionName === "convert") { setNotice(`已建立連線專用訂單 ${result.order?.order_number ?? ""}，可在已確認訂單編輯。`); setClaimTab("confirmed"); } else if (actionName === "delete") setNotice("喊單已刪除。"); else setNotice("喊單狀態已更新。");
     await load(); setEditor(null);
+  };
+  const claimStatus = (claim: Claim) => claim.converted_order?.status === "已出貨" ? "已出貨" : claim.notification_status || "未通知";
+  const exportConfirmed = (claimsToExport: Claim[]) => {
+    if (!claimsToExport.length) return setError("請至少選擇一筆已確認訂單匯出。");
+    const csvCell = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const rows = [["訂單編號", "喊單編號", "客戶名稱", "LINE@名稱", "商品明細", "總金額", "付款方式", "付款狀態", "訂單狀況", "配送方式"], ...claimsToExport.map((claim) => [claim.converted_order?.order_number ?? "—", claim.claim_number, claim.customer_name, claim.line_name, claim.items.map((item) => `${item.product_name}${item.specification ? `（${item.specification}）` : ""} × ${item.quantity}`).join("；"), claim.claim_total, claim.converted_order?.payment_method ?? "—", claim.converted_order?.reconciliation_status ?? "—", claimStatus(claim), claim.converted_order?.delivery_method ?? "—"])];
+    const blob = new Blob([`\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${campaignId}-已確認訂單.csv`; anchor.click(); URL.revokeObjectURL(url);
+  };
+  const applyBulkStatus = async (claimsToUpdate: Claim[]) => {
+    if (!claimsToUpdate.length) return setError("請至少選擇一筆已確認訂單。 ");
+    const message = bulkStatus === "已出貨" ? `確認將 ${claimsToUpdate.length} 筆訂單設為已出貨？系統會逐筆扣除庫存。` : `確認將 ${claimsToUpdate.length} 筆訂單標記為「${bulkStatus}」？`;
+    if (!window.confirm(message)) return;
+    setBulkSaving(true); setError("");
+    const failures: string[] = [];
+    for (const claim of claimsToUpdate) {
+      try {
+        const response = bulkStatus === "已出貨"
+          ? await fetch(`/api/orders/${claim.converted_order_id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "complete" }) })
+          : await fetch(`/api/live-sale/claims/${claim.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setNotification", notificationStatus: bulkStatus }) });
+        const result = await response.json(); if (!response.ok) throw new Error(result.message ?? "更新失敗。");
+      } catch (reason) { failures.push(`${claim.claim_number}：${reason instanceof Error ? reason.message : "更新失敗。"}`); }
+    }
+    setSelectedConfirmedIds([]); await load(); setBulkSaving(false);
+    if (failures.length) setError(`${failures.length} 筆未更新：${failures.join("；")}`); else setNotice(`已更新 ${claimsToUpdate.length} 筆訂單為「${bulkStatus}」。`);
   };
   const saveCampaign = async () => {
     const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updateCampaign", name, status, startDate, endDate: endDate || undefined, note }) });
@@ -212,7 +249,11 @@ function CampaignDetailPage({ campaignId, catalog, openOrder, back, onDeleted }:
 
   const { campaign, claims, summary, procurement } = detail;
   const visibleClaims = claims.filter((claim) => claimTab === "confirmed" ? claim.status === "已轉訂單" : claim.status !== "已轉訂單");
+  const confirmedClaims = claims.filter((claim) => claim.status === "已轉訂單");
+  const selectedConfirmedClaims = confirmedClaims.filter((claim) => selectedConfirmedIds.includes(claim.id));
+  const allConfirmedSelected = Boolean(confirmedClaims.length) && confirmedClaims.every((claim) => selectedConfirmedIds.includes(claim.id));
   return <>
+    {claimTab === "confirmed" && <section className="mb-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F0EDE8] p-5"><div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CONFIRMED ORDER ACTIONS</p><h2 className="mt-1 text-lg font-semibold">已確認訂單批量作業</h2><p className="mt-1 text-xs text-[#8D877E]">通知狀態可直接更新；改為已出貨時會逐筆扣庫存。</p></div><div className="flex flex-wrap gap-2"><button onClick={() => exportConfirmed(selectedConfirmedClaims)} disabled={!selectedConfirmedClaims.length} className={secondary}>批量匯出訂單</button><select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value as NotificationStatus | "已出貨")} className="h-10 rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665]"><option>未通知</option><option>已通知</option><option>已出貨</option></select><button onClick={() => void applyBulkStatus(selectedConfirmedClaims)} disabled={!selectedConfirmedClaims.length || bulkSaving} className={button}>{bulkSaving ? "更新中…" : "修改訂單狀況"}</button></div></div><div className="overflow-x-auto"><table className="w-full min-w-[1020px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="w-12 px-5 py-3"><input aria-label="選取全部已確認訂單" type="checkbox" checked={allConfirmedSelected} onChange={() => setSelectedConfirmedIds(allConfirmedSelected ? [] : confirmedClaims.map((claim) => claim.id))} /></th><th className="px-3 py-3">訂單編號</th><th className="px-3 py-3">客戶</th><th className="px-3 py-3">訂單狀況</th><th className="px-3 py-3">付款方式</th><th className="px-3 py-3">付款狀態</th><th className="px-3 py-3">總金額</th><th className="px-5 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{confirmedClaims.map((claim) => <tr key={claim.id}><td className="px-5 py-4"><input aria-label={`選取 ${claim.claim_number}`} type="checkbox" checked={selectedConfirmedIds.includes(claim.id)} onChange={() => setSelectedConfirmedIds((current) => current.includes(claim.id) ? current.filter((id) => id !== claim.id) : [...current, claim.id])} /></td><td className="px-3 py-4 font-semibold">{claim.converted_order?.order_number ?? claim.claim_number}</td><td className="px-3 py-4">{claim.customer_name || "未配對客戶"}</td><td className="px-3 py-4"><ConfirmedStatusPill claim={claim} /></td><td className="px-3 py-4">{claim.converted_order?.payment_method ?? "—"}</td><td className="px-3 py-4"><Pill status={claim.converted_order?.reconciliation_status === "已付款" ? "已結帳" : "待結帳"} /></td><td className="px-3 py-4 font-semibold">{money(claim.claim_total)}</td><td className="px-5 py-4 text-right">{claim.converted_order_id && <button onClick={() => openOrder(claim.converted_order_id!)} className="text-sm font-semibold text-[#5E7665]">查看／修改 →</button>}</td></tr>)}{!confirmedClaims.length && <tr><td colSpan={8} className="p-10 text-center text-[#8D877E]">尚無已確認訂單。</td></tr>}</tbody></table></div></section>}
     <div className="mb-7 flex flex-wrap items-end justify-between gap-4"><div><button onClick={back} className="text-sm font-semibold text-[#5E7665]">← 返回連線檔期</button><p className="mt-5 text-[11px] font-bold tracking-[.18em] text-[#A09A90]">LIVE SALE CAMPAIGN</p><h1 className="mt-2 text-[29px] font-semibold">{campaign.name}</h1><p className="mt-2 text-sm text-[#7B766E]">檔期編號 {campaign.campaign_code} · {day(campaign.start_date)} 開始</p></div><button onClick={() => void openEditor({ inbox: null })} disabled={campaign.status === "已封存" || opening} className={button}>{opening ? "準備中…" : "＋ 建立喊單"}</button></div>
     {error && <p className="mb-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] p-3 text-sm text-[#A35F37]">{error}</p>}{notice && <p className="mb-5 rounded-xl border border-[#D9E5DB] bg-[#EEF5EF] p-3 text-sm text-[#477154]">{notice}</p>}
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Metric label="目前連線業績" value={money(summary.activeAmount)} note="未取消喊單總額"/><Metric label="已結帳" value={money(summary.paidAmount)} note="人員已確認收款"/><Metric label="待結帳" value={money(summary.pendingAmount)} note="完成核對、等待結帳"/><Metric label="喊單筆數" value={`${summary.claimCount} 筆`} note={summary.unresolvedCount ? `${summary.unresolvedCount} 筆待核對` : "皆已核對"}/><Metric label="採購商品" value={`${procurement.length} 項`} note="依商品與規格彙整"/></div>

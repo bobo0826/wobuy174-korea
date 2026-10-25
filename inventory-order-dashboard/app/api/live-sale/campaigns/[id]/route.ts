@@ -14,7 +14,7 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const nonNegativeInteger = (value: unknown) => value === null || value === "" || value === undefined ? null : (Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : undefined);
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
-function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Record<string, unknown>>, items: Array<Record<string, unknown>>, products: Array<Record<string, unknown>>) {
+function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Record<string, unknown>>, items: Array<Record<string, unknown>>, products: Array<Record<string, unknown>>, convertedOrders: Array<Record<string, unknown>>) {
   const itemsByClaim = new Map<string, Array<Record<string, unknown>>>();
   for (const item of items) {
     const claimItems = itemsByClaim.get(item.claim_id as string) ?? [];
@@ -22,7 +22,12 @@ function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Re
     itemsByClaim.set(item.claim_id as string, claimItems);
   }
   const productById = new Map(products.map((product) => [product.id as string, product]));
-  const hydratedClaims: Array<Record<string, unknown> & { items: Array<Record<string, unknown>> }> = claims.map((claim) => ({ ...claim, items: itemsByClaim.get(claim.id as string) ?? [] }));
+  const convertedOrderById = new Map(convertedOrders.map((order) => [order.id as string, order]));
+  const hydratedClaims: Array<Record<string, unknown> & { items: Array<Record<string, unknown>> }> = claims.map((claim) => ({
+    ...claim,
+    converted_order: typeof claim.converted_order_id === "string" ? convertedOrderById.get(claim.converted_order_id) ?? null : null,
+    items: itemsByClaim.get(claim.id as string) ?? [],
+  }));
 
   const summary = { claimCount: 0, activeAmount: 0, paidAmount: 0, pendingAmount: 0, unresolvedCount: 0 };
   const procurementLines = new Map<string, {
@@ -117,7 +122,7 @@ export async function GET(request: NextRequest, { params }: Context) {
 
     const { data: claims, error: claimError } = await supabase
       .from("live_sale_claims")
-      .select("id, campaign_id, claim_number, customer_id, customer_name, line_name, community_name, source_inbox_id, status, claim_total, note, payment_marked_at, payment_marked_by, converted_order_id, created_at, updated_at, customers(id, name, line_name)")
+      .select("id, campaign_id, claim_number, customer_id, customer_name, line_name, community_name, source_inbox_id, status, notification_status, claim_total, note, payment_marked_at, payment_marked_by, converted_order_id, created_at, updated_at, customers(id, name, line_name)")
       .eq("campaign_id", id)
       .order("created_at", { ascending: false });
     if (claimError) throw claimError;
@@ -131,7 +136,12 @@ export async function GET(request: NextRequest, { params }: Context) {
       ? await supabase.from("products").select("id, available_stock").in("id", productIds)
       : { data: [], error: null };
     if (productError) throw productError;
-    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], products ?? [])), auth.context);
+    const convertedOrderIds = [...new Set((claims ?? []).map((claim) => claim.converted_order_id).filter((orderId): orderId is string => typeof orderId === "string" && uuidPattern.test(orderId)))];
+    const { data: convertedOrders, error: convertedOrderError } = convertedOrderIds.length
+      ? await supabase.from("orders").select("id, order_number, status, payment_method, reconciliation_status, delivery_method, total").in("id", convertedOrderIds)
+      : { data: [], error: null };
+    if (convertedOrderError) throw convertedOrderError;
+    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], products ?? [], convertedOrders ?? [])), auth.context);
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法讀取連線檔期內容。") }, { status: 503 });
   }

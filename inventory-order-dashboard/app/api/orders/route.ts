@@ -34,6 +34,7 @@ const orderMethods = ["社群下單", "員工下單"];
 const paymentMethods = ["銀行轉帳", "信用卡", "現金", "貨到付款"];
 const reconciliationStatuses = ["未付款", "已付款"];
 const deliveryMethods = ["門市自取", "賣貨便"];
+const orderListSelect = "id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(id, name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity, products(specification))";
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
@@ -137,17 +138,39 @@ export async function GET(request: NextRequest) {
       return withRefreshedSession(NextResponse.json({ orderNumber: await nextOrderNumber(nextFor) }), auth.context);
     }
 
-    const includeId = new URL(request.url).searchParams.get("includeId") ?? "";
+    const url = new URL(request.url);
+    const includeId = url.searchParams.get("includeId") ?? "";
+    const startDate = url.searchParams.get("startDate") ?? "";
+    const endDate = url.searchParams.get("endDate") ?? "";
+    const status = url.searchParams.get("status") ?? "";
+    const requestedPage = Number(url.searchParams.get("page") ?? "1");
+    const requestedPageSize = Number(url.searchParams.get("pageSize") ?? "50");
+    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const pageSize = Number.isInteger(requestedPageSize) && requestedPageSize > 0 ? Math.min(requestedPageSize, 100) : 50;
+    if ((startDate && !datePattern.test(startDate)) || (endDate && !datePattern.test(endDate))) return NextResponse.json({ message: "日期格式不正確。" }, { status: 400 });
+    if (startDate && endDate && startDate > endDate) return NextResponse.json({ message: "結束日期不可早於起始日期。" }, { status: 400 });
+    if (includeId && !uuidPattern.test(includeId)) return NextResponse.json({ message: "訂單資料不正確。" }, { status: 400 });
+    if (status && status !== "未付款" && !orderStatuses.includes(status)) return NextResponse.json({ message: "訂單狀態不正確。" }, { status: 400 });
     const supabase = getSupabaseAdmin();
-    const [{ data, error }, { data: linkedClaims, error: linkedClaimsError }] = await Promise.all([
-      supabase.from("orders").select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(id, name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity, products(specification))").order("created_at", { ascending: false }),
-      supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null),
-    ]);
-    if (error) throw error;
+    const { data: linkedClaims, error: linkedClaimsError } = await supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null);
     if (linkedClaimsError) throw linkedClaimsError;
-    const liveSaleOrderIds = new Set((linkedClaims ?? []).map((claim) => claim.converted_order_id).filter(Boolean));
-    const orders = (data ?? []).filter((order) => !liveSaleOrderIds.has(order.id) || order.id === includeId);
-    return withRefreshedSession(NextResponse.json({ orders }), auth.context);
+    const liveSaleOrderIds = [...new Set((linkedClaims ?? []).map((claim) => claim.converted_order_id).filter((orderId): orderId is string => typeof orderId === "string" && uuidPattern.test(orderId)))];
+    let query = supabase.from("orders").select(orderListSelect, { count: "exact" }).order("order_date", { ascending: false }).order("created_at", { ascending: false });
+    if (startDate) query = query.gte("order_date", startDate);
+    if (endDate) query = query.lte("order_date", endDate);
+    if (status === "未付款") query = query.eq("reconciliation_status", "未付款");
+    else if (status) query = query.eq("status", status);
+    if (liveSaleOrderIds.length) query = query.not("id", "in", `(${liveSaleOrderIds.join(",")})`);
+    const offset = (page - 1) * pageSize;
+    const [listResult, directResult] = await Promise.all([
+      query.range(offset, offset + pageSize - 1),
+      includeId ? supabase.from("orders").select(orderListSelect).eq("id", includeId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    ]);
+    if (listResult.error) throw listResult.error;
+    if (directResult.error) throw directResult.error;
+    const orders = directResult.data ? [directResult.data, ...(listResult.data ?? [])] : listResult.data ?? [];
+    const total = listResult.count ?? 0;
+    return withRefreshedSession(NextResponse.json({ orders, pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } }), auth.context);
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法讀取訂單資料。") }, { status: 503 });
   }
