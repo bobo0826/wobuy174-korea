@@ -790,7 +790,7 @@ export default function AdminPage() {
         <section className="mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="site-announcement">
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#7D2F35]">LATEST NEWS</p>
           <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">前台最新消息</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">前台商品分類上方會直接輪播以下 3 則文字，不另顯示標題。可隨時更換新品、連線或活動資訊。</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">前台商品分類上方會將以下 3 則文字以連續跑馬燈播放，不另顯示標題。可隨時更換新品、連線或活動資訊。</p>
           <div className="mt-5 grid gap-3">
             {announcements.map((announcement, index) => (
               <label className="block text-sm font-medium" key={index}>第 {index + 1} 則消息<input className={inputClass} disabled={isBusy || !announcementLoaded} maxLength={180} onChange={(event) => setAnnouncements((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} placeholder={`例如：第 ${index + 1} 則最新活動資訊`} value={announcement} /></label>

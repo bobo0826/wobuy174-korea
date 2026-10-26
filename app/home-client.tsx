@@ -618,7 +618,6 @@ export function ProductCatalog({
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [announcements, setAnnouncements] = useState(() => announcementContents(initialAnnouncements));
-  const [activeAnnouncement, setActiveAnnouncement] = useState(0);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(
     () => initialProducts ?? (isSupabaseConfigured ? [] : products),
   );
@@ -685,20 +684,9 @@ export function ProductCatalog({
       .then(({ data, error }) => {
         if (!error && data) {
           setAnnouncements(announcementContents(data.map((item) => item.content)));
-          setActiveAnnouncement(0);
         }
       });
   }, []);
-
-  useEffect(() => {
-    if (announcements.length < 2) return;
-
-    const timer = window.setInterval(() => {
-      setActiveAnnouncement((current) => (current + 1) % announcements.length);
-    }, 4000);
-
-    return () => window.clearInterval(timer);
-  }, [announcements.length]);
 
   const filteredProducts = catalogProducts.filter((product) => {
     const matchesCategory =
@@ -772,10 +760,16 @@ export function ProductCatalog({
     <>
       <section id="products" className="scroll-mt-24 px-5 pb-20 pt-0 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
         <div className="mx-auto max-w-[1500px]">
-          <div aria-live="polite" className="flex min-h-12 items-center justify-center border-b border-[#D9D6D0] py-3.5 text-center sm:min-h-14 sm:py-4">
-            <p className="text-sm font-bold leading-6 tracking-[0.04em] text-[#7D2F35] transition-opacity duration-500 sm:text-base" key={activeAnnouncement}>
-              {announcements[activeAnnouncement]}
-            </p>
+          <div aria-label="最新消息" className="overflow-hidden border-b border-[#D9D6D0] py-3.5 sm:py-4" role="region">
+            <p className="sr-only">{announcements.join("；")}</p>
+            <div aria-hidden="true" className="announcement-track flex w-max min-w-full items-center whitespace-nowrap text-sm font-bold leading-6 tracking-[0.04em] text-[#7D2F35] sm:text-base">
+              {[...announcements, ...announcements].map((announcement, index) => (
+                <span className="inline-flex items-center" key={`${index}-${announcement}`}>
+                  <span>{announcement}</span>
+                  <span className="px-7 text-[#B89B77] sm:px-12">✦</span>
+                </span>
+              ))}
+            </div>
           </div>
           <div className="scrollbar-none -mx-5 flex overflow-x-auto border-y border-[#D9D6D0] px-5 sm:mx-0 sm:px-0">
             {visibleCategories.map((category) => {
