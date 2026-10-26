@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import Home, { type Category, type Product } from "./home-client";
 import { productCategoryOptions } from "./lib/product-categories";
-import { announcementContent, defaultSiteAnnouncement } from "./lib/site-announcement";
+import { announcementContents, defaultSiteAnnouncements } from "./lib/site-announcement";
 
 export const revalidate = 60;
 
@@ -102,32 +102,31 @@ const getPublishedProducts = unstable_cache(
   { revalidate },
 );
 
-const getSiteAnnouncement = unstable_cache(
-  async (): Promise<string> => {
+const getSiteAnnouncements = unstable_cache(
+  async (): Promise<string[]> => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    if (!url || !key) return defaultSiteAnnouncement;
+    if (!url || !key) return defaultSiteAnnouncements;
 
     const supabase = createClient(url, key, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const { data, error } = await supabase
-      .from("site_announcements")
-      .select("content")
-      .eq("id", true)
-      .maybeSingle();
+      .from("site_announcement_items")
+      .select("slot,content")
+      .order("slot", { ascending: true });
 
-    return error ? defaultSiteAnnouncement : announcementContent(data?.content);
+    return error ? defaultSiteAnnouncements : announcementContents(data?.map((item) => item.content));
   },
-  ["site-announcement"],
+  ["site-announcements"],
   { revalidate },
 );
 
 export default async function Page() {
-  const [initialProducts, initialAnnouncement] = await Promise.all([
+  const [initialProducts, initialAnnouncements] = await Promise.all([
     getPublishedProducts().catch(() => undefined),
-    getSiteAnnouncement().catch(() => defaultSiteAnnouncement),
+    getSiteAnnouncements().catch(() => defaultSiteAnnouncements),
   ]);
 
-  return <Home initialAnnouncement={initialAnnouncement} initialProducts={initialProducts} />;
+  return <Home initialAnnouncements={initialAnnouncements} initialProducts={initialProducts} />;
 }

@@ -20,7 +20,7 @@ import {
   type StoredProductSubcategory,
   type SubcategoryScope,
 } from "../lib/product-subcategories";
-import { announcementContent, defaultSiteAnnouncement } from "../lib/site-announcement";
+import { announcementContents, defaultSiteAnnouncements } from "../lib/site-announcement";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
 
 const inputClass =
@@ -397,7 +397,7 @@ export default function AdminPage() {
   const [subcategoryScope, setSubcategoryScope] = useState<SubcategoryScope>("japan");
   const [subcategoryLabel, setSubcategoryLabel] = useState("");
   const [subcategoryMessage, setSubcategoryMessage] = useState("");
-  const [announcement, setAnnouncement] = useState(defaultSiteAnnouncement);
+  const [announcements, setAnnouncements] = useState(defaultSiteAnnouncements);
   const [announcementLoaded, setAnnouncementLoaded] = useState(false);
   const [announcementMessage, setAnnouncementMessage] = useState("");
 
@@ -427,10 +427,9 @@ export default function AdminPage() {
     if (!supabase) return;
 
     const { data, error } = await supabase
-      .from("site_announcements")
-      .select("content")
-      .eq("id", true)
-      .maybeSingle();
+      .from("site_announcement_items")
+      .select("slot,content")
+      .order("slot", { ascending: true });
 
     if (error) {
       setAnnouncementLoaded(false);
@@ -438,7 +437,7 @@ export default function AdminPage() {
       return;
     }
 
-    setAnnouncement(announcementContent(data?.content));
+    setAnnouncements(announcementContents(data?.map((item) => item.content)));
     setAnnouncementLoaded(true);
     setAnnouncementMessage("");
   }, []);
@@ -557,9 +556,9 @@ export default function AdminPage() {
   };
 
   const saveAnnouncement = async () => {
-    const content = announcement.trim();
-    if (!content) {
-      setAnnouncementMessage("請輸入要顯示在前台的最新消息內容。");
+    const contents = announcements.map((announcement) => announcement.trim());
+    if (contents.some((content) => !content)) {
+      setAnnouncementMessage("請完整輸入 3 則要輪播的最新消息內容。");
       return;
     }
 
@@ -569,14 +568,14 @@ export default function AdminPage() {
     setIsBusy(true);
     setAnnouncementMessage("");
     const { error } = await supabase
-      .from("site_announcements")
-      .upsert({ id: true, content }, { onConflict: "id" });
+      .from("site_announcement_items")
+      .upsert(contents.map((content, index) => ({ slot: index + 1, content })), { onConflict: "slot" });
 
     if (error) {
       setAnnouncementMessage(`儲存最新消息失敗：${error.message}`);
     } else {
-      setAnnouncement(content);
-      setAnnouncementMessage("已更新前台最新消息。重新整理前台即可看到新內容。");
+      setAnnouncements(contents);
+      setAnnouncementMessage("已更新 3 則前台輪播消息。重新整理前台即可看到新內容。");
     }
     setIsBusy(false);
   };
@@ -791,11 +790,13 @@ export default function AdminPage() {
         <section className="mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="site-announcement">
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#7D2F35]">LATEST NEWS</p>
           <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">前台最新消息</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">這段文字會顯示在前台商品分類上方。可隨時更換新品、連線或活動資訊。</p>
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="block flex-1 text-sm font-medium">最新消息內容<input className={inputClass} disabled={isBusy || !announcementLoaded} maxLength={180} onChange={(event) => setAnnouncement(event.target.value)} placeholder="例如：10/25 新品已上架，現貨商品快速出貨中！" value={announcement} /></label>
-            <button className="shrink-0 rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !announcementLoaded} onClick={() => void saveAnnouncement()} type="button">儲存最新消息</button>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">前台商品分類上方會直接輪播以下 3 則文字，不另顯示標題。可隨時更換新品、連線或活動資訊。</p>
+          <div className="mt-5 grid gap-3">
+            {announcements.map((announcement, index) => (
+              <label className="block text-sm font-medium" key={index}>第 {index + 1} 則消息<input className={inputClass} disabled={isBusy || !announcementLoaded} maxLength={180} onChange={(event) => setAnnouncements((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} placeholder={`例如：第 ${index + 1} 則最新活動資訊`} value={announcement} /></label>
+            ))}
           </div>
+          <button className="mt-5 rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !announcementLoaded} onClick={() => void saveAnnouncement()} type="button">儲存 3 則輪播消息</button>
           {announcementMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{announcementMessage}</p>}
         </section>
 

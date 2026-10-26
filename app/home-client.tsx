@@ -14,7 +14,7 @@ import {
   type ProductSubcategory,
   type StoredProductSubcategory,
 } from "./lib/product-subcategories";
-import { announcementContent, defaultSiteAnnouncement } from "./lib/site-announcement";
+import { announcementContents, defaultSiteAnnouncements } from "./lib/site-announcement";
 
 export type Category = "latest" | ProductCategory;
 
@@ -601,12 +601,12 @@ export function ProductCatalog({
   initialCategory = "latest",
   showAllCategory = true,
   initialProducts,
-  initialAnnouncement = defaultSiteAnnouncement,
+  initialAnnouncements = defaultSiteAnnouncements,
 }: {
   initialCategory?: Category;
   showAllCategory?: boolean;
   initialProducts?: Product[];
-  initialAnnouncement?: string;
+  initialAnnouncements?: string[];
 }) {
   const [activeCategory, setActiveCategory] = useState<Category>(initialCategory);
   const [activeBeddingType, setActiveBeddingType] = useState("all");
@@ -617,7 +617,8 @@ export function ProductCatalog({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [announcement, setAnnouncement] = useState(() => announcementContent(initialAnnouncement));
+  const [announcements, setAnnouncements] = useState(() => announcementContents(initialAnnouncements));
+  const [activeAnnouncement, setActiveAnnouncement] = useState(0);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(
     () => initialProducts ?? (isSupabaseConfigured ? [] : products),
   );
@@ -678,14 +679,26 @@ export function ProductCatalog({
     if (!supabase) return;
 
     void supabase
-      .from("site_announcements")
-      .select("content")
-      .eq("id", true)
-      .maybeSingle()
+      .from("site_announcement_items")
+      .select("slot,content")
+      .order("slot", { ascending: true })
       .then(({ data, error }) => {
-        if (!error) setAnnouncement(announcementContent(data?.content));
+        if (!error && data) {
+          setAnnouncements(announcementContents(data.map((item) => item.content)));
+          setActiveAnnouncement(0);
+        }
       });
   }, []);
+
+  useEffect(() => {
+    if (announcements.length < 2) return;
+
+    const timer = window.setInterval(() => {
+      setActiveAnnouncement((current) => (current + 1) % announcements.length);
+    }, 4000);
+
+    return () => window.clearInterval(timer);
+  }, [announcements.length]);
 
   const filteredProducts = catalogProducts.filter((product) => {
     const matchesCategory =
@@ -759,9 +772,10 @@ export function ProductCatalog({
     <>
       <section id="products" className="scroll-mt-24 px-5 pb-20 pt-0 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
         <div className="mx-auto max-w-[1500px]">
-          <div className="flex items-center justify-between border-b border-[#D9D6D0] py-3.5 sm:py-4">
-            <p className="shrink-0 text-[11px] font-bold tracking-[0.18em] text-[#7D2F35] sm:text-xs">最新消息</p>
-            <p className="ml-4 line-clamp-2 text-right text-[12px] font-semibold leading-5 tracking-[0.02em] text-[#605B51] sm:text-sm">{announcement}</p>
+          <div aria-live="polite" className="flex min-h-12 items-center justify-center border-b border-[#D9D6D0] py-3.5 text-center sm:min-h-14 sm:py-4">
+            <p className="text-sm font-bold leading-6 tracking-[0.04em] text-[#7D2F35] transition-opacity duration-500 sm:text-base" key={activeAnnouncement}>
+              {announcements[activeAnnouncement]}
+            </p>
           </div>
           <div className="scrollbar-none -mx-5 flex overflow-x-auto border-y border-[#D9D6D0] px-5 sm:mx-0 sm:px-0">
             {visibleCategories.map((category) => {
@@ -1127,10 +1141,10 @@ export function ProductCatalog({
 
 export default function Home({
   initialProducts,
-  initialAnnouncement,
+  initialAnnouncements,
 }: {
   initialProducts?: Product[];
-  initialAnnouncement?: string;
+  initialAnnouncements?: string[];
 }) {
   return (
     <main className="overflow-x-clip bg-[#FAF7F0] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
@@ -1182,7 +1196,7 @@ export default function Home({
         </div>
       </header>
 
-      <ProductCatalog initialAnnouncement={initialAnnouncement} initialProducts={initialProducts} showAllCategory={false} />
+      <ProductCatalog initialAnnouncements={initialAnnouncements} initialProducts={initialProducts} showAllCategory={false} />
 
       <section className="border-y border-[#D9D6D0] px-5 py-5 sm:px-8 sm:py-10 lg:px-12 lg:py-14">
         <div className="mx-auto grid max-w-[1500px] gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">

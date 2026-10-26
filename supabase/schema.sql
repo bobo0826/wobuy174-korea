@@ -94,6 +94,23 @@ insert into public.site_announcements (id, content)
 values (true, '新品、連線與現貨資訊，請持續關注！')
 on conflict (id) do nothing;
 
+-- 前台輪播用的三則最新消息。保留 site_announcements 作為舊版相容資料來源。
+create table if not exists public.site_announcement_items (
+  slot smallint primary key check (slot between 1 and 3),
+  content text not null,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.site_announcement_items (slot, content)
+select 1, coalesce((select content from public.site_announcements where id = true), '新品、連線與現貨資訊，請持續關注！')
+on conflict (slot) do nothing;
+
+insert into public.site_announcement_items (slot, content)
+values
+  (2, '歡迎加入 LINE 社群，掌握最新到貨與連線消息。'),
+  (3, '現貨商品可直接私訊 LINE@ 詢問庫存與下單。')
+on conflict (slot) do nothing;
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -115,6 +132,11 @@ create trigger site_announcements_set_updated_at
 before update on public.site_announcements
 for each row execute procedure public.set_updated_at();
 
+drop trigger if exists site_announcement_items_set_updated_at on public.site_announcement_items;
+create trigger site_announcement_items_set_updated_at
+before update on public.site_announcement_items
+for each row execute procedure public.set_updated_at();
+
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -131,6 +153,7 @@ alter table public.products enable row level security;
 alter table public.admin_users enable row level security;
 alter table public.product_subcategories enable row level security;
 alter table public.site_announcements enable row level security;
+alter table public.site_announcement_items enable row level security;
 
 drop policy if exists "public can read published products" on public.products;
 create policy "public can read published products"
@@ -169,6 +192,21 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "public can read site announcement items" on public.site_announcement_items;
+create policy "public can read site announcement items"
+on public.site_announcement_items
+for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "admins can manage site announcement items" on public.site_announcement_items;
+create policy "admins can manage site announcement items"
+on public.site_announcement_items
+for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
 drop policy if exists "public can read product subcategories" on public.product_subcategories;
 create policy "public can read product subcategories"
 on public.product_subcategories
@@ -190,6 +228,8 @@ grant select on public.product_subcategories to anon, authenticated;
 grant insert, update, delete on public.product_subcategories to authenticated;
 grant select on public.site_announcements to anon, authenticated;
 grant insert, update, delete on public.site_announcements to authenticated;
+grant select on public.site_announcement_items to anon, authenticated;
+grant insert, update, delete on public.site_announcement_items to authenticated;
 
 insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', true)
