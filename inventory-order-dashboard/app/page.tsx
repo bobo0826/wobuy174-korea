@@ -2152,13 +2152,16 @@ export default function Home() {
     return () => { active = false; };
   }, []);
   useEffect(() => {
-    const orderId = new URLSearchParams(window.location.search)
-      .get("orderId")
-      ?.trim();
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get("orderId")?.trim();
     if (!orderId) return;
     setOrderSearchQuery("");
     setOrderSearchTargetId(orderId);
     setView("orders");
+  }, []);
+  useEffect(() => {
+    const requestedView = new URLSearchParams(window.location.search).get("view");
+    if (requestedView === "orders" || requestedView === "liveSale") setView(requestedView);
   }, []);
   useEffect(() => {
     if (!currentUser) return;

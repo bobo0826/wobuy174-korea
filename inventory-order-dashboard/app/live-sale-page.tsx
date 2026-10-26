@@ -1261,6 +1261,12 @@ function CampaignDetailPage({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <a
+                href="/live-sale-orders"
+                className={secondary}
+              >
+                開啟已結單訂單管理
+              </a>
               <button
                 onClick={() => printConfirmed(selectedConfirmedClaims)}
                 disabled={!printableConfirmedClaims.length}
