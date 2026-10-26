@@ -9,7 +9,14 @@ export const defaultSiteAnnouncement = defaultSiteAnnouncements[0];
 export type SiteAnnouncement = {
   slot: number;
   content: string;
+  enabled: boolean;
 };
+
+export const defaultSiteAnnouncementItems: SiteAnnouncement[] = defaultSiteAnnouncements.map((content, index) => ({
+  slot: index + 1,
+  content,
+  enabled: true,
+}));
 
 export function announcementContent(value: string | null | undefined) {
   return value?.trim() || defaultSiteAnnouncement;
@@ -18,4 +25,19 @@ export function announcementContent(value: string | null | undefined) {
 export function announcementContents(values: Array<string | null | undefined> | null | undefined) {
   const contents = (values ?? []).map((value) => value?.trim()).filter((value): value is string => Boolean(value));
   return contents.length ? contents : defaultSiteAnnouncements;
+}
+
+export function toSiteAnnouncements(values: Array<Partial<SiteAnnouncement>> | null | undefined) {
+  return defaultSiteAnnouncementItems.map((fallback) => {
+    const value = values?.find((item) => item.slot === fallback.slot);
+    return {
+      slot: fallback.slot,
+      content: value?.content?.trim() || fallback.content,
+      enabled: value?.enabled ?? fallback.enabled,
+    };
+  });
+}
+
+export function visibleAnnouncementContents(items: SiteAnnouncement[]) {
+  return items.filter((item) => item.enabled).map((item) => item.content.trim()).filter(Boolean);
 }

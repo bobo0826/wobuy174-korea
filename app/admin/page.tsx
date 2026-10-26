@@ -20,7 +20,11 @@ import {
   type StoredProductSubcategory,
   type SubcategoryScope,
 } from "../lib/product-subcategories";
-import { announcementContents, defaultSiteAnnouncements } from "../lib/site-announcement";
+import {
+  defaultSiteAnnouncementItems,
+  toSiteAnnouncements,
+  type SiteAnnouncement,
+} from "../lib/site-announcement";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
 
 const inputClass =
@@ -397,7 +401,7 @@ export default function AdminPage() {
   const [subcategoryScope, setSubcategoryScope] = useState<SubcategoryScope>("japan");
   const [subcategoryLabel, setSubcategoryLabel] = useState("");
   const [subcategoryMessage, setSubcategoryMessage] = useState("");
-  const [announcements, setAnnouncements] = useState(defaultSiteAnnouncements);
+  const [announcements, setAnnouncements] = useState<SiteAnnouncement[]>(defaultSiteAnnouncementItems);
   const [announcementLoaded, setAnnouncementLoaded] = useState(false);
   const [announcementMessage, setAnnouncementMessage] = useState("");
 
@@ -428,7 +432,7 @@ export default function AdminPage() {
 
     const { data, error } = await supabase
       .from("site_announcement_items")
-      .select("slot,content")
+      .select("slot,content,enabled")
       .order("slot", { ascending: true });
 
     if (error) {
@@ -437,7 +441,7 @@ export default function AdminPage() {
       return;
     }
 
-    setAnnouncements(announcementContents(data?.map((item) => item.content)));
+    setAnnouncements(toSiteAnnouncements(data));
     setAnnouncementLoaded(true);
     setAnnouncementMessage("");
   }, []);
@@ -556,9 +560,9 @@ export default function AdminPage() {
   };
 
   const saveAnnouncement = async () => {
-    const contents = announcements.map((announcement) => announcement.trim());
-    if (contents.some((content) => !content)) {
-      setAnnouncementMessage("請完整輸入 3 則要輪播的最新消息內容。");
+    const items = announcements.map((announcement) => ({ ...announcement, content: announcement.content.trim() }));
+    if (items.some((item) => item.enabled && !item.content)) {
+      setAnnouncementMessage("已啟用的消息需要填寫內容。");
       return;
     }
 
@@ -569,13 +573,14 @@ export default function AdminPage() {
     setAnnouncementMessage("");
     const { error } = await supabase
       .from("site_announcement_items")
-      .upsert(contents.map((content, index) => ({ slot: index + 1, content })), { onConflict: "slot" });
+      .upsert(items, { onConflict: "slot" });
 
     if (error) {
       setAnnouncementMessage(`儲存最新消息失敗：${error.message}`);
     } else {
-      setAnnouncements(contents);
-      setAnnouncementMessage("已更新 3 則前台輪播消息。重新整理前台即可看到新內容。");
+      setAnnouncements(items);
+      const enabledCount = items.filter((item) => item.enabled).length;
+      setAnnouncementMessage(enabledCount ? `已更新 ${enabledCount} 則前台跑馬燈消息。重新整理前台即可看到新內容。` : "已關閉所有前台跑馬燈消息。");
     }
     setIsBusy(false);
   };
@@ -790,10 +795,19 @@ export default function AdminPage() {
         <section className="mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="site-announcement">
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#7D2F35]">LATEST NEWS</p>
           <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">前台最新消息</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">前台商品分類上方會將以下 3 則文字以連續跑馬燈播放，不另顯示標題。可隨時更換新品、連線或活動資訊。</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">前台商品分類上方會將已啟用的消息以連續跑馬燈播放，不另顯示標題。取消勾選後會保留內容，但不會出現在前台。</p>
           <div className="mt-5 grid gap-3">
             {announcements.map((announcement, index) => (
-              <label className="block text-sm font-medium" key={index}>第 {index + 1} 則消息<input className={inputClass} disabled={isBusy || !announcementLoaded} maxLength={180} onChange={(event) => setAnnouncements((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} placeholder={`例如：第 ${index + 1} 則最新活動資訊`} value={announcement} /></label>
+              <div className="rounded-[5px] border border-[#D9D6D0] bg-[#F5F5F5] p-4" key={announcement.slot}>
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-medium">第 {index + 1} 則消息</p>
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                    <input checked={announcement.enabled} className="h-4 w-4 accent-[#7D2F35]" disabled={isBusy || !announcementLoaded} onChange={(event) => setAnnouncements((current) => current.map((item) => item.slot === announcement.slot ? { ...item, enabled: event.target.checked } : item))} type="checkbox" />
+                    是否顯示
+                  </label>
+                </div>
+                <input className={inputClass} disabled={isBusy || !announcementLoaded} maxLength={180} onChange={(event) => setAnnouncements((current) => current.map((item) => item.slot === announcement.slot ? { ...item, content: event.target.value } : item))} placeholder={`例如：第 ${index + 1} 則最新活動資訊`} value={announcement.content} />
+              </div>
             ))}
           </div>
           <button className="mt-5 rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !announcementLoaded} onClick={() => void saveAnnouncement()} type="button">儲存 3 則輪播消息</button>

@@ -98,8 +98,12 @@ on conflict (id) do nothing;
 create table if not exists public.site_announcement_items (
   slot smallint primary key check (slot between 1 and 3),
   content text not null,
+  enabled boolean not null default true,
   updated_at timestamptz not null default now()
 );
+
+alter table public.site_announcement_items
+add column if not exists enabled boolean not null default true;
 
 insert into public.site_announcement_items (slot, content)
 select 1, coalesce((select content from public.site_announcements where id = true), '新品、連線與現貨資訊，請持續關注！')

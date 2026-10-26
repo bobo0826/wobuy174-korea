@@ -3,7 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 
 import Home, { type Category, type Product } from "./home-client";
 import { productCategoryOptions } from "./lib/product-categories";
-import { announcementContents, defaultSiteAnnouncements } from "./lib/site-announcement";
+import {
+  defaultSiteAnnouncementItems,
+  toSiteAnnouncements,
+  type SiteAnnouncement,
+} from "./lib/site-announcement";
 
 export const revalidate = 60;
 
@@ -103,20 +107,20 @@ const getPublishedProducts = unstable_cache(
 );
 
 const getSiteAnnouncements = unstable_cache(
-  async (): Promise<string[]> => {
+  async (): Promise<SiteAnnouncement[]> => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    if (!url || !key) return defaultSiteAnnouncements;
+    if (!url || !key) return defaultSiteAnnouncementItems;
 
     const supabase = createClient(url, key, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const { data, error } = await supabase
       .from("site_announcement_items")
-      .select("slot,content")
+      .select("slot,content,enabled")
       .order("slot", { ascending: true });
 
-    return error ? defaultSiteAnnouncements : announcementContents(data?.map((item) => item.content));
+    return error ? defaultSiteAnnouncementItems : toSiteAnnouncements(data);
   },
   ["site-announcements"],
   { revalidate },
@@ -125,7 +129,7 @@ const getSiteAnnouncements = unstable_cache(
 export default async function Page() {
   const [initialProducts, initialAnnouncements] = await Promise.all([
     getPublishedProducts().catch(() => undefined),
-    getSiteAnnouncements().catch(() => defaultSiteAnnouncements),
+    getSiteAnnouncements().catch(() => defaultSiteAnnouncementItems),
   ]);
 
   return <Home initialAnnouncements={initialAnnouncements} initialProducts={initialProducts} />;

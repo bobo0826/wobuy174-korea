@@ -14,7 +14,12 @@ import {
   type ProductSubcategory,
   type StoredProductSubcategory,
 } from "./lib/product-subcategories";
-import { announcementContents, defaultSiteAnnouncements } from "./lib/site-announcement";
+import {
+  defaultSiteAnnouncementItems,
+  toSiteAnnouncements,
+  visibleAnnouncementContents,
+  type SiteAnnouncement,
+} from "./lib/site-announcement";
 
 export type Category = "latest" | ProductCategory;
 
@@ -601,12 +606,12 @@ export function ProductCatalog({
   initialCategory = "latest",
   showAllCategory = true,
   initialProducts,
-  initialAnnouncements = defaultSiteAnnouncements,
+  initialAnnouncements = defaultSiteAnnouncementItems,
 }: {
   initialCategory?: Category;
   showAllCategory?: boolean;
   initialProducts?: Product[];
-  initialAnnouncements?: string[];
+  initialAnnouncements?: SiteAnnouncement[];
 }) {
   const [activeCategory, setActiveCategory] = useState<Category>(initialCategory);
   const [activeBeddingType, setActiveBeddingType] = useState("all");
@@ -617,7 +622,7 @@ export function ProductCatalog({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [announcements, setAnnouncements] = useState(() => announcementContents(initialAnnouncements));
+  const [announcements, setAnnouncements] = useState(() => toSiteAnnouncements(initialAnnouncements));
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(
     () => initialProducts ?? (isSupabaseConfigured ? [] : products),
   );
@@ -679,14 +684,16 @@ export function ProductCatalog({
 
     void supabase
       .from("site_announcement_items")
-      .select("slot,content")
+      .select("slot,content,enabled")
       .order("slot", { ascending: true })
       .then(({ data, error }) => {
         if (!error && data) {
-          setAnnouncements(announcementContents(data.map((item) => item.content)));
+          setAnnouncements(toSiteAnnouncements(data));
         }
       });
   }, []);
+
+  const visibleAnnouncements = visibleAnnouncementContents(announcements);
 
   const filteredProducts = catalogProducts.filter((product) => {
     const matchesCategory =
@@ -760,17 +767,19 @@ export function ProductCatalog({
     <>
       <section id="products" className="scroll-mt-24 px-5 pb-20 pt-0 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
         <div className="mx-auto max-w-[1500px]">
-          <div aria-label="最新消息" className="overflow-hidden border-b border-[#D9D6D0] py-3.5 sm:py-4" role="region">
-            <p className="sr-only">{announcements.join("；")}</p>
-            <div aria-hidden="true" className="announcement-track flex w-max min-w-full items-center whitespace-nowrap text-sm font-bold leading-6 tracking-[0.04em] text-[#7D2F35] sm:text-base">
-              {[...announcements, ...announcements].map((announcement, index) => (
-                <span className="inline-flex items-center" key={`${index}-${announcement}`}>
-                  <span>{announcement}</span>
-                  <span className="px-7 text-[#B89B77] sm:px-12">✦</span>
-                </span>
-              ))}
+          {visibleAnnouncements.length > 0 && (
+            <div aria-label="最新消息" className="overflow-hidden border-b border-[#D9D6D0] py-3.5 sm:py-4" role="region">
+              <p className="sr-only">{visibleAnnouncements.join("；")}</p>
+              <div aria-hidden="true" className="announcement-track flex w-max min-w-full items-center whitespace-nowrap text-sm font-bold leading-6 tracking-[0.04em] text-[#7D2F35] sm:text-base">
+                {[...visibleAnnouncements, ...visibleAnnouncements].map((announcement, index) => (
+                  <span className="inline-flex items-center" key={`${index}-${announcement}`}>
+                    <span>{announcement}</span>
+                    <span className="px-7 text-[#B89B77] sm:px-12">✦</span>
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           <div className="scrollbar-none -mx-5 flex overflow-x-auto border-y border-[#D9D6D0] px-5 sm:mx-0 sm:px-0">
             {visibleCategories.map((category) => {
               const isActive = activeCategory === category.id;
@@ -1138,7 +1147,7 @@ export default function Home({
   initialAnnouncements,
 }: {
   initialProducts?: Product[];
-  initialAnnouncements?: string[];
+  initialAnnouncements?: SiteAnnouncement[];
 }) {
   return (
     <main className="overflow-x-clip bg-[#FAF7F0] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
