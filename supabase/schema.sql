@@ -83,6 +83,17 @@ create table if not exists public.admin_users (
   created_at timestamptz not null default now()
 );
 
+-- 前台「最新消息」：由後台直接更新，id 固定為 true 以維持單一公告。
+create table if not exists public.site_announcements (
+  id boolean primary key default true check (id),
+  content text not null,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.site_announcements (id, content)
+values (true, '新品、連線與現貨資訊，請持續關注！')
+on conflict (id) do nothing;
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -97,6 +108,11 @@ $$;
 drop trigger if exists products_set_updated_at on public.products;
 create trigger products_set_updated_at
 before update on public.products
+for each row execute procedure public.set_updated_at();
+
+drop trigger if exists site_announcements_set_updated_at on public.site_announcements;
+create trigger site_announcements_set_updated_at
+before update on public.site_announcements
 for each row execute procedure public.set_updated_at();
 
 create or replace function public.is_admin()
@@ -114,6 +130,7 @@ $$;
 alter table public.products enable row level security;
 alter table public.admin_users enable row level security;
 alter table public.product_subcategories enable row level security;
+alter table public.site_announcements enable row level security;
 
 drop policy if exists "public can read published products" on public.products;
 create policy "public can read published products"
@@ -137,6 +154,21 @@ for select
 to authenticated
 using (user_id = auth.uid());
 
+drop policy if exists "public can read site announcements" on public.site_announcements;
+create policy "public can read site announcements"
+on public.site_announcements
+for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "admins can manage site announcements" on public.site_announcements;
+create policy "admins can manage site announcements"
+on public.site_announcements
+for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
 drop policy if exists "public can read product subcategories" on public.product_subcategories;
 create policy "public can read product subcategories"
 on public.product_subcategories
@@ -156,6 +188,8 @@ grant select on public.products to anon, authenticated;
 grant insert, update, delete on public.products to authenticated;
 grant select on public.product_subcategories to anon, authenticated;
 grant insert, update, delete on public.product_subcategories to authenticated;
+grant select on public.site_announcements to anon, authenticated;
+grant insert, update, delete on public.site_announcements to authenticated;
 
 insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', true)

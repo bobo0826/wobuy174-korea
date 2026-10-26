@@ -14,6 +14,7 @@ import {
   type ProductSubcategory,
   type StoredProductSubcategory,
 } from "./lib/product-subcategories";
+import { announcementContent, defaultSiteAnnouncement } from "./lib/site-announcement";
 
 export type Category = "latest" | ProductCategory;
 
@@ -88,7 +89,20 @@ function subscribeToPageSizeChange(onStoreChange: () => void) {
 }
 
 function getPageSizeSnapshot() {
-  return window.matchMedia(desktopPageSizeQuery).matches ? 18 : 15;
+  return window.matchMedia(desktopPageSizeQuery).matches ? 18 : 12;
+}
+
+type PaginationItem = number | "start-ellipsis" | "end-ellipsis";
+
+function paginationItems(totalPages: number, activePage: number): PaginationItem[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  if (activePage <= 4) return [1, 2, 3, 4, "end-ellipsis", totalPages];
+  if (activePage >= totalPages - 3) {
+    return [1, "start-ellipsis", totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+
+  return [1, "start-ellipsis", activePage - 1, activePage, activePage + 1, "end-ellipsis", totalPages];
 }
 
 const categories: { id: Category; label: string }[] = [
@@ -587,10 +601,12 @@ export function ProductCatalog({
   initialCategory = "latest",
   showAllCategory = true,
   initialProducts,
+  initialAnnouncement = defaultSiteAnnouncement,
 }: {
   initialCategory?: Category;
   showAllCategory?: boolean;
   initialProducts?: Product[];
+  initialAnnouncement?: string;
 }) {
   const [activeCategory, setActiveCategory] = useState<Category>(initialCategory);
   const [activeBeddingType, setActiveBeddingType] = useState("all");
@@ -601,6 +617,7 @@ export function ProductCatalog({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [announcement, setAnnouncement] = useState(() => announcementContent(initialAnnouncement));
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(
     () => initialProducts ?? (isSupabaseConfigured ? [] : products),
   );
@@ -653,6 +670,20 @@ export function ProductCatalog({
       .order("created_at", { ascending: true })
       .then(({ data, error }) => {
         if (!error && data) setSubcategories(toProductSubcategories(data as StoredProductSubcategory[]));
+      });
+  }, []);
+
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    void supabase
+      .from("site_announcements")
+      .select("content")
+      .eq("id", true)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!error) setAnnouncement(announcementContent(data?.content));
       });
   }, []);
 
@@ -729,8 +760,8 @@ export function ProductCatalog({
       <section id="products" className="scroll-mt-24 px-5 pb-20 pt-0 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
         <div className="mx-auto max-w-[1500px]">
           <div className="flex items-center justify-between border-b border-[#D9D6D0] py-3.5 sm:py-4">
-            <p className="text-[10px] font-semibold tracking-[0.2em] text-[#605B51]/70">SHOP BY CATEGORY</p>
-            <p className="text-[11px] tracking-[0.06em] text-[#605B51]/60 sm:text-xs">日韓小物・限量連線・現貨商品</p>
+            <p className="shrink-0 text-[11px] font-bold tracking-[0.18em] text-[#7D2F35] sm:text-xs">最新消息</p>
+            <p className="ml-4 line-clamp-2 text-right text-[12px] font-semibold leading-5 tracking-[0.02em] text-[#605B51] sm:text-sm">{announcement}</p>
           </div>
           <div className="scrollbar-none -mx-5 flex overflow-x-auto border-y border-[#D9D6D0] px-5 sm:mx-0 sm:px-0">
             {visibleCategories.map((category) => {
@@ -895,7 +926,7 @@ export function ProductCatalog({
             <span className="text-xs tracking-[0.08em] text-[#605B51]/65">{filteredProducts.length} ITEMS</span>
           </div>
 
-          <div id="products-grid" className="grid grid-cols-3 gap-x-3 gap-y-8 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-10 md:grid-cols-5 lg:grid-cols-6 lg:gap-x-5">
+          <div id="products-grid" className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-10 md:grid-cols-5 lg:grid-cols-6 lg:gap-x-5">
             {visibleProducts.map((product, index) => (
               <button
                 aria-label={`查看 ${product.name} 商品資訊`}
@@ -910,7 +941,7 @@ export function ProductCatalog({
                       className="object-cover transition-transform duration-500 group-hover:scale-[1.015]"
                       fill
                       priority={index < 3}
-                      sizes="(min-width: 1024px) 16vw, (min-width: 768px) 20vw, (min-width: 640px) 25vw, 33vw"
+                      sizes="(min-width: 1024px) 16vw, (min-width: 768px) 20vw, (min-width: 640px) 25vw, 50vw"
                       src={product.image}
                     />
                   ) : null}
@@ -936,36 +967,43 @@ export function ProductCatalog({
           )}
 
           {totalPages > 1 && (
-            <nav className="mt-12 flex items-center justify-center gap-2" aria-label="商品分頁">
+            <nav className="mt-12 flex items-center justify-center gap-1.5 sm:gap-2" aria-label="商品分頁">
               <button
                 aria-label="上一頁"
-                className="rounded-full border border-[#D9D6D0] px-4 py-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-35 hover:border-[#605B51]"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[#D9D6D0] text-base leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-35 hover:border-[#605B51]"
                 disabled={activePage === 1}
                 onClick={() => selectPage(activePage - 1)}
               >
-                上一頁
+                ‹
               </button>
-              {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
-                <button
-                  aria-current={activePage === page ? "page" : undefined}
-                  className={`h-9 w-9 rounded-full text-xs transition-colors ${
-                    activePage === page
-                      ? "bg-[#605B51] text-[#F5F5F5]"
-                      : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
-                  }`}
-                  key={page}
-                  onClick={() => selectPage(page)}
-                >
-                  {page}
-                </button>
-              ))}
+              {paginationItems(totalPages, activePage).map((item) => {
+                if (typeof item !== "number") {
+                  return <span aria-hidden="true" className="flex h-9 w-5 items-center justify-center text-xs text-[#605B51]/55" key={item}>…</span>;
+                }
+
+                return (
+                  <button
+                    aria-current={activePage === item ? "page" : undefined}
+                    aria-label={`第 ${item} 頁`}
+                    className={`h-9 w-9 rounded-full text-xs transition-colors ${
+                      activePage === item
+                        ? "bg-[#605B51] text-[#F5F5F5]"
+                        : "bg-[#EAE8E4] text-[#605B51] hover:bg-[#D9D6D0]"
+                    }`}
+                    key={item}
+                    onClick={() => selectPage(item)}
+                  >
+                    {item}
+                  </button>
+                );
+              })}
               <button
                 aria-label="下一頁"
-                className="rounded-full border border-[#D9D6D0] px-4 py-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-35 hover:border-[#605B51]"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[#D9D6D0] text-base leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-35 hover:border-[#605B51]"
                 disabled={activePage === totalPages}
                 onClick={() => selectPage(activePage + 1)}
               >
-                下一頁
+                ›
               </button>
             </nav>
           )}
@@ -1087,7 +1125,13 @@ export function ProductCatalog({
   );
 }
 
-export default function Home({ initialProducts }: { initialProducts?: Product[] }) {
+export default function Home({
+  initialProducts,
+  initialAnnouncement,
+}: {
+  initialProducts?: Product[];
+  initialAnnouncement?: string;
+}) {
   return (
     <main className="overflow-x-clip bg-[#FAF7F0] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
       <div className="bg-[#605B51] px-4 py-2 text-center text-[11px] tracking-[0.08em] text-[#F5F5F5] sm:text-xs">
@@ -1138,7 +1182,7 @@ export default function Home({ initialProducts }: { initialProducts?: Product[] 
         </div>
       </header>
 
-      <ProductCatalog initialProducts={initialProducts} showAllCategory={false} />
+      <ProductCatalog initialAnnouncement={initialAnnouncement} initialProducts={initialProducts} showAllCategory={false} />
 
       <section className="border-y border-[#D9D6D0] px-5 py-5 sm:px-8 sm:py-10 lg:px-12 lg:py-14">
         <div className="mx-auto grid max-w-[1500px] gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">

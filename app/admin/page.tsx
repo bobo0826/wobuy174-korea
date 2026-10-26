@@ -20,6 +20,7 @@ import {
   type StoredProductSubcategory,
   type SubcategoryScope,
 } from "../lib/product-subcategories";
+import { announcementContent, defaultSiteAnnouncement } from "../lib/site-announcement";
 import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
 
 const inputClass =
@@ -396,6 +397,9 @@ export default function AdminPage() {
   const [subcategoryScope, setSubcategoryScope] = useState<SubcategoryScope>("japan");
   const [subcategoryLabel, setSubcategoryLabel] = useState("");
   const [subcategoryMessage, setSubcategoryMessage] = useState("");
+  const [announcement, setAnnouncement] = useState(defaultSiteAnnouncement);
+  const [announcementLoaded, setAnnouncementLoaded] = useState(false);
+  const [announcementMessage, setAnnouncementMessage] = useState("");
 
   const loadSubcategories = useCallback(async () => {
     const supabase = getSupabaseClient();
@@ -418,21 +422,48 @@ export default function AdminPage() {
     setSubcategoryMessage("");
   }, []);
 
+  const loadAnnouncement = useCallback(async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .from("site_announcements")
+      .select("content")
+      .eq("id", true)
+      .maybeSingle();
+
+    if (error) {
+      setAnnouncementLoaded(false);
+      setAnnouncementMessage("最新消息功能尚未啟用，請先在 Supabase SQL Editor 執行最新資料庫更新。");
+      return;
+    }
+
+    setAnnouncement(announcementContent(data?.content));
+    setAnnouncementLoaded(true);
+    setAnnouncementMessage("");
+  }, []);
+
   useEffect(() => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
     void supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
-      if (data.session?.user) void loadSubcategories();
+      if (data.session?.user) {
+        void loadSubcategories();
+        void loadAnnouncement();
+      }
     });
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) void loadSubcategories();
+      if (session?.user) {
+        void loadSubcategories();
+        void loadAnnouncement();
+      }
     });
 
     return () => authListener.subscription.unsubscribe();
-  }, [loadSubcategories]);
+  }, [loadAnnouncement, loadSubcategories]);
 
   const signIn = async () => {
     const supabase = getSupabaseClient();
@@ -521,6 +552,31 @@ export default function AdminPage() {
     } else {
       await loadSubcategories();
       setSubcategoryMessage(`已刪除「${subcategory.label}」。`);
+    }
+    setIsBusy(false);
+  };
+
+  const saveAnnouncement = async () => {
+    const content = announcement.trim();
+    if (!content) {
+      setAnnouncementMessage("請輸入要顯示在前台的最新消息內容。");
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    setIsBusy(true);
+    setAnnouncementMessage("");
+    const { error } = await supabase
+      .from("site_announcements")
+      .upsert({ id: true, content }, { onConflict: "id" });
+
+    if (error) {
+      setAnnouncementMessage(`儲存最新消息失敗：${error.message}`);
+    } else {
+      setAnnouncement(content);
+      setAnnouncementMessage("已更新前台最新消息。重新整理前台即可看到新內容。");
     }
     setIsBusy(false);
   };
@@ -730,6 +786,17 @@ export default function AdminPage() {
             <p className="mt-2 text-sm leading-6 text-[#605B51]/70">集中管理商品分類、前台顯示與排列順序。</p>
           </div>
           <Link className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5]" href="/admin/products">前往商品列表</Link>
+        </section>
+
+        <section className="mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="site-announcement">
+          <p className="text-[10px] font-semibold tracking-[0.22em] text-[#7D2F35]">LATEST NEWS</p>
+          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">前台最新消息</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">這段文字會顯示在前台商品分類上方。可隨時更換新品、連線或活動資訊。</p>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="block flex-1 text-sm font-medium">最新消息內容<input className={inputClass} disabled={isBusy || !announcementLoaded} maxLength={180} onChange={(event) => setAnnouncement(event.target.value)} placeholder="例如：10/25 新品已上架，現貨商品快速出貨中！" value={announcement} /></label>
+            <button className="shrink-0 rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !announcementLoaded} onClick={() => void saveAnnouncement()} type="button">儲存最新消息</button>
+          </div>
+          {announcementMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{announcementMessage}</p>}
         </section>
 
         <section className="mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="subcategory-management">

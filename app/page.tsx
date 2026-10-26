@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import Home, { type Category, type Product } from "./home-client";
 import { productCategoryOptions } from "./lib/product-categories";
+import { announcementContent, defaultSiteAnnouncement } from "./lib/site-announcement";
 
 export const revalidate = 60;
 
@@ -101,8 +102,32 @@ const getPublishedProducts = unstable_cache(
   { revalidate },
 );
 
-export default async function Page() {
-  const initialProducts = await getPublishedProducts().catch(() => undefined);
+const getSiteAnnouncement = unstable_cache(
+  async (): Promise<string> => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (!url || !key) return defaultSiteAnnouncement;
 
-  return <Home initialProducts={initialProducts} />;
+    const supabase = createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data, error } = await supabase
+      .from("site_announcements")
+      .select("content")
+      .eq("id", true)
+      .maybeSingle();
+
+    return error ? defaultSiteAnnouncement : announcementContent(data?.content);
+  },
+  ["site-announcement"],
+  { revalidate },
+);
+
+export default async function Page() {
+  const [initialProducts, initialAnnouncement] = await Promise.all([
+    getPublishedProducts().catch(() => undefined),
+    getSiteAnnouncement().catch(() => defaultSiteAnnouncement),
+  ]);
+
+  return <Home initialAnnouncement={initialAnnouncement} initialProducts={initialProducts} />;
 }
