@@ -139,6 +139,7 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
   const [selected, setSelected] = useState<StoredOrder | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [query, setQuery] = useState(initialQuery);
+  const [debouncedQuery, setDebouncedQuery] = useState(initialQuery.trim());
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [status, setStatus] = useState("全部");
@@ -150,15 +151,35 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQuery]);
+
+  useEffect(() => {
     let active = true;
     void (async () => {
       setLoading(true);
       try {
+        if (initialOrderId) {
+          const response = await fetch(`/api/orders/${encodeURIComponent(initialOrderId)}`);
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.message ?? "無法讀取一般訂單。");
+          if (active) {
+            const directOrder = result.order as StoredOrder | undefined;
+            setOrders(directOrder ? [directOrder] : []);
+            setPagination({ page: 1, pageSize: 1, total: directOrder ? 1 : 0, totalPages: 1 });
+          }
+          return;
+        }
         const params = new URLSearchParams();
-        if (initialOrderId) params.set("includeId", initialOrderId);
         if (startDate) params.set("startDate", startDate);
         if (endDate) params.set("endDate", endDate);
         if (status !== "全部") params.set("status", status);
+        if (debouncedQuery) params.set("query", debouncedQuery);
         params.set("page", String(page));
         params.set("pageSize", "50");
         const response = await fetch(`/api/orders${params.size ? `?${params.toString()}` : ""}`);
@@ -172,16 +193,18 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
       }
     })();
     return () => { active = false; };
-  }, [created, endDate, initialOrderId, page, startDate, status]);
+  }, [created, debouncedQuery, endDate, initialOrderId, page, startDate, status]);
 
-  useEffect(() => { setQuery(initialQuery); }, [initialQuery]);
+  useEffect(() => {
+    setQuery(initialQuery);
+    setDebouncedQuery(initialQuery.trim());
+  }, [initialQuery]);
   useEffect(() => { setSelectedIds([]); }, [endDate, query, startDate, status, page]);
   // 連線檔期從已確認訂單帶進來的資料只供直接編輯；離開詳情後不混入一般訂單列表。
   const visible = useMemo(() => orders.filter((order) => {
     if (initialOrderId && order.id === initialOrderId) return false;
-    const matchesKeyword = !query.trim() || [order.order_number, order.customers?.name, order.customers?.line_name, ...order.order_items.map((item) => item.product_name)].join(" ").toLowerCase().includes(query.trim().toLowerCase());
-    return matchesKeyword;
-  }), [initialOrderId, orders, query]);
+    return true;
+  }), [initialOrderId, orders]);
   const selectedOrders = useMemo(() => orders.filter((order) => selectedIds.includes(order.id)), [orders, selectedIds]);
   const printableOrders = selectedOrders.filter((order) => order.status !== "已取消");
   const arrivalOrders = selectedOrders.filter((order) => order.status === "預購中");

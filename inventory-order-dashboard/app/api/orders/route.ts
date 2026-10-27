@@ -48,6 +48,12 @@ const nonNegativeInteger = (value: unknown) => {
   return Number.isInteger(number) && number >= 0 ? number : null;
 };
 
+function searchPattern(value: string) {
+  // PostgREST 的 or 篩選以逗號與括號作為語法；移除這些保留字元，
+  // 避免搜尋內容被當成篩選語法，同時保留中文、英數與一般商品名稱。
+  return `%${value.replace(/[%,_()]/g, " ").replace(/\\s+/g, " ").trim()}%`;
+}
+
 function datePrefix(orderDate: string) {
   return orderDate.replaceAll("-", "");
 }
@@ -140,6 +146,7 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
     const includeId = url.searchParams.get("includeId") ?? "";
+    const queryText = text(url.searchParams.get("query"));
     const startDate = url.searchParams.get("startDate") ?? "";
     const endDate = url.searchParams.get("endDate") ?? "";
     const status = url.searchParams.get("status") ?? "";
@@ -150,6 +157,7 @@ export async function GET(request: NextRequest) {
     if ((startDate && !datePattern.test(startDate)) || (endDate && !datePattern.test(endDate))) return NextResponse.json({ message: "日期格式不正確。" }, { status: 400 });
     if (startDate && endDate && startDate > endDate) return NextResponse.json({ message: "結束日期不可早於起始日期。" }, { status: 400 });
     if (includeId && !uuidPattern.test(includeId)) return NextResponse.json({ message: "訂單資料不正確。" }, { status: 400 });
+    if (queryText.length > 80) return NextResponse.json({ message: "搜尋關鍵字不可超過 80 個字。" }, { status: 400 });
     if (status && status !== "未付款" && !orderStatuses.includes(status)) return NextResponse.json({ message: "訂單狀態不正確。" }, { status: 400 });
     const supabase = getSupabaseAdmin();
     const { data: linkedClaims, error: linkedClaimsError } = await supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null);
@@ -161,6 +169,31 @@ export async function GET(request: NextRequest) {
     if (status === "未付款") query = query.eq("reconciliation_status", "未付款");
     else if (status) query = query.eq("status", status);
     if (liveSaleOrderIds.length) query = query.not("id", "in", `(${liveSaleOrderIds.join(",")})`);
+    if (queryText) {
+      const pattern = searchPattern(queryText);
+      const [customerResult, itemResult, orderNumberResult] = await Promise.all([
+        supabase.from("customers").select("id").or(`name.ilike.${pattern},line_name.ilike.${pattern}`).limit(200),
+        supabase.from("order_items").select("order_id").ilike("product_name", pattern).limit(500),
+        supabase.from("orders").select("id").ilike("order_number", pattern).limit(200),
+      ]);
+      if (customerResult.error) throw customerResult.error;
+      if (itemResult.error) throw itemResult.error;
+      if (orderNumberResult.error) throw orderNumberResult.error;
+      const customerIds = (customerResult.data ?? []).map((customer) => customer.id);
+      const itemOrderIds = (itemResult.data ?? []).map((item) => item.order_id).filter((id): id is string => typeof id === "string");
+      const numberOrderIds = (orderNumberResult.data ?? []).map((order) => order.id);
+      const matchingOrderIds = [...new Set([...itemOrderIds, ...numberOrderIds])];
+      if (customerIds.length) {
+        const { data: customerOrders, error: customerOrdersError } = await supabase.from("orders").select("id").in("customer_id", customerIds).limit(500);
+        if (customerOrdersError) throw customerOrdersError;
+        matchingOrderIds.push(...(customerOrders ?? []).map((order) => order.id));
+      }
+      const ids = [...new Set(matchingOrderIds)];
+      if (!ids.length) {
+        return withRefreshedSession(NextResponse.json({ orders: [], pagination: { page, pageSize, total: 0, totalPages: 1 } }), auth.context);
+      }
+      query = query.in("id", ids);
+    }
     const offset = (page - 1) * pageSize;
     const [listResult, directResult] = await Promise.all([
       query.range(offset, offset + pageSize - 1),

@@ -19,21 +19,15 @@ export function DirectOrderPage({ orderId }: { orderId: string }) {
     let active = true;
     void (async () => {
       try {
-        const params = new URLSearchParams({
-          includeId: orderId,
-          page: "1",
-          pageSize: "1",
-        });
-        const response = await fetch(`/api/orders?${params.toString()}`);
+        // 單筆頁面不需要先讀取訂單清單。使用專用端點可避免在每次跳轉時
+        // 同時查詢一般訂單列表與連線喊單，訂單數量增加後也能維持開啟速度。
+        const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
         const result = await response.json();
         if (!response.ok) {
           throw new Error(result.message ?? "無法讀取一般訂單。");
         }
-        const matched = (result.orders ?? []).find(
-          (item: StoredOrder) => item.id === orderId,
-        );
-        if (!matched) throw new Error("找不到這張一般訂單。");
-        if (active) setOrder(matched);
+        if (!result.order) throw new Error("找不到這張一般訂單。");
+        if (active) setOrder(result.order as StoredOrder);
       } catch (reason) {
         if (active) {
           setError(
