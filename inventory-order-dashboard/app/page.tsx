@@ -1,12 +1,15 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Dashboard } from "./dashboard-summary";
-import { FinancePage } from "./finance-page";
-import { LiveSalePage } from "./live-sale-page";
-import { OrdersV2 } from "./orders-page-v2";
-import { ProductOrderHistory } from "./product-order-history";
-import { PurchasesPageV2 } from "./purchases-page-v3";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+
+const deferredPage = () => <section className="rounded-2xl border border-[#E9E5DF] bg-white p-8 text-center text-sm font-semibold text-[#7B766E]">頁面載入中…</section>;
+const Dashboard = dynamic(() => import("./dashboard-summary").then((module) => module.Dashboard), { loading: deferredPage });
+const FinancePage = dynamic(() => import("./finance-page").then((module) => module.FinancePage), { loading: deferredPage });
+const LiveSalePage = dynamic(() => import("./live-sale-page").then((module) => module.LiveSalePage), { loading: deferredPage });
+const OrdersV2 = dynamic(() => import("./orders-page-v2").then((module) => module.OrdersV2), { loading: deferredPage });
+const ProductOrderHistory = dynamic(() => import("./product-order-history").then((module) => module.ProductOrderHistory), { loading: deferredPage });
+const PurchasesPageV2 = dynamic(() => import("./purchases-page-v3").then((module) => module.PurchasesPageV2), { loading: deferredPage });
 
 type View =
   | "dashboard"
@@ -28,6 +31,20 @@ type View =
   | "importProducts"
   | "newPurchase";
 type Tone = "green" | "orange" | "blue" | "stone";
+
+const catalogViews = new Set<View>([
+  "liveSale",
+  "products",
+  "product",
+  "inventory",
+  "stock",
+  "purchases",
+  "create",
+  "newProduct",
+  "editProduct",
+  "importProducts",
+  "newPurchase",
+]);
 
 type CurrentUser = {
   id: string;
@@ -2112,6 +2129,8 @@ export default function Home() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseOrder | null>(null);
   const [databaseProducts, setDatabaseProducts] = useState<Product[]>([]);
+  const [productsLoaded, setProductsLoaded] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(false);
   const [stock, setStock] = useState<Record<string, number>>(() => Object.fromEntries(products.map(product => [String(product.id), product.available])));
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
@@ -2123,14 +2142,20 @@ export default function Home() {
   const globalKeyword = globalSearchQuery.trim().toLowerCase();
   const globalProductMatches = useMemo(() => !globalKeyword ? [] : databaseProducts.filter((product) => [product.sku, product.name, product.country, product.category, product.subcategory, product.specification].join(" ").toLowerCase().includes(globalKeyword)).slice(0, 5), [databaseProducts, globalKeyword]);
   const globalOrderMatches = useMemo(() => !globalKeyword ? [] : globalOrders.filter((order) => [order.order_number, order.customers?.name, order.customers?.line_name, ...order.order_items.map((item) => item.product_name)].join(" ").toLowerCase().includes(globalKeyword)).slice(0, 5), [globalOrders, globalKeyword]);
-  const refreshProducts = async () => {
-    const response = await fetch("/api/products");
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.message ?? "無法更新商品庫存。");
-    const loaded: Product[] = (result.products ?? []).map((product: StoredProduct) => toProduct(product));
-    setDatabaseProducts(loaded);
-    setStock((previous) => ({ ...previous, ...Object.fromEntries(loaded.map((product) => [String(product.id), product.available])) }));
-  };
+  const refreshProducts = useCallback(async () => {
+    setProductsLoading(true);
+    try {
+      const response = await fetch("/api/products");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法更新商品庫存。");
+      const loaded: Product[] = (result.products ?? []).map((product: StoredProduct) => toProduct(product));
+      setDatabaseProducts(loaded);
+      setStock((previous) => ({ ...previous, ...Object.fromEntries(loaded.map((product) => [String(product.id), product.available])) }));
+      setProductsLoaded(true);
+    } finally {
+      setProductsLoading(false);
+    }
+  }, []);
   useEffect(() => {
     let active = true;
     const loadSession = async () => {
@@ -2164,14 +2189,19 @@ export default function Home() {
     if (requestedView === "orders" || requestedView === "liveSale") setView(requestedView);
   }, []);
   useEffect(() => {
-    if (!currentUser) return;
-    let active = true;
+    if (!currentUser || !catalogViews.has(view) || productsLoaded || productsLoading) return;
     void refreshProducts().catch(() => {
       // 商品資料庫連線失敗時，仍保留既有示範資料供介面操作。
     });
-    return () => { active = false; };
-  }, [currentUser]);
-  const go = (next: View) => { if (next === "orders") { setOrderSearchQuery(""); setOrderSearchTargetId(""); } setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); if (next === "stock") void refreshProducts(); };
+  }, [currentUser, productsLoaded, productsLoading, refreshProducts, view]);
+  const go = (next: View) => {
+    if (next === "orders") { setOrderSearchQuery(""); setOrderSearchTargetId(""); }
+    setView(next);
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (catalogViews.has(next) && !productsLoaded && !productsLoading) void refreshProducts().catch(() => undefined);
+    if (next === "stock" && productsLoaded) void refreshProducts().catch(() => undefined);
+  };
   const openLiveSaleOrder = (orderId: string) => {
     window.open(`/orders/${encodeURIComponent(orderId)}`, "_blank", "noopener,noreferrer");
   };
@@ -2191,7 +2221,11 @@ export default function Home() {
       setGlobalOrdersLoading(false);
     }
   };
-  const openGlobalSearch = () => { setGlobalSearchOpen(true); void loadGlobalOrders(); };
+  const openGlobalSearch = () => {
+    setGlobalSearchOpen(true);
+    if (!productsLoaded && !productsLoading) void refreshProducts().catch(() => undefined);
+    void loadGlobalOrders();
+  };
   const closeGlobalSearch = () => { setGlobalSearchOpen(false); setGlobalSearchQuery(""); };
   const openGlobalOrder = (order: GlobalSearchOrder) => {
     setOrderSearchQuery(globalSearchQuery);
