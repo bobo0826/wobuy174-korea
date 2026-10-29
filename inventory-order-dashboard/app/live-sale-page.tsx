@@ -1390,7 +1390,7 @@ function CampaignDetailPage({
           </p>
           <h2 className="mt-1 text-lg font-semibold">待確認 LINE 私訊</h2>
           <p className="mt-1 text-xs text-[#8D877E]">
-            尚未辨識客戶或商品的訊息會留在這裡；完成配對後會自動併入同檔期、同客戶的未結單。
+            所有連線期間的 LINE 喊單會先留在這裡；人員確認客戶與商品後，才會自動併入同檔期、同客戶的未結單。
           </p>
         </div>
         {inbox.length ? (

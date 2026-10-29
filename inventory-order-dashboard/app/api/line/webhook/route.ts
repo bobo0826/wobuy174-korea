@@ -249,17 +249,6 @@ function matchClaimProduct(label: string, products: CatalogProduct[]) {
   return [...new Map(matches.map((product) => [product.id, product])).values()];
 }
 
-async function nextClaimNumber(campaignId: string, campaignCode: string) {
-  const prefix = `LS-${campaignCode}-`;
-  const { data, error } = await getSupabaseAdmin().from("live_sale_claims").select("claim_number").eq("campaign_id", campaignId).like("claim_number", `${prefix}%`);
-  if (error) throw error;
-  const sequence = (data ?? []).reduce((highest, claim) => {
-    const number = Number(String(claim.claim_number ?? "").slice(prefix.length));
-    return Number.isInteger(number) ? Math.max(highest, number) : highest;
-  }, 0);
-  return `${prefix}${String(sequence + 1).padStart(3, "0")}`;
-}
-
 async function handleLiveSaleDirectMessage(event: LineEvent) {
   const messageId = event.message?.id ?? "";
   const userId = event.source?.userId ?? "";
@@ -323,44 +312,9 @@ async function handleLiveSaleDirectMessage(event: LineEvent) {
     throw inboxError;
   }
 
-  if (!campaign || parsedItems.some((item) => item.match_status !== "matched" || !item.product_id)) return;
-  let claimId = "";
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const claimNumber = await nextClaimNumber(campaign.id, campaign.campaign_code);
-    const total = parsedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
-    const { data: claim, error: claimError } = await supabase
-      .from("live_sale_claims")
-      .insert({
-        campaign_id: campaign.id,
-        claim_number: claimNumber,
-        customer_id: customer?.id ?? null,
-        customer_name: customer?.name ?? "",
-        line_name: customer?.line_name ?? "",
-        community_name: "LINE 私訊",
-        source_inbox_id: inbox.id,
-        status: "待核對",
-        claim_total: total,
-        note: "LINE 官方帳號文字私訊自動辨識；請確認客戶與商品後再結帳。",
-      })
-      .select("id")
-      .single();
-    if (claimError) {
-      if (claimError.code === "23505" && attempt < 2) continue;
-      if (claimError.code === "23505") return;
-      throw claimError;
-    }
-    claimId = claim.id;
-    const { error: itemError } = await supabase.from("live_sale_claim_items").insert(parsedItems.map((item) => ({ claim_id: claim.id, product_id: item.product_id, product_name: item.product_name, category: (products ?? []).find((product) => product.id === item.product_id)?.category ?? "", specification: item.specification, unit_price: item.unit_price, quantity: item.quantity })));
-    if (itemError) {
-      await supabase.from("live_sale_claims").delete().eq("id", claim.id);
-      throw itemError;
-    }
-    break;
-  }
-  if (claimId) {
-    const { error: processedError } = await supabase.from("live_sale_inbox").update({ status: "已建立喊單", processed_at: new Date().toISOString() }).eq("id", inbox.id);
-    if (processedError) throw processedError;
-  }
+  // LINE 私訊一律先留在待確認區。人員確認客戶、商品與檔期後，
+  // 既有的建立喊單流程才會依同檔期／同客戶合併到未結單，避免誤併。
+  void inbox;
 }
 
 async function handleTextEvent(event: LineEvent) {
