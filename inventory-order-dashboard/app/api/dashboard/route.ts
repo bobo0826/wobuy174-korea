@@ -20,19 +20,15 @@ export async function GET(request: NextRequest) {
     if (!auth.context) return auth.response!;
 
     const supabase = getSupabaseAdmin();
-    const [{ data: orders, error: ordersError }, { data: products, error: productsError }, { data: purchases, error: purchasesError }, { data: linkedClaims, error: linkedClaimsError }] = await Promise.all([
-      supabase.from("orders").select("id, order_date, status, total"),
+    const [{ data: orders, error: ordersError }, { data: products, error: productsError }, { data: purchases, error: purchasesError }] = await Promise.all([
+      supabase.from("orders").select("id, order_date, status, total").eq("order_source", "general"),
       supabase.from("products").select("available_stock, safety_stock"),
       supabase.from("purchase_orders").select("status"),
-      supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null),
     ]);
     if (ordersError) throw ordersError;
     if (productsError) throw productsError;
     if (purchasesError) throw purchasesError;
-    if (linkedClaimsError) throw linkedClaimsError;
-
-    const convertedOrderIds = new Set((linkedClaims ?? []).map((claim) => claim.converted_order_id).filter(Boolean));
-    const normalOrders = (orders ?? []).filter((order) => !convertedOrderIds.has(order.id));
+    const normalOrders = orders ?? [];
 
     const month = taipeiMonth();
     const summary = {

@@ -160,15 +160,13 @@ export async function GET(request: NextRequest) {
     if (queryText.length > 80) return NextResponse.json({ message: "搜尋關鍵字不可超過 80 個字。" }, { status: 400 });
     if (status && status !== "未付款" && !orderStatuses.includes(status)) return NextResponse.json({ message: "訂單狀態不正確。" }, { status: 400 });
     const supabase = getSupabaseAdmin();
-    const { data: linkedClaims, error: linkedClaimsError } = await supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null);
-    if (linkedClaimsError) throw linkedClaimsError;
-    const liveSaleOrderIds = [...new Set((linkedClaims ?? []).map((claim) => claim.converted_order_id).filter((orderId): orderId is string => typeof orderId === "string" && uuidPattern.test(orderId)))];
-    let query = supabase.from("orders").select(orderListSelect, { count: "exact" }).order("order_date", { ascending: false }).order("created_at", { ascending: false });
+    // Converted live-sale claims are marked at write time.  Filtering by this
+    // indexed column avoids reading every historical claim for each page load.
+    let query = supabase.from("orders").select(orderListSelect, { count: "exact" }).eq("order_source", "general").order("order_date", { ascending: false }).order("created_at", { ascending: false });
     if (startDate) query = query.gte("order_date", startDate);
     if (endDate) query = query.lte("order_date", endDate);
     if (status === "未付款") query = query.eq("reconciliation_status", "未付款");
     else if (status) query = query.eq("status", status);
-    if (liveSaleOrderIds.length) query = query.not("id", "in", `(${liveSaleOrderIds.join(",")})`);
     if (queryText) {
       const pattern = searchPattern(queryText);
       const [customerResult, itemResult, orderNumberResult] = await Promise.all([
@@ -197,7 +195,7 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * pageSize;
     const [listResult, directResult] = await Promise.all([
       query.range(offset, offset + pageSize - 1),
-      includeId ? supabase.from("orders").select(orderListSelect).eq("id", includeId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+      includeId ? supabase.from("orders").select(orderListSelect).eq("id", includeId).eq("order_source", "general").maybeSingle() : Promise.resolve({ data: null, error: null }),
     ]);
     if (listResult.error) throw listResult.error;
     if (directResult.error) throw directResult.error;
@@ -239,6 +237,7 @@ export async function POST(request: NextRequest) {
         subtotal: payload.subtotal,
         total: payload.total,
         net_profit: payload.netProfit,
+        order_source: "general",
       })
       .select("id, order_number, status, total, net_profit")
       .single();

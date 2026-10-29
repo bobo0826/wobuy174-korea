@@ -247,7 +247,7 @@ async function convertToOrder(id: string) {
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const orderNumber = await nextOrderNumber(orderDate);
-      const { data: order, error: orderError } = await supabase.from("orders").insert({ order_number: orderNumber, customer_id: customer.id, order_date: orderDate, status: "預購中", order_method: "社群下單", payment_method: "銀行轉帳", reconciliation_status: "未付款", delivery_method: deliveryMethod, delivery_fee: deliveryFee, note: `連線檔期：${campaign.data.name}／喊單編號：${current.claim_number}${current.note ? `\n${current.note}` : ""}`, subtotal, total: subtotal + deliveryFee, net_profit: subtotal + deliveryFee - costTotal }).select("id, order_number, status, reconciliation_status, total").single();
+      const { data: order, error: orderError } = await supabase.from("orders").insert({ order_number: orderNumber, customer_id: customer.id, order_date: orderDate, status: "預購中", order_method: "社群下單", payment_method: "銀行轉帳", reconciliation_status: "未付款", delivery_method: deliveryMethod, delivery_fee: deliveryFee, note: `連線檔期：${campaign.data.name}／喊單編號：${current.claim_number}${current.note ? `\n${current.note}` : ""}`, subtotal, total: subtotal + deliveryFee, net_profit: subtotal + deliveryFee - costTotal, order_source: "live_sale" }).select("id, order_number, status, reconciliation_status, total").single();
       if (orderError) {
         if (orderError.code === "23505" && attempt < 2) continue;
         throw orderError;

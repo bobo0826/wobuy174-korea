@@ -36,16 +36,18 @@ export async function GET(request: NextRequest) {
     if (periodLength > 731) return NextResponse.json({ message: "查詢區間最多為兩年。" }, { status: 400 });
 
     const supabase = getSupabaseAdmin();
-    const [{ data, error }, { data: linkedClaims, error: linkedClaimsError }] = await Promise.all([
-      supabase.from("orders").select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, subtotal, total, net_profit, note, customers(name, line_name), order_items(product_name, category, quantity, unit_price)").gte("order_date", startDate).lte("order_date", endDate).order("order_date", { ascending: false }).order("order_number", { ascending: false }),
-      supabase.from("live_sale_claims").select("converted_order_id").not("converted_order_id", "is", null),
-    ]);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, subtotal, total, net_profit, note, customers(name, line_name), order_items(product_name, category, quantity, unit_price)")
+      .eq("order_source", "general")
+      .gte("order_date", startDate)
+      .lte("order_date", endDate)
+      .order("order_date", { ascending: false })
+      .order("order_number", { ascending: false });
     if (error) throw error;
-    if (linkedClaimsError) throw linkedClaimsError;
 
     const grouped = new Map<string, { revenue: number; netProfit: number; orderCount: number }>();
-    const convertedOrderIds = new Set((linkedClaims ?? []).map((claim) => claim.converted_order_id).filter(Boolean));
-    const orders = (data ?? []).filter((order) => !convertedOrderIds.has(order.id));
+    const orders = data ?? [];
     for (const order of orders) {
       if (order.status === "已取消") continue;
       const date = order.order_date;
