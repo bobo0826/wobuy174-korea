@@ -255,7 +255,6 @@ async function handleLiveSaleDirectMessage(event: LineEvent) {
   const messageText = event.message?.text?.trim() ?? "";
   if (!messageId || !userId || !messageText || event.source?.type !== "user") return;
   const candidates = parseClaimCandidates(messageText);
-  if (!candidates.length) return;
 
   const supabase = getSupabaseAdmin();
   const { data: existing, error: lookupError } = await supabase
@@ -274,6 +273,11 @@ async function handleLiveSaleDirectMessage(event: LineEvent) {
   if (productError) throw productError;
   if (campaignError) throw campaignError;
   if (aliasError) throw aliasError;
+
+  // 連線檔期進行中時，保留每一則私訊供人員確認。不是所有客人都會
+  // 嚴格使用「商品名稱＋數量」格式；無法自動解析的訊息會以空的商品
+  // 明細進入待確認，而不是直接遺失。
+  if (!(activeCampaigns ?? []).length) return;
 
   const parsedItems: ParsedClaimItem[] = candidates.map((candidate) => {
     const matches = matchClaimProduct(candidate.label, (products ?? []) as CatalogProduct[]);
