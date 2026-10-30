@@ -64,3 +64,48 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: errorMessage(error, "無法更新 LINE 私訊狀態。") }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await requireSignedIn(request);
+    if (!auth.context) return auth.response!;
+    const body = await request.json() as Record<string, unknown>;
+    const id = text(body.id);
+    if (!uuidPattern.test(id)) return NextResponse.json({ message: "LINE 私訊資料不正確。" }, { status: 400 });
+
+    const supabase = getSupabaseAdmin();
+    const { data: inbox, error: lookupError } = await supabase
+      .from("live_sale_inbox")
+      .select("id, status")
+      .eq("id", id)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!inbox) return NextResponse.json({ message: "找不到這則 LINE 私訊。" }, { status: 404 });
+    if (inbox.status !== "待處理") {
+      return NextResponse.json({ message: "只有待確認的 LINE 私訊可以刪除。" }, { status: 409 });
+    }
+
+    const { data: linkedClaim, error: claimError } = await supabase
+      .from("live_sale_claims")
+      .select("id")
+      .eq("source_inbox_id", id)
+      .maybeSingle();
+    if (claimError) throw claimError;
+    if (linkedClaim) {
+      return NextResponse.json({ message: "這則私訊已建立喊單，無法直接刪除。" }, { status: 409 });
+    }
+
+    const { data: deleted, error: deleteError } = await supabase
+      .from("live_sale_inbox")
+      .delete()
+      .eq("id", id)
+      .eq("status", "待處理")
+      .select("id")
+      .maybeSingle();
+    if (deleteError) throw deleteError;
+    if (!deleted) return NextResponse.json({ message: "這則 LINE 私訊已被其他操作更新，請重新整理後再試。" }, { status: 409 });
+    return withRefreshedSession(NextResponse.json({ inbox: deleted }), auth.context);
+  } catch (error) {
+    return NextResponse.json({ message: errorMessage(error, "無法刪除 LINE 私訊。") }, { status: 500 });
+  }
+}

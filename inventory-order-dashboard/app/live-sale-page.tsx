@@ -885,6 +885,7 @@ function CampaignDetailPage({
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
+  const [deletingInboxId, setDeletingInboxId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [name, setName] = useState("");
@@ -956,6 +957,26 @@ function CampaignDetailPage({
       setError(reason instanceof Error ? reason.message : "無法開啟喊單。");
     } finally {
       setOpening(false);
+    }
+  };
+  const deleteInbox = async (item: Inbox) => {
+    if (!window.confirm("確定刪除這則待確認 LINE 私訊？此動作無法復原。")) return;
+    setDeletingInboxId(item.id);
+    setError("");
+    try {
+      const response = await fetch("/api/live-sale/inbox", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法刪除 LINE 私訊。");
+      setInbox((current) => current.filter((currentItem) => currentItem.id !== item.id));
+      setNotice("LINE 私訊已刪除。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法刪除 LINE 私訊。");
+    } finally {
+      setDeletingInboxId("");
     }
   };
   const action = async (claim: Claim, actionName: ActionName) => {
@@ -1408,12 +1429,22 @@ function CampaignDetailPage({
                     ? `已配對：${item.matched_customer.name}`
                     : "尚未配對客戶"}
                 </p>
-                <button
-                  onClick={() => void openEditor({ inbox: item })}
-                  className="mt-3 text-sm font-semibold text-[#5E7665]"
-                >
-                  建立／核對喊單 →
-                </button>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => void openEditor({ inbox: item })}
+                    disabled={deletingInboxId === item.id}
+                    className="text-sm font-semibold text-[#5E7665] disabled:opacity-45"
+                  >
+                    建立／核對喊單 →
+                  </button>
+                  <button
+                    onClick={() => void deleteInbox(item)}
+                    disabled={deletingInboxId === item.id}
+                    className="text-sm font-semibold text-[#B35B3B] disabled:opacity-45"
+                  >
+                    {deletingInboxId === item.id ? "刪除中…" : "刪除"}
+                  </button>
+                </div>
               </article>
             ))}
           </div>
