@@ -239,6 +239,12 @@ function parseClaimCandidates(message: string) {
     });
 }
 
+function hasLiveSaleOrderIntent(message: string, candidates: ReturnType<typeof parseClaimCandidates>) {
+  if (candidates.length) return true;
+  const normalizedMessage = message.replaceAll(/\s/g, "");
+  return /(?:加(?:一|二|三|四|五|六|七|八|九|十|\d+)|(?:我)?(?:想)?要(?:這個|這款|這顆|這組|一個|一份|一組|\d+(?:個|份|組))|幫我(?:留|訂|下單)|我要(?:下單|購買|收|帶走)|(?:收|帶走)(?:這個|這款))/.test(normalizedMessage);
+}
+
 function matchClaimProduct(label: string, products: CatalogProduct[]) {
   const normalizedLabel = normalizeProductLabel(label);
   const matches = products.filter((product) => {
@@ -255,6 +261,8 @@ async function handleLiveSaleDirectMessage(event: LineEvent) {
   const messageText = event.message?.text?.trim() ?? "";
   if (!messageId || !userId || !messageText || event.source?.type !== "user") return;
   const candidates = parseClaimCandidates(messageText);
+  // 僅接收明確喊單字眼，避免客服問答與一般聊天塞入待確認區。
+  if (!hasLiveSaleOrderIntent(messageText, candidates)) return;
 
   const supabase = getSupabaseAdmin();
   const { data: existing, error: lookupError } = await supabase
@@ -274,9 +282,9 @@ async function handleLiveSaleDirectMessage(event: LineEvent) {
   if (campaignError) throw campaignError;
   if (aliasError) throw aliasError;
 
-  // 連線檔期進行中時，保留每一則私訊供人員確認。不是所有客人都會
-  // 嚴格使用「商品名稱＋數量」格式；無法自動解析的訊息會以空的商品
-  // 明細進入待確認，而不是直接遺失。
+  // 連線檔期進行中時，保留明確喊單的私訊供人員確認。不是所有客人都會
+  // 嚴格使用「商品名稱＋數量」格式；有下單語意但無法自動解析的訊息會
+  // 以空的商品明細進入待確認，其他聊天訊息則不會寫入。
   if (!(activeCampaigns ?? []).length) return;
 
   const parsedItems: ParsedClaimItem[] = candidates.map((candidate) => {
