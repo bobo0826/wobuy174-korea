@@ -79,33 +79,34 @@ function validateProductUpdate(input: ProductUpdateInput) {
 }
 
 const productSelect = "*, suppliers(name)";
+type ProductCatalogMetrics = { product_id: string | null; preorder_stock: number; sold_stock: number };
 
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireSignedIn(request);
     if (!auth.context) return auth.response!;
     const supabase = getSupabaseAdmin();
-    const [{ data, error }, { data: soldItems, error: soldItemsError }, { data: preorderItems, error: preorderItemsError }] = await Promise.all([
+    const [{ data, error }, { data: metrics, error: metricsError }] = await Promise.all([
       supabase.from("products").select(productSelect).order("created_at", { ascending: false }),
-      supabase.from("order_items").select("product_id, quantity, orders!inner(status)").eq("orders.status", "已出貨"),
-      supabase.from("order_items").select("product_id, quantity, orders!inner(status)").eq("orders.status", "預購中"),
+      supabase.rpc("get_product_catalog_metrics"),
     ]);
     if (error) throw error;
-    if (soldItemsError) throw soldItemsError;
-    if (preorderItemsError) throw preorderItemsError;
+    if (metricsError) throw metricsError;
 
-    const soldByProduct = (soldItems ?? []).reduce<Record<string, number>>((totals, item) => {
-      if (item.product_id) totals[item.product_id] = (totals[item.product_id] ?? 0) + item.quantity;
-      return totals;
-    }, {});
-    const preorderByProduct = (preorderItems ?? []).reduce<Record<string, number>>((totals, item) => {
-      if (item.product_id) totals[item.product_id] = (totals[item.product_id] ?? 0) + item.quantity;
+    const productMetrics = (metrics ?? []) as ProductCatalogMetrics[];
+    const metricsByProduct = productMetrics.reduce<Record<string, { preorder: number; sold: number }>>((totals, item) => {
+      if (item.product_id) {
+        totals[item.product_id] = {
+          preorder: Number(item.preorder_stock) || 0,
+          sold: Number(item.sold_stock) || 0,
+        };
+      }
       return totals;
     }, {});
     const products = (data ?? []).map((product) => ({
       ...product,
-      preorder_stock: preorderByProduct[product.id] ?? 0,
-      sold_stock: soldByProduct[product.id] ?? 0,
+      preorder_stock: metricsByProduct[product.id]?.preorder ?? 0,
+      sold_stock: metricsByProduct[product.id]?.sold ?? 0,
     }));
     return withRefreshedSession(NextResponse.json({ products }), auth.context);
   } catch (error) {

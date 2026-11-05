@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setSessionCookies } from "@/lib/auth";
+import { getOrCreateProfile, setSessionCookies } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +16,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Email 或密碼不正確。" }, { status: 401 });
     }
 
+    const profile = await getOrCreateProfile(data.user);
+    if (!profile) return NextResponse.json({ message: "帳號權限尚未設定，請稍後再試。" }, { status: 503 });
+
     const response = NextResponse.json({ ok: true });
-    setSessionCookies(response, data.session);
+    setSessionCookies(response, data.session, profile);
     return response;
   } catch {
     return NextResponse.json({ message: "登入暫時無法完成，請稍後再試。" }, { status: 500 });

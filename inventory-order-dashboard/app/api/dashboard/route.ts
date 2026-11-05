@@ -4,40 +4,33 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-function taipeiMonth() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Taipei",
-    year: "numeric",
-    month: "2-digit",
-  }).formatToParts(new Date());
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("year")}-${value("month")}`;
-}
+type DashboardMetrics = {
+  preorders: number;
+  low_stock: number;
+  pending_purchases: number;
+  monthly_sales: number;
+  shipped_orders: number;
+  order_count: number;
+};
 
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireSignedIn(request);
     if (!auth.context) return auth.response!;
 
-    const supabase = getSupabaseAdmin();
-    const [{ data: orders, error: ordersError }, { data: products, error: productsError }, { data: purchases, error: purchasesError }] = await Promise.all([
-      supabase.from("orders").select("id, order_date, status, total").eq("order_source", "general"),
-      supabase.from("products").select("available_stock, safety_stock"),
-      supabase.from("purchase_orders").select("status"),
-    ]);
-    if (ordersError) throw ordersError;
-    if (productsError) throw productsError;
-    if (purchasesError) throw purchasesError;
-    const normalOrders = orders ?? [];
+    const { data, error } = await getSupabaseAdmin()
+      .rpc("get_dashboard_summary")
+      .single();
+    if (error) throw error;
+    const metrics = data as DashboardMetrics | null;
 
-    const month = taipeiMonth();
     const summary = {
-      preorders: normalOrders.filter((order) => order.status === "預購中").length,
-      lowStock: (products ?? []).filter((product) => Number(product.available_stock) <= Number(product.safety_stock)).length,
-      pendingPurchases: (purchases ?? []).filter((purchase) => purchase.status !== "已完成" && purchase.status !== "已取消").length,
-      monthlySales: normalOrders.filter((order) => order.order_date?.startsWith(month) && order.status !== "已取消").reduce((sum, order) => sum + (Number(order.total) || 0), 0),
-      shippedOrders: normalOrders.filter((order) => order.status === "已出貨").length,
-      orderCount: normalOrders.length,
+      preorders: Number(metrics?.preorders ?? 0),
+      lowStock: Number(metrics?.low_stock ?? 0),
+      pendingPurchases: Number(metrics?.pending_purchases ?? 0),
+      monthlySales: Number(metrics?.monthly_sales ?? 0),
+      shippedOrders: Number(metrics?.shipped_orders ?? 0),
+      orderCount: Number(metrics?.order_count ?? 0),
     };
 
     return withRefreshedSession(NextResponse.json({ summary }), auth.context);
