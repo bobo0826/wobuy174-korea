@@ -36,8 +36,8 @@ export type Product = {
   variants?: ProductVariant[];
   originalPrice?: string;
   code: string;
-  deadline: string;
-  arrival: string;
+  deadline?: string;
+  arrival?: string;
   colors?: string;
   sizes?: string;
   status: "現貨" | "預購" | "連線中" | "已收單";
@@ -49,8 +49,8 @@ export type Product = {
   koreaType?: string;
   plushType?: string;
   japanType?: string;
-  details: string;
-  specs: string;
+  details?: string;
+  specs?: string;
 };
 
 type StoredProduct = {
@@ -83,7 +83,7 @@ const instagramUrl = "https://www.instagram.com/wobuy174_/";
 const mapUrl =
   "https://www.google.com/maps/search/?api=1&query=%E5%98%89%E7%BE%A9%E7%B8%A3%E6%9C%B4%E5%AD%90%E5%B8%82%E9%96%8B%E5%85%83%E8%B7%AF174%E8%99%9F";
 export const roundedFontFamily =
-  'ui-rounded, "Arial Rounded MT Bold", "Hiragino Maru Gothic ProN", "PingFang TC", "Microsoft JhengHei", sans-serif';
+  'var(--font-store-ui)';
 
 const desktopPageSizeQuery = "(min-width: 1024px)";
 
@@ -98,6 +98,7 @@ function getPageSizeSnapshot() {
 }
 
 type PaginationItem = number | "start-ellipsis" | "end-ellipsis";
+type SortOption = "featured" | "in-stock" | "price-asc" | "price-desc";
 
 function paginationItems(totalPages: number, activePage: number): PaginationItem[] {
   if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -511,6 +512,13 @@ const categoryTitles: Record<Category, string> = {
   other: "其他選品",
 };
 
+const sortOptions: { value: SortOption; label: string }[] = [
+  { value: "featured", label: "推薦排序" },
+  { value: "in-stock", label: "現貨優先" },
+  { value: "price-asc", label: "價格：低至高" },
+  { value: "price-desc", label: "價格：高至低" },
+];
+
 function normalizeProductVariants(value: unknown): ProductVariant[] {
   if (!Array.isArray(value)) return [];
 
@@ -522,6 +530,26 @@ function normalizeProductVariants(value: unknown): ProductVariant[] {
     const price = typeof record.price === "string" ? record.price.trim() : "";
     return name && price ? [{ name, code, price }] : [];
   });
+}
+
+function optionalProductText(value: string | null | undefined) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return undefined;
+
+  // These were legacy automatic fallbacks. Treat them as blank so a field only
+  // appears when the shop owner actually entered content for that product.
+  if (
+    [
+      "請洽 LINE@",
+      "依商品頁或客服通知",
+      "商品介紹請洽 LINE@ 官方帳號確認。",
+      "尺寸、花色與供貨狀況請以客服確認為準。",
+    ].includes(text)
+  ) {
+    return undefined;
+  }
+
+  return text;
 }
 
 function storedProductToProduct(product: StoredProduct): Product {
@@ -540,12 +568,12 @@ function storedProductToProduct(product: StoredProduct): Product {
     name: product.name,
     price: product.price,
     variants: normalizeProductVariants(product.variants),
-    originalPrice: product.original_price ?? undefined,
-    code: product.code,
-    deadline: product.deadline ?? "請洽 LINE@",
-    arrival: product.arrival ?? "依商品頁或客服通知",
-    colors: product.colors ?? "請洽 LINE@",
-    sizes: product.sizes ?? "請洽 LINE@",
+    originalPrice: optionalProductText(product.original_price),
+    code: optionalProductText(product.code) ?? "",
+    deadline: optionalProductText(product.deadline),
+    arrival: optionalProductText(product.arrival),
+    colors: optionalProductText(product.colors),
+    sizes: optionalProductText(product.sizes),
     status,
     country,
     image: product.image_urls?.[0] ?? "",
@@ -555,8 +583,8 @@ function storedProductToProduct(product: StoredProduct): Product {
     koreaType: product.korea_type ?? undefined,
     plushType: product.plush_type ?? undefined,
     japanType: product.japan_type ?? undefined,
-    details: product.details ?? "商品介紹請洽 LINE@ 官方帳號確認。",
-    specs: product.specs ?? "尺寸、花色與供貨狀況請以客服確認為準。",
+    details: optionalProductText(product.details),
+    specs: optionalProductText(product.specs),
   };
 }
 
@@ -574,6 +602,20 @@ function lowestVariantPrice(variants: ProductVariant[]) {
 
 function productStartingPrice(product: Product) {
   return product.variants?.length ? lowestVariantPrice(product.variants) : product.price;
+}
+
+function numericPrice(product: Product) {
+  const price = Number(productStartingPrice(product).replace(/[^\d.]/g, ""));
+  return Number.isFinite(price) ? price : Number.POSITIVE_INFINITY;
+}
+
+function SearchIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="m16 16 4 4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
+    </svg>
+  );
 }
 
 function Arrow({ className = "" }: { className?: string }) {
@@ -619,6 +661,9 @@ export function ProductCatalog({
   const [activePlushType, setActivePlushType] = useState("all");
   const [activeJapanType, setActiveJapanType] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [sortOption, setSortOption] = useState<SortOption>("featured");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -636,6 +681,7 @@ export function ProductCatalog({
     () => 15,
   );
   const galleryRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const visibleCategories = showAllCategory
     ? categories
     : categories.filter((category) => category.id !== "latest");
@@ -679,6 +725,12 @@ export function ProductCatalog({
   }, []);
 
   useEffect(() => {
+    if (!isSearchOpen) return;
+    const frame = requestAnimationFrame(() => searchInputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [isSearchOpen]);
+
+  useEffect(() => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
@@ -716,11 +768,29 @@ export function ProductCatalog({
       activeJapanType === "all" ||
       product.japanType === activeJapanType;
 
-    return matchesCategory && matchesBedding && matchesKorea && matchesPlush && matchesJapan;
+    const searchableText = [
+      product.name,
+      product.code,
+      product.status,
+      product.country,
+      ...product.categories.map((category) => categoryTitles[category]),
+    ].join(" ").toLocaleLowerCase();
+    const matchesSearch = !searchQuery.trim() || searchableText.includes(searchQuery.trim().toLocaleLowerCase());
+
+    return matchesCategory && matchesBedding && matchesKorea && matchesPlush && matchesJapan && matchesSearch;
   });
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const sortedProducts = [...filteredProducts].sort((first, second) => {
+    if (sortOption === "price-asc") return numericPrice(first) - numericPrice(second);
+    if (sortOption === "price-desc") return numericPrice(second) - numericPrice(first);
+    if (sortOption === "in-stock") {
+      const stockRank = { 現貨: 0, "連線中": 1, 預購: 2, 已收單: 3 };
+      return stockRank[first.status] - stockRank[second.status];
+    }
+    return 0;
+  });
+  const totalPages = Math.max(1, Math.ceil(sortedProducts.length / pageSize));
   const activePage = Math.min(currentPage, totalPages);
-  const visibleProducts = filteredProducts.slice(
+  const visibleProducts = sortedProducts.slice(
     (activePage - 1) * pageSize,
     activePage * pageSize,
   );
@@ -730,6 +800,16 @@ export function ProductCatalog({
   const selectedVariants = selectedProduct?.variants ?? [];
   const selectedVariant = selectedVariants[selectedVariantIndex];
   const selectedProductPrice = selectedVariant?.price ?? (selectedProduct ? productStartingPrice(selectedProduct) : "");
+  const selectedProductDetails = selectedProduct
+    ? [
+        { label: "商品編號", value: selectedVariant?.code || selectedProduct.code },
+        { label: "收單時間", value: selectedProduct.deadline },
+        { label: "預計到貨", value: selectedProduct.arrival },
+        { label: "顏色", value: selectedProduct.colors, multiline: true },
+        { label: "尺寸", value: selectedProduct.sizes, multiline: true },
+      ].filter((detail) => Boolean(detail.value?.trim()))
+    : [];
+  const hasSelectedProductDescription = Boolean(selectedProduct?.details || selectedProduct?.specs);
 
   const scrollToProducts = () => {
     document.getElementById("products")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -743,6 +823,11 @@ export function ProductCatalog({
     setActiveJapanType("all");
     setCurrentPage(1);
     scrollToProducts();
+  };
+
+  const updateSearchQuery = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
   };
 
   const selectPage = (page: number) => {
@@ -763,9 +848,17 @@ export function ProductCatalog({
     });
   };
 
+  const selectGalleryImage = (index: number) => {
+    galleryRef.current?.scrollTo({
+      left: galleryRef.current.clientWidth * index,
+      behavior: "smooth",
+    });
+    setActiveImageIndex(index);
+  };
+
   return (
     <>
-      <section id="products" className="scroll-mt-24 px-5 pb-20 pt-0 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
+      <section id="products" className="scroll-mt-24 px-3 pb-20 pt-0 sm:px-8 sm:pb-28 lg:px-12 lg:pb-[65px]">
         <div className="mx-auto max-w-[1500px]">
           {visibleAnnouncements.length > 0 && (
             <div aria-label="最新消息" className="overflow-hidden border-b border-[#D9D6D0] py-3.5 sm:py-4" role="region">
@@ -780,7 +873,34 @@ export function ProductCatalog({
               </div>
             </div>
           )}
-          <div className="scrollbar-none -mx-5 flex overflow-x-auto border-y border-[#D9D6D0] px-5 sm:mx-0 sm:px-0">
+          <div className="xl:grid xl:grid-cols-[190px_minmax(0,1fr)] xl:gap-10">
+            <aside className="hidden border-r border-[#E0D8CF] pr-7 xl:block">
+              <div className="sticky top-28 pt-8">
+                <p className="text-[10px] font-semibold tracking-[0.22em] text-[#8C7B71]">SHOP BY CATEGORY</p>
+                <nav className="mt-5 space-y-1" aria-label="商品分類">
+                  {visibleCategories.map((category) => {
+                    const isActive = activeCategory === category.id;
+                    return (
+                      <button
+                        aria-current={isActive ? "page" : undefined}
+                        className={`block w-full border-l-2 py-2.5 pl-3 text-left text-sm tracking-[0.08em] transition-colors ${
+                          isActive
+                            ? "border-[#7B5D56] font-semibold text-[#4B3C38]"
+                            : "border-transparent text-[#8C7B71] hover:border-[#C9BBB0] hover:text-[#4B3C38]"
+                        }`}
+                        key={category.id}
+                        onClick={() => selectCategory(category.id)}
+                      >
+                        {category.label}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+            </aside>
+
+            <div>
+          <div className="scrollbar-none -mx-3 flex overflow-x-auto border-y border-[#E0D8CF] px-3 sm:mx-0 sm:px-0 xl:hidden">
             {visibleCategories.map((category) => {
               const isActive = activeCategory === category.id;
               return (
@@ -938,12 +1058,75 @@ export function ProductCatalog({
             </div>
           )}
 
-          <div className="flex items-center justify-between pb-5 pt-7 sm:pt-8">
-            <h2 className="text-xl font-semibold tracking-[-0.03em] sm:text-2xl">{categoryTitles[activeCategory]}</h2>
-            <span className="text-xs tracking-[0.08em] text-[#605B51]/65">{filteredProducts.length} ITEMS</span>
+          <div className="border-b border-[#E0D8CF] pb-5 pt-7 sm:pt-8">
+            <div className="flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold tracking-[0.2em] text-[#8C7B71]">商品目錄 / {categoryTitles[activeCategory]}</p>
+                <div className="mt-2 flex items-end gap-3">
+                  <h2 className="font-store-display whitespace-nowrap text-2xl font-semibold tracking-[0.02em] text-[#4B3C38] sm:text-3xl">{categoryTitles[activeCategory]}</h2>
+                  <span className="hidden pb-0.5 text-xs tracking-[0.1em] text-[#8C7B71] min-[390px]:inline">{sortedProducts.length} ITEMS</span>
+                </div>
+              </div>
+              <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
+                {isSearchOpen ? (
+                  <label className="relative w-[120px] min-w-0 sm:w-[280px]">
+                    <span className="sr-only">搜尋商品名稱或編號</span>
+                    <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8C7B71]" />
+                    <input
+                      className="w-full rounded-xl border border-[#D8CEC4] bg-white py-2.5 pl-9 pr-8 text-[13px] text-[#4B3C38] outline-none transition placeholder:text-[#A99B91] focus:border-[#7B5D56] sm:py-3 sm:pl-10 sm:pr-10 sm:text-sm"
+                      onChange={(event) => updateSearchQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setSearchQuery("");
+                          setIsSearchOpen(false);
+                        }
+                      }}
+                      placeholder="搜尋名稱或商品編號"
+                      ref={searchInputRef}
+                      type="search"
+                      value={searchQuery}
+                    />
+                    <button
+                      aria-label="關閉商品搜尋"
+                      className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-lg leading-none text-[#8C7B71] transition-colors hover:bg-[#F4F1EC] hover:text-[#4B3C38]"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setIsSearchOpen(false);
+                      }}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </label>
+                ) : (
+                  <button
+                    aria-label="開啟商品搜尋"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#D8CEC4] bg-white text-[#605B51] transition-colors hover:border-[#7B5D56] hover:text-[#4B3C38] sm:h-11 sm:w-11"
+                    onClick={() => setIsSearchOpen(true)}
+                    type="button"
+                  >
+                    <SearchIcon className="h-[18px] w-[18px]" />
+                  </button>
+                )}
+                <label className="relative block">
+                  <span className="sr-only">商品排序</span>
+                  <select
+                    className="h-10 min-w-[118px] appearance-none rounded-xl border border-[#D8CEC4] bg-white px-3 pr-7 text-[13px] text-[#4B3C38] outline-none transition focus:border-[#7B5D56] sm:h-11 sm:min-w-[142px] sm:pr-8 sm:text-sm"
+                    onChange={(event) => {
+                      setSortOption(event.target.value as SortOption);
+                      setCurrentPage(1);
+                    }}
+                    value={sortOption}
+                  >
+                    {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                  <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#8C7B71]">⌄</span>
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div id="products-grid" className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-10 md:grid-cols-5 lg:grid-cols-6 lg:gap-x-5">
+          <div id="products-grid" className="grid grid-cols-2 gap-x-3 gap-y-8 pt-6 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-10 sm:pt-8 md:grid-cols-5 lg:grid-cols-6 lg:gap-x-5">
             {visibleProducts.map((product, index) => (
               <button
                 aria-label={`查看 ${product.name} 商品資訊`}
@@ -951,7 +1134,7 @@ export function ProductCatalog({
                 key={product.id}
                 onClick={() => openProduct(product)}
               >
-                <div className="relative aspect-square overflow-hidden rounded-[3px] bg-[#EAE8E4]">
+                <div className="relative aspect-square overflow-hidden bg-[#EFEAE4]">
                   {product.image ? (
                     <Image
                       alt=""
@@ -962,17 +1145,21 @@ export function ProductCatalog({
                       src={product.image}
                     />
                   ) : null}
-                  <span className={`absolute left-1.5 top-1.5 rounded-full font-semibold tracking-[0.08em] sm:left-2 sm:top-2 ${product.status === "現貨" ? "px-2 py-1.5 text-[9px] sm:px-2.5 sm:py-1.5 sm:text-[11px]" : "px-1.5 py-1 text-[8px] sm:px-2 sm:text-[10px]"} ${statusStyles[product.status]}`}>
+                  <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-[9px] font-bold tracking-[0.08em] shadow-sm sm:px-2.5 sm:py-1.5 sm:text-[10px] ${statusStyles[product.status]}`}>
                     {product.status}
                   </span>
-                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-[#F5F5F5]/85 px-1.5 py-1 text-[7px] font-medium tracking-[0.12em] text-[#605B51] backdrop-blur sm:bottom-2 sm:right-2 sm:px-2 sm:text-[9px]">
+                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-white/70 px-2 py-1 text-[7px] font-medium tracking-[0.12em] text-[#4B3C38] backdrop-blur-sm sm:bottom-2 sm:right-2 sm:px-2.5 sm:text-[9px]">
                     {product.country}
                   </span>
                 </div>
-                <p className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-[12px] font-semibold leading-5 tracking-[-0.015em] text-[#605B51] sm:mt-3 sm:text-sm sm:leading-6">
+                {product.code && <p className="mt-2 text-[9px] font-medium tracking-[0.12em] text-[#96857B] sm:mt-3 sm:text-[10px]">{product.code}</p>}
+                <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#4B3C38] sm:text-sm sm:leading-6">
                   {product.name}
                 </p>
-                <p className="mt-1 text-[13px] font-semibold leading-5 tracking-[-0.02em] text-[#A81515] sm:text-sm">NT$ {formatPrice(productStartingPrice(product))}{product.variants?.length ? <span className="ml-0.5 text-[10px] font-medium sm:text-xs">起</span> : null}</p>
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
+                  <p className="text-[13px] font-bold leading-5 tracking-[-0.02em] text-[#C94A45] sm:text-sm">NT$ {formatPrice(productStartingPrice(product))}{product.variants?.length ? <span className="ml-0.5 text-[10px] font-medium sm:text-xs">起</span> : null}</p>
+                  {product.originalPrice && <span className="text-[10px] text-[#C94A45]/60 line-through sm:text-xs">NT$ {formatPrice(product.originalPrice)}</span>}
+                </div>
               </button>
             ))}
           </div>
@@ -1024,6 +1211,8 @@ export function ProductCatalog({
               </button>
             </nav>
           )}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1039,57 +1228,78 @@ export function ProductCatalog({
       {selectedProduct && (
         <div className="fixed inset-0 z-50 flex items-end bg-[#605B51]/45 p-0 sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-label={`${selectedProduct.name} 商品資訊`}>
           <button className="absolute inset-0 cursor-default" aria-label="關閉商品資訊" onClick={() => setSelectedProduct(null)} />
-          <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-[16px] bg-[#FAF7F0] sm:max-w-4xl sm:rounded-[12px]">
-            <button className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-[#FAF7F0]/90 text-[#605B51] shadow-sm" aria-label="關閉商品資訊" onClick={() => setSelectedProduct(null)}>
+          <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-[16px] bg-white sm:max-w-5xl sm:rounded-[16px]">
+            <button className="absolute right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-[#605B51] shadow-sm backdrop-blur" aria-label="關閉商品資訊" onClick={() => setSelectedProduct(null)}>
               <CloseIcon />
             </button>
-            <div className="grid md:grid-cols-2">
-              <div className="relative min-h-72 overflow-hidden bg-[#EAE8E4] md:min-h-[520px]">
-                <div
-                  className="scrollbar-none absolute inset-0 flex snap-x snap-mandatory overflow-x-auto scroll-smooth"
-                  onScroll={(event) => {
-                    const width = event.currentTarget.clientWidth;
-                    if (width) setActiveImageIndex(Math.round(event.currentTarget.scrollLeft / width));
-                  }}
-                  ref={galleryRef}
-                >
-                  {galleryImages.map((image, index) => (
-                    <div
-                      aria-label={`${selectedProduct.name} 第 ${index + 1} 張圖片`}
-                      className="h-full min-w-full snap-center bg-cover bg-center"
-                      key={`${selectedProduct.id}-${image}-${index}`}
-                      role="img"
-                      style={{ backgroundImage: `url(${image})` }}
-                    />
-                  ))}
+            <div className="grid md:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
+              <div className="bg-white p-3 sm:p-4 md:p-5">
+                <div className="relative aspect-[4/5] overflow-hidden bg-white">
+                  <div
+                    className="scrollbar-none absolute inset-0 flex snap-x snap-mandatory overflow-x-auto scroll-smooth"
+                    onScroll={(event) => {
+                      const width = event.currentTarget.clientWidth;
+                      if (width) setActiveImageIndex(Math.round(event.currentTarget.scrollLeft / width));
+                    }}
+                    ref={galleryRef}
+                  >
+                    {galleryImages.map((image, index) => (
+                      <div
+                        aria-label={`${selectedProduct.name} 第 ${index + 1} 張圖片`}
+                        className="relative h-full min-w-full snap-center"
+                        key={`${selectedProduct.id}-${image}-${index}`}
+                        role="img"
+                      >
+                        <Image
+                          alt={`${selectedProduct.name} 第 ${index + 1} 張圖片`}
+                          className="object-contain"
+                          fill
+                          priority={index === 0}
+                          sizes="(min-width: 768px) 52vw, 100vw"
+                          src={image}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {galleryImages.length > 1 && (
+                    <>
+                      <button
+                        aria-label="上一張商品圖片"
+                        className="absolute left-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-lg text-[#605B51] shadow-sm backdrop-blur disabled:opacity-35"
+                        disabled={activeImageIndex === 0}
+                        onClick={() => slideGallery(-1)}
+                      >
+                        ‹
+                      </button>
+                      <button
+                        aria-label="下一張商品圖片"
+                        className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-lg text-[#605B51] shadow-sm backdrop-blur disabled:opacity-35"
+                        disabled={activeImageIndex === galleryImages.length - 1}
+                        onClick={() => slideGallery(1)}
+                      >
+                        ›
+                      </button>
+                    </>
+                  )}
                 </div>
                 {galleryImages.length > 1 && (
-                  <>
-                    <button
-                      aria-label="上一張商品圖片"
-                      className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-[#F5F5F5]/85 text-lg text-[#605B51] shadow-sm backdrop-blur"
-                      disabled={activeImageIndex === 0}
-                      onClick={() => slideGallery(-1)}
-                    >
-                      ‹
-                    </button>
-                    <button
-                      aria-label="下一張商品圖片"
-                      className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-[#F5F5F5]/85 text-lg text-[#605B51] shadow-sm backdrop-blur"
-                      disabled={activeImageIndex === galleryImages.length - 1}
-                      onClick={() => slideGallery(1)}
-                    >
-                      ›
-                    </button>
-                    <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-1.5 rounded-full bg-[#605B51]/35 px-2.5 py-1.5 backdrop-blur">
-                      {galleryImages.map((image, index) => (
-                        <span className={`h-1.5 w-1.5 rounded-full ${activeImageIndex === index ? "bg-[#F5F5F5]" : "bg-[#F5F5F5]/45"}`} key={`${image}-dot`} />
-                      ))}
-                    </div>
-                  </>
+                  <div className="scrollbar-none mt-3 flex gap-2 overflow-x-auto">
+                    {galleryImages.map((image, index) => (
+                      <button
+                        aria-label={`顯示第 ${index + 1} 張商品圖片`}
+                        aria-pressed={activeImageIndex === index}
+                        className={`relative h-14 w-11 shrink-0 overflow-hidden border transition-colors sm:h-16 sm:w-12 ${activeImageIndex === index ? "border-[#7D2F35]" : "border-transparent opacity-65 hover:opacity-100"}`}
+                        key={`${selectedProduct.id}-thumbnail-${image}-${index}`}
+                        onClick={() => selectGalleryImage(index)}
+                        type="button"
+                      >
+                        <Image alt="" className="object-cover" fill sizes="48px" src={image} />
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-              <div className="p-7 sm:p-10">
+              <div className="p-7 sm:p-9 lg:p-10">
                 <div className="flex items-center justify-between gap-4">
                   <span className={`rounded-full px-3 py-2 text-[15px] font-semibold leading-none tracking-[0.06em] ${statusStyles[selectedProduct.status]}`}>{selectedProduct.status}</span>
                   <span className="text-[10px] font-medium tracking-[0.14em] text-[#605B51]/65">{selectedProduct.country}</span>
@@ -1106,27 +1316,32 @@ export function ProductCatalog({
                       {selectedVariants.map((variant, index) => {
                         const isSelected = selectedVariantIndex === index;
                         return (
-                          <button aria-pressed={isSelected} className={`flex items-center justify-between rounded-[4px] border px-3.5 py-3 text-left text-sm transition-colors ${isSelected ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] hover:border-[#605B51]"}`} key={`${variant.name}-${variant.code}-${variant.price}`} onClick={() => setSelectedVariantIndex(index)} type="button">
-                            <span className="font-semibold"><span className="block">{variant.name}</span>{variant.code ? <span className={`mt-0.5 block text-[10px] font-medium tracking-[0.08em] ${isSelected ? "text-[#F5F5F5]/75" : "text-[#605B51]/55"}`}>{variant.code}</span> : null}</span>
-                            <span className="font-semibold">NT$ {formatPrice(variant.price)}</span>
+                          <button aria-pressed={isSelected} className={`flex items-center justify-between rounded-[4px] border px-3.5 py-3 text-left text-sm transition-colors ${isSelected ? "border-[#C94A45] bg-white text-[#4B3C38]" : "border-[#D9D6D0] hover:border-[#C94A45]"}`} key={`${variant.name}-${variant.code}-${variant.price}`} onClick={() => setSelectedVariantIndex(index)} type="button">
+                            <span className="font-semibold"><span className="block">{variant.name}</span>{variant.code ? <span className="mt-0.5 block text-[10px] font-medium tracking-[0.08em] text-[#605B51]/55">{variant.code}</span> : null}</span>
+                            <span className="font-semibold text-[#C94A45]">NT$ {formatPrice(variant.price)}</span>
                           </button>
                         );
                       })}
                     </div>
                   </div>
                 )}
-                <dl className="mt-8 divide-y divide-[#D9D6D0] border-y border-[#D9D6D0] text-sm">
-                  <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">商品編號</dt><dd>{selectedVariant?.code || selectedProduct.code}</dd></div>
-                  <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">收單時間</dt><dd>{selectedProduct.deadline}</dd></div>
-                  <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">預計到貨</dt><dd>{selectedProduct.arrival}</dd></div>
-                  <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">顏色</dt><dd className="whitespace-pre-line">{selectedProduct.colors}</dd></div>
-                  <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5"><dt className="text-[#605B51]/65">尺寸</dt><dd className="whitespace-pre-line">{selectedProduct.sizes}</dd></div>
-                </dl>
-                <div className="mt-7">
-                  <h3 className="text-[15px] font-extrabold">商品介紹</h3>
-                  <p className="mt-2 whitespace-pre-line text-sm leading-7 text-[#605B51]">{selectedProduct.details}</p>
-                  <p className="mt-3 whitespace-pre-line text-xs leading-6 text-[#605B51]/65">{selectedProduct.specs}</p>
-                </div>
+                {selectedProductDetails.length > 0 && (
+                  <dl className="mt-8 divide-y divide-[#D9D6D0] border-y border-[#D9D6D0] text-sm">
+                    {selectedProductDetails.map((detail) => (
+                      <div className="grid grid-cols-[88px_1fr] gap-4 py-3.5" key={detail.label}>
+                        <dt className="text-[#605B51]/65">{detail.label}</dt>
+                        <dd className={detail.multiline ? "whitespace-pre-line" : undefined}>{detail.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {hasSelectedProductDescription && (
+                  <div className="mt-7">
+                    <h3 className="text-[15px] font-extrabold">商品介紹</h3>
+                    {selectedProduct.details && <p className="mt-2 whitespace-pre-line text-sm leading-7 text-[#605B51]">{selectedProduct.details}</p>}
+                    {selectedProduct.specs && <p className="mt-3 whitespace-pre-line text-xs leading-6 text-[#605B51]/65">{selectedProduct.specs}</p>}
+                  </div>
+                )}
                 <div className="mt-8 border-t border-[#D9D6D0] pt-6">
                   <p className="text-sm leading-6 text-[#605B51]">想詢價或下單嗎？請截圖此商品後，傳送至 LINE@ 官方帳號。</p>
                   <a className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#605B51] px-5 py-3.5 text-sm font-medium tracking-[0.04em] text-[#F5F5F5] transition-colors hover:bg-[#766F63]" href={lineOfficialUrl} target="_blank" rel="noreferrer">
@@ -1150,8 +1365,8 @@ export default function Home({
   initialAnnouncements?: SiteAnnouncement[];
 }) {
   return (
-    <main className="overflow-x-clip bg-[#FAF7F0] text-[#605B51]" style={{ fontFamily: roundedFontFamily }}>
-      <div className="bg-[#605B51] px-4 py-2 text-center text-[11px] tracking-[0.08em] text-[#F5F5F5] sm:text-xs">
+    <main className="overflow-x-clip bg-white text-[#4B3C38]" style={{ fontFamily: roundedFontFamily }}>
+      <div className="bg-[#5B4A44] px-4 py-2 text-center text-[11px] tracking-[0.08em] text-[#FFFDFC] sm:text-xs">
         新品與連線資訊，優先發布於 LINE 社群
         <a
           className="ml-3 border-b border-[#F5F5F5]/70 pb-0.5 font-semibold tracking-[0.1em] transition-opacity hover:opacity-70"
@@ -1163,7 +1378,7 @@ export default function Home({
         </a>
       </div>
 
-      <header className="sticky top-0 z-30 border-b border-[#D9D6D0]/90 bg-[#FAF7F0]/95 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-[#E0D8CF] bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-[72px] max-w-[1500px] items-center justify-between px-5 sm:px-8 lg:px-12">
           <a href="#products" className="group leading-none" aria-label="回到商品列表">
             <span className="block text-base font-semibold tracking-[0.13em] sm:text-lg">信男代購</span>
@@ -1228,14 +1443,14 @@ export default function Home({
               <li className="grid grid-cols-[42px_1fr] gap-x-4 border-b border-[#D9D6D0] py-4 sm:grid-cols-[56px_1fr_auto] sm:items-center sm:gap-x-6 2xl:grid-cols-[56px_380px_minmax(0,1fr)]" key={number}>
                 <span className="text-xs font-medium tracking-[0.12em] text-[#605B51]/65">{number}</span>
                 <h3 className="text-base font-semibold">{title}</h3>
-                <p className="col-start-2 mt-1 text-sm leading-5 text-[#605B51] sm:col-start-auto sm:mt-0 sm:max-w-[16rem] 2xl:max-w-none 2xl:whitespace-nowrap">{description}</p>
+                <p className="col-start-2 mt-1 text-sm leading-5 text-[#605B51] sm:col-start-auto sm:mt-0 sm:whitespace-nowrap">{description}</p>
               </li>
             ))}
           </ol>
         </div>
       </section>
 
-      <footer className="min-h-[380px] border-t border-[#D9D6D0] bg-[#F0ECE3] px-5 pb-16 pt-8 sm:px-8 sm:pb-12 md:min-h-0 lg:px-12">
+      <footer className="min-h-[380px] border-t border-[#D9D6D0] bg-white px-5 pb-16 pt-8 sm:px-8 sm:pb-12 md:min-h-0 lg:px-12">
         <div className="mx-auto grid max-w-[1500px] gap-7 md:grid-cols-[1fr_auto]">
           <div>
             <p className="text-lg font-semibold tracking-[0.1em]">信男代購</p>

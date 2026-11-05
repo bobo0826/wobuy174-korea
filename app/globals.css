@@ -1,9 +1,19 @@
 @import "tailwindcss";
 
+/* GenSen Rounded is released under SIL OFL-1.1 and is free for commercial use. */
+@font-face {
+  font-family: "GenSen Rounded";
+  src: url("https://cdn.jsdelivr.net/gh/ButTaiwan/gensen-font@master/otf/TW/GenSenRounded2TW-R.otf") format("opentype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
 :root {
-  --background: #FAF7F0;
-  --foreground: #605B51;
-  --font-round: ui-rounded, "Arial Rounded MT Bold", "Hiragino Maru Gothic ProN", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --background: #ffffff;
+  --foreground: #4b3c38;
+  --font-store-ui: "GenSen Rounded", "Hiragino Maru Gothic ProN", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --font-store-display: "GenSen Rounded", "Hiragino Maru Gothic ProN", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
   --font-hand: "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", cursive;
 }
 
@@ -19,7 +29,7 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-round);
+  font-family: var(--font-store-ui);
 }
 
 button,
@@ -41,6 +51,10 @@ button {
 
 .font-hand {
   font-family: var(--font-hand);
+}
+
+.font-store-display {
+  font-family: var(--font-store-display);
 }
 
 @keyframes announcement-marquee {

@@ -50,6 +50,20 @@ function normalizeVariants(value: unknown) {
   });
 }
 
+function optionalProductText(value: string | null | undefined) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return undefined;
+
+  return [
+    "請洽 LINE@",
+    "依商品頁或客服通知",
+    "商品介紹請洽 LINE@ 官方帳號確認。",
+    "尺寸、花色與供貨狀況請以客服確認為準。",
+  ].includes(text)
+    ? undefined
+    : text;
+}
+
 function toProduct(product: StoredProduct): Product {
   const categories = (product.categories ?? []).filter((category) =>
     productCategoryOptions.some((option) => option.id === category),
@@ -60,12 +74,12 @@ function toProduct(product: StoredProduct): Product {
     name: product.name,
     price: product.price,
     variants: normalizeVariants(product.variants),
-    originalPrice: product.original_price ?? undefined,
-    code: product.code,
-    deadline: product.deadline ?? "請洽 LINE@",
-    arrival: product.arrival ?? "依商品頁或客服通知",
-    colors: product.colors ?? "請洽 LINE@",
-    sizes: product.sizes ?? "請洽 LINE@",
+    originalPrice: optionalProductText(product.original_price),
+    code: optionalProductText(product.code) ?? "",
+    deadline: optionalProductText(product.deadline),
+    arrival: optionalProductText(product.arrival),
+    colors: optionalProductText(product.colors),
+    sizes: optionalProductText(product.sizes),
     status: ["現貨", "預購", "連線中", "已收單"].includes(product.status)
       ? (product.status as Product["status"])
       : "預購",
@@ -79,8 +93,8 @@ function toProduct(product: StoredProduct): Product {
     koreaType: product.korea_type ?? undefined,
     plushType: product.plush_type ?? undefined,
     japanType: product.japan_type ?? undefined,
-    details: product.details ?? "商品介紹請洽 LINE@ 官方帳號確認。",
-    specs: product.specs ?? "尺寸、花色與供貨狀況請以客服確認為準。",
+    details: optionalProductText(product.details),
+    specs: optionalProductText(product.specs),
   };
 }
 

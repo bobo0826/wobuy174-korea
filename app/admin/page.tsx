@@ -109,7 +109,7 @@ const emptyDraft: ProductDraft = {
   beddingType: "",
   japanType: "",
   deadline: "",
-  arrival: "依商品頁或客服通知",
+  arrival: "",
   colors: "",
   sizes: "",
   details: "",
@@ -246,7 +246,7 @@ function toDraft(row: CsvRow): ProductDraft {
     japanType:
       toSubcategoryValue(getValue(row, "日本子分類", "japan_type"), japanTypeAliases),
     deadline: getValue(row, "收單日", "deadline"),
-    arrival: getValue(row, "預計到貨", "arrival") || "依商品頁或客服通知",
+    arrival: getValue(row, "預計到貨", "arrival"),
     colors: getValue(row, "顏色", "colors"),
     sizes: getValue(row, "尺寸", "sizes"),
     details: getValue(row, "商品介紹", "details"),
@@ -308,7 +308,7 @@ function toDraftFromProduct(product: ManagedProduct): ProductDraft {
     beddingType: product.bedding_type ?? "",
     japanType: product.japan_type ?? "",
     deadline: product.deadline ?? "",
-    arrival: product.arrival ?? "依商品頁或客服通知",
+    arrival: product.arrival ?? "",
     colors: product.colors ?? "",
     sizes: product.sizes ?? "",
     details: product.details ?? "",
@@ -765,23 +765,31 @@ export default function AdminPage() {
       </header>
 
       <div className="mx-auto max-w-[1200px] px-5 py-8 sm:px-8 sm:py-12 lg:px-0">
-        <section className="rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8">
-          <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">BULK IMPORT</p>
-          <h1 className="mt-3 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">批量上傳商品</h1>
-          <ol className="mt-5 grid gap-3 text-sm leading-6 text-[#605B51]/80 md:grid-cols-3">
-            <li><span className="mr-2 font-semibold">01</span>下載 CSV 範本並填入商品資料。</li>
-            <li><span className="mr-2 font-semibold">02</span>每件最多 3 張，照片請以「商品編號-1.jpg」命名。</li>
-            <li><span className="mr-2 font-semibold">03</span>一次選取 CSV 與所有照片後開始匯入。</li>
-          </ol>
-          <a className="mt-5 inline-flex border-b border-[#605B51] pb-1 text-sm font-medium" href="/products-template.csv" download>下載 CSV 範本</a>
-          <p className="mt-3 text-xs leading-5 text-[#605B51]/65">子分類規格價格欄位格式：<span className="font-medium">規格名稱：商品編號：優惠價｜規格名稱：商品編號：優惠價</span></p>
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <label className="block text-sm font-medium">商品 CSV<input className={inputClass} accept=".csv,text/csv" type="file" onChange={(event) => setCsvFile(event.target.files?.[0] ?? null)} /></label>
-            <label className="block text-sm font-medium">商品照片（可一次多選）<input className={inputClass} accept="image/*" multiple type="file" onChange={(event) => setBatchImages(Array.from(event.target.files ?? []))} /></label>
+        <details className="group rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6 sm:p-8">
+            <div>
+              <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">BULK IMPORT</p>
+              <h1 className="mt-3 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">批量上傳商品</h1>
+              <p className="mt-2 text-sm text-[#605B51]/70">上傳 CSV 與商品照片</p>
+            </div>
+            <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-[#605B51]/70"><span className="hidden sm:inline">點擊展開</span><span className="text-xl transition-transform group-open:rotate-180">⌄</span></span>
+          </summary>
+          <div className="border-t border-[#D9D6D0] px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
+            <ol className="grid gap-3 text-sm leading-6 text-[#605B51]/80 md:grid-cols-3">
+              <li><span className="mr-2 font-semibold">01</span>下載 CSV 範本並填入商品資料。</li>
+              <li><span className="mr-2 font-semibold">02</span>每件最多 3 張，照片請以「商品編號-1.jpg」命名。</li>
+              <li><span className="mr-2 font-semibold">03</span>一次選取 CSV 與所有照片後開始匯入。</li>
+            </ol>
+            <a className="mt-5 inline-flex border-b border-[#605B51] pb-1 text-sm font-medium" href="/products-template.csv" download>下載 CSV 範本</a>
+            <p className="mt-3 text-xs leading-5 text-[#605B51]/65">子分類規格價格欄位格式：<span className="font-medium">規格名稱：商品編號：優惠價｜規格名稱：商品編號：優惠價</span></p>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <label className="block text-sm font-medium">商品 CSV<input className={inputClass} accept=".csv,text/csv" type="file" onChange={(event) => setCsvFile(event.target.files?.[0] ?? null)} /></label>
+              <label className="block text-sm font-medium">商品照片（可一次多選）<input className={inputClass} accept="image/*" multiple type="file" onChange={(event) => setBatchImages(Array.from(event.target.files ?? []))} /></label>
+            </div>
+            <button className="mt-6 rounded-full bg-[#605B51] px-6 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={!csvFile || isBusy} onClick={importCsv}>{isBusy ? "處理中…" : "開始批量匯入"}</button>
+            {batchResult && <p className="mt-4 text-sm leading-7 text-[#605B51]/80">{batchResult}</p>}
           </div>
-          <button className="mt-6 rounded-full bg-[#605B51] px-6 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={!csvFile || isBusy} onClick={importCsv}>{isBusy ? "處理中…" : "開始批量匯入"}</button>
-          {batchResult && <p className="mt-4 text-sm leading-7 text-[#605B51]/80">{batchResult}</p>}
-        </section>
+        </details>
 
         <section className="mt-8 flex flex-wrap items-center justify-between gap-5 border-y border-[#D9D6D0] py-7">
           <div>
@@ -792,61 +800,77 @@ export default function AdminPage() {
           <Link className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5]" href="/admin/products">前往商品列表</Link>
         </section>
 
-        <section className="mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="site-announcement">
-          <p className="text-[10px] font-semibold tracking-[0.22em] text-[#7D2F35]">LATEST NEWS</p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">前台最新消息</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">前台商品分類上方會將已啟用的消息以連續跑馬燈播放，不另顯示標題。取消勾選後會保留內容，但不會出現在前台。</p>
-          <div className="mt-5 grid gap-3">
-            {announcements.map((announcement, index) => (
-              <div className="rounded-[5px] border border-[#D9D6D0] bg-[#F5F5F5] p-4" key={announcement.slot}>
-                <div className="flex items-center justify-between gap-4">
-                  <p className="text-sm font-medium">第 {index + 1} 則消息</p>
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-                    <input checked={announcement.enabled} className="h-4 w-4 accent-[#7D2F35]" disabled={isBusy || !announcementLoaded} onChange={(event) => setAnnouncements((current) => current.map((item) => item.slot === announcement.slot ? { ...item, enabled: event.target.checked } : item))} type="checkbox" />
-                    是否顯示
-                  </label>
-                </div>
-                <input className={inputClass} disabled={isBusy || !announcementLoaded} maxLength={180} onChange={(event) => setAnnouncements((current) => current.map((item) => item.slot === announcement.slot ? { ...item, content: event.target.value } : item))} placeholder={`例如：第 ${index + 1} 則最新活動資訊`} value={announcement.content} />
-              </div>
-            ))}
-          </div>
-          <button className="mt-5 rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !announcementLoaded} onClick={() => void saveAnnouncement()} type="button">儲存 3 則輪播消息</button>
-          {announcementMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{announcementMessage}</p>}
-        </section>
-
-        <section className="mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="subcategory-management">
-          <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">SUBCATEGORY MANAGEMENT</p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">子分類管理</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#605B51]/70">這裡新增或刪除的選項，會同步出現在後台新增商品、商品列表篩選與前台商品分類。刪除選項不會刪除既有商品。</p>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {subcategoryScopes.map((scope) => {
-              const options = subcategoriesFor(subcategories, scope.value);
-              return (
-                <section className="rounded-[5px] border border-[#D9D6D0] bg-[#F5F5F5] p-4" key={scope.value}>
-                  <p className="text-sm font-semibold">{scope.label}</p>
-                  <p className="mt-1 text-xs text-[#605B51]/65">{scope.description}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {options.map((option) => (
-                      <span className="inline-flex items-center gap-2 rounded-full border border-[#D9D6D0] bg-[#FAF7F0] py-1.5 pl-3 pr-2 text-sm" key={option.id}>
-                        {option.label}
-                        <button aria-label={`刪除 ${option.label}`} className="rounded-full px-1 text-[#A81515] transition-colors hover:bg-[#F1D8D8] disabled:opacity-40" disabled={isBusy || !subcategoriesLoaded} onClick={() => void deleteSubcategory(option)} type="button">×</button>
-                      </span>
-                    ))}
-                    {!options.length && <p className="text-sm text-[#605B51]/65">尚未建立選項。</p>}
+        <details className="group mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4]" id="site-announcement">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6 sm:p-8">
+            <div>
+              <p className="text-[10px] font-semibold tracking-[0.22em] text-[#7D2F35]">LATEST NEWS</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">前台最新消息</h2>
+              <p className="mt-2 text-sm text-[#605B51]/70">管理前台跑馬燈的 3 則消息</p>
+            </div>
+            <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-[#605B51]/70"><span className="hidden sm:inline">點擊展開</span><span className="text-xl transition-transform group-open:rotate-180">⌄</span></span>
+          </summary>
+          <div className="border-t border-[#D9D6D0] px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
+            <p className="max-w-3xl text-sm leading-6 text-[#605B51]/70">前台商品分類上方會將已啟用的消息以連續跑馬燈播放，不另顯示標題。取消勾選後會保留內容，但不會出現在前台。</p>
+            <div className="mt-5 grid gap-3">
+              {announcements.map((announcement, index) => (
+                <div className="rounded-[5px] border border-[#D9D6D0] bg-[#F5F5F5] p-4" key={announcement.slot}>
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-sm font-medium">第 {index + 1} 則消息</p>
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                      <input checked={announcement.enabled} className="h-4 w-4 accent-[#7D2F35]" disabled={isBusy || !announcementLoaded} onChange={(event) => setAnnouncements((current) => current.map((item) => item.slot === announcement.slot ? { ...item, enabled: event.target.checked } : item))} type="checkbox" />
+                      是否顯示
+                    </label>
                   </div>
-                </section>
-              );
-            })}
+                  <input className={inputClass} disabled={isBusy || !announcementLoaded} maxLength={180} onChange={(event) => setAnnouncements((current) => current.map((item) => item.slot === announcement.slot ? { ...item, content: event.target.value } : item))} placeholder={`例如：第 ${index + 1} 則最新活動資訊`} value={announcement.content} />
+                </div>
+              ))}
+            </div>
+            <button className="mt-5 rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !announcementLoaded} onClick={() => void saveAnnouncement()} type="button">儲存 3 則輪播消息</button>
+            {announcementMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{announcementMessage}</p>}
           </div>
+        </details>
 
-          <div className="mt-6 flex flex-wrap items-end gap-3 border-t border-[#D9D6D0] pt-5">
-            <label className="block text-sm font-medium">新增至<select className={inputClass} disabled={isBusy || !subcategoriesLoaded} onChange={(event) => setSubcategoryScope(event.target.value as SubcategoryScope)} value={subcategoryScope}>{subcategoryScopes.map((scope) => <option key={scope.value} value={scope.value}>{scope.label}</option>)}</select></label>
-            <label className="block min-w-[220px] flex-1 text-sm font-medium">子分類名稱<input className={inputClass} disabled={isBusy || !subcategoriesLoaded} onChange={(event) => setSubcategoryLabel(event.target.value)} placeholder="例如：角落小夥伴" value={subcategoryLabel} /></label>
-            <button className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !subcategoriesLoaded} onClick={() => void createSubcategory()} type="button">新增子分類</button>
+        <details className="group mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4]" id="subcategory-management">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6 sm:p-8">
+            <div>
+              <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">SUBCATEGORY MANAGEMENT</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">子分類管理</h2>
+              <p className="mt-2 text-sm text-[#605B51]/70">新增、刪除前後台共用的子分類</p>
+            </div>
+            <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-[#605B51]/70"><span className="hidden sm:inline">點擊展開</span><span className="text-xl transition-transform group-open:rotate-180">⌄</span></span>
+          </summary>
+          <div className="border-t border-[#D9D6D0] px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
+            <p className="max-w-3xl text-sm leading-6 text-[#605B51]/70">這裡新增或刪除的選項，會同步出現在後台新增商品、商品列表篩選與前台商品分類。刪除選項不會刪除既有商品。</p>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {subcategoryScopes.map((scope) => {
+                const options = subcategoriesFor(subcategories, scope.value);
+                return (
+                  <section className="rounded-[5px] border border-[#D9D6D0] bg-[#F5F5F5] p-4" key={scope.value}>
+                    <p className="text-sm font-semibold">{scope.label}</p>
+                    <p className="mt-1 text-xs text-[#605B51]/65">{scope.description}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {options.map((option) => (
+                        <span className="inline-flex items-center gap-2 rounded-full border border-[#D9D6D0] bg-[#FAF7F0] py-1.5 pl-3 pr-2 text-sm" key={option.id}>
+                          {option.label}
+                          <button aria-label={`刪除 ${option.label}`} className="rounded-full px-1 text-[#A81515] transition-colors hover:bg-[#F1D8D8] disabled:opacity-40" disabled={isBusy || !subcategoriesLoaded} onClick={() => void deleteSubcategory(option)} type="button">×</button>
+                        </span>
+                      ))}
+                      {!options.length && <p className="text-sm text-[#605B51]/65">尚未建立選項。</p>}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-end gap-3 border-t border-[#D9D6D0] pt-5">
+              <label className="block text-sm font-medium">新增至<select className={inputClass} disabled={isBusy || !subcategoriesLoaded} onChange={(event) => setSubcategoryScope(event.target.value as SubcategoryScope)} value={subcategoryScope}>{subcategoryScopes.map((scope) => <option key={scope.value} value={scope.value}>{scope.label}</option>)}</select></label>
+              <label className="block min-w-[220px] flex-1 text-sm font-medium">子分類名稱<input className={inputClass} disabled={isBusy || !subcategoriesLoaded} onChange={(event) => setSubcategoryLabel(event.target.value)} placeholder="例如：角落小夥伴" value={subcategoryLabel} /></label>
+              <button className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !subcategoriesLoaded} onClick={() => void createSubcategory()} type="button">新增子分類</button>
+            </div>
+            {subcategoryMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{subcategoryMessage}</p>}
           </div>
-          {subcategoryMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{subcategoryMessage}</p>}
-        </section>
+        </details>
 
         <section className="mt-8 border-t border-[#D9D6D0] pt-8" id="single-product-form">
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">SINGLE PRODUCT</p>
