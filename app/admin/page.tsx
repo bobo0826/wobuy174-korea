@@ -404,6 +404,7 @@ export default function AdminPage() {
   const [announcements, setAnnouncements] = useState<SiteAnnouncement[]>(defaultSiteAnnouncementItems);
   const [announcementLoaded, setAnnouncementLoaded] = useState(false);
   const [announcementMessage, setAnnouncementMessage] = useState("");
+  const [activeAdminPanel, setActiveAdminPanel] = useState<"bulk" | "products" | "announcements" | "subcategories" | null>(null);
 
   const loadSubcategories = useCallback(async () => {
     const supabase = getSupabaseClient();
@@ -765,16 +766,33 @@ export default function AdminPage() {
       </header>
 
       <div className="mx-auto max-w-[1200px] px-5 py-8 sm:px-8 sm:py-12 lg:px-0">
-        <details className="group rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4]">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6 sm:p-8">
-            <div>
-              <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">BULK IMPORT</p>
-              <h1 className="mt-3 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">批量上傳商品</h1>
-              <p className="mt-2 text-sm text-[#605B51]/70">上傳 CSV 與商品照片</p>
-            </div>
-            <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-[#605B51]/70"><span className="hidden sm:inline">點擊展開</span><span className="text-xl transition-transform group-open:rotate-180">⌄</span></span>
-          </summary>
-          <div className="border-t border-[#D9D6D0] px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
+        <div aria-label="後台管理功能" className="overflow-x-auto pb-2">
+          <div className="flex min-w-max items-center gap-3">
+            {[
+              ["bulk", "批量上傳商品"],
+              ["products", "商品列表、分類與排序"],
+              ["announcements", "前台最新消息"],
+              ["subcategories", "子分類管理"],
+            ].map(([panel, label]) => {
+              const isActive = activeAdminPanel === panel;
+              return (
+                <button
+                  aria-controls={`admin-${panel}-panel`}
+                  aria-expanded={isActive}
+                  className={`rounded-full border px-5 py-3 text-sm font-semibold transition-colors sm:px-6 ${isActive ? "border-[#605B51] bg-[#605B51] text-[#F5F5F5]" : "border-[#D9D6D0] bg-white text-[#605B51] hover:border-[#605B51]"}`}
+                  key={panel}
+                  onClick={() => setActiveAdminPanel((current) => current === panel ? null : panel as "bulk" | "products" | "announcements" | "subcategories")}
+                  type="button"
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {activeAdminPanel === "bulk" && (
+          <section aria-label="批量上傳商品" className="mt-6 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="admin-bulk-panel">
             <ol className="grid gap-3 text-sm leading-6 text-[#605B51]/80 md:grid-cols-3">
               <li><span className="mr-2 font-semibold">01</span>下載 CSV 範本並填入商品資料。</li>
               <li><span className="mr-2 font-semibold">02</span>每件最多 3 張，照片請以「商品編號-1.jpg」命名。</li>
@@ -788,28 +806,18 @@ export default function AdminPage() {
             </div>
             <button className="mt-6 rounded-full bg-[#605B51] px-6 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={!csvFile || isBusy} onClick={importCsv}>{isBusy ? "處理中…" : "開始批量匯入"}</button>
             {batchResult && <p className="mt-4 text-sm leading-7 text-[#605B51]/80">{batchResult}</p>}
-          </div>
-        </details>
+          </section>
+        )}
 
-        <section className="mt-8 flex flex-wrap items-center justify-between gap-5 border-y border-[#D9D6D0] py-7">
-          <div>
-            <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">PRODUCT MANAGEMENT</p>
-            <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em]">商品列表、分類與排序</h2>
-            <p className="mt-2 text-sm leading-6 text-[#605B51]/70">集中管理商品分類、前台顯示與排列順序。</p>
-          </div>
-          <Link className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5]" href="/admin/products">前往商品列表</Link>
-        </section>
+        {activeAdminPanel === "products" && (
+          <section aria-label="商品列表、分類與排序" className="mt-6 flex flex-wrap items-center justify-between gap-5 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="admin-products-panel">
+            <p className="text-sm leading-6 text-[#605B51]/70">集中管理商品分類、前台顯示與排列順序。</p>
+            <Link className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5]" href="/admin/products">前往商品列表</Link>
+          </section>
+        )}
 
-        <details className="group mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4]" id="site-announcement">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6 sm:p-8">
-            <div>
-              <p className="text-[10px] font-semibold tracking-[0.22em] text-[#7D2F35]">LATEST NEWS</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">前台最新消息</h2>
-              <p className="mt-2 text-sm text-[#605B51]/70">管理前台跑馬燈的 3 則消息</p>
-            </div>
-            <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-[#605B51]/70"><span className="hidden sm:inline">點擊展開</span><span className="text-xl transition-transform group-open:rotate-180">⌄</span></span>
-          </summary>
-          <div className="border-t border-[#D9D6D0] px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
+        {activeAdminPanel === "announcements" && (
+          <section aria-label="前台最新消息" className="mt-6 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="admin-announcements-panel">
             <p className="max-w-3xl text-sm leading-6 text-[#605B51]/70">前台商品分類上方會將已啟用的消息以連續跑馬燈播放，不另顯示標題。取消勾選後會保留內容，但不會出現在前台。</p>
             <div className="mt-5 grid gap-3">
               {announcements.map((announcement, index) => (
@@ -827,19 +835,11 @@ export default function AdminPage() {
             </div>
             <button className="mt-5 rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !announcementLoaded} onClick={() => void saveAnnouncement()} type="button">儲存 3 則輪播消息</button>
             {announcementMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{announcementMessage}</p>}
-          </div>
-        </details>
+          </section>
+        )}
 
-        <details className="group mt-8 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4]" id="subcategory-management">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6 sm:p-8">
-            <div>
-              <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">SUBCATEGORY MANAGEMENT</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">子分類管理</h2>
-              <p className="mt-2 text-sm text-[#605B51]/70">新增、刪除前後台共用的子分類</p>
-            </div>
-            <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-[#605B51]/70"><span className="hidden sm:inline">點擊展開</span><span className="text-xl transition-transform group-open:rotate-180">⌄</span></span>
-          </summary>
-          <div className="border-t border-[#D9D6D0] px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
+        {activeAdminPanel === "subcategories" && (
+          <section aria-label="子分類管理" className="mt-6 rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-6 sm:p-8" id="admin-subcategories-panel">
             <p className="max-w-3xl text-sm leading-6 text-[#605B51]/70">這裡新增或刪除的選項，會同步出現在後台新增商品、商品列表篩選與前台商品分類。刪除選項不會刪除既有商品。</p>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -869,8 +869,8 @@ export default function AdminPage() {
               <button className="rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5] disabled:opacity-50" disabled={isBusy || !subcategoriesLoaded} onClick={() => void createSubcategory()} type="button">新增子分類</button>
             </div>
             {subcategoryMessage && <p className="mt-4 text-sm leading-6 text-[#605B51]/75">{subcategoryMessage}</p>}
-          </div>
-        </details>
+          </section>
+        )}
 
         <section className="mt-8 border-t border-[#D9D6D0] pt-8" id="single-product-form">
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">SINGLE PRODUCT</p>
