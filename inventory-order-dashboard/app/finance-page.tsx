@@ -332,7 +332,28 @@ export function FinancePage() {
           <span className="pb-2 text-xs text-[#807A71]">顯示 {visibleTransactions.length} 筆</span>
         </div>
         {selectedCreditCardTransactions.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F0EDE8] bg-[#FFF9F3] px-4 py-3 sm:px-6"><div><b className="text-sm text-[#765534]">已選取 {selectedCreditCardTransactions.length} 筆信用卡代墊款</b><p className="mt-1 text-xs text-[#9A7654]">已知台幣金額 {money(selectedKnownTwdTotal, "TWD")}{selectedForeignCount ? `；另有 ${selectedForeignCount} 筆外幣` : ""}</p></div><div className="flex items-center gap-3"><button type="button" onClick={() => setSelectedCreditCardIds([])} className="text-sm font-semibold text-[#766557]">清除選取</button><button type="button" onClick={openClaimBatch} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#A66932] px-4 text-sm font-semibold text-white">確認總額並一起請款</button></div></div>}
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-[#F0EDE8] md:hidden">
+          {loading ? <p className="px-5 py-10 text-center text-sm text-[#8D877E]">載入收支紀錄中…</p> : visibleTransactions.length ? visibleTransactions.map((transaction) => {
+            const creditAdvance = isCreditCardAdvance(transaction);
+            const claimed = isClaimed(transaction);
+            const amountTone = transaction.direction === "income" ? "text-[#477154]" : "text-[#A66932]";
+            return <article key={transaction.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${transaction.direction === "income" ? "bg-[#E7F0E8] text-[#477154]" : "bg-[#FAECDD] text-[#A66932]"}`}>{transactionMajor(transaction)}</span><span className="text-xs text-[#817B72]">{transaction.occurred_on.replaceAll("-", "/")}</span></div>
+                  <b className="mt-2 block truncate text-sm text-[#403C36]">{transaction.counterparty_name || transactionSub(transaction)}</b>
+                  <p className="mt-1 text-xs text-[#817B72]">{transactionSub(transaction)} · {creditAdvance ? "信用卡代墊款" : transaction.payment_method}</p>
+                </div>
+                <div className="shrink-0 text-right"><b className={`block text-lg ${amountTone}`}>{transaction.direction === "income" ? "+" : "−"}{money(transaction.amount, transaction.currency)}</b><small className="mt-1 block text-xs text-[#817B72]">{currencyLabel[transaction.currency]}</small></div>
+              </div>
+              {creditAdvance && <div className="mt-3 rounded-xl bg-[#FFF9F3] px-3 py-2.5 text-xs text-[#806247]">{[transaction.region, transaction.card_detail].filter(Boolean).join(" · ") || "信用卡代墊款"}<span className="mt-1 block font-semibold">{claimed ? transaction.credit_card_claim_batch_id ? "合併已請款" : "已請款" : "代墊未請款"}{transaction.currency !== "TWD" && !transaction.credit_card_claim_batches ? ` · 台幣：${transaction.settled_twd_amount ? money(transaction.settled_twd_amount, "TWD") : "待結帳"}` : ""}</span></div>}
+              {transaction.note && <p className="mt-3 line-clamp-2 text-xs leading-5 text-[#817B72]">備註：{transaction.note}</p>}
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#F0EDE8] pt-3"><span className="text-xs text-[#8B847A]">紀錄者：{transaction.created_by || "—"}</span>{creditAdvance && !claimed && <label className="ml-auto flex items-center gap-2 text-xs font-semibold text-[#765534]"><input aria-label={`選取 ${transaction.counterparty_name} 的信用卡代墊款`} type="checkbox" checked={selectedCreditCardIds.includes(transaction.id)} onChange={() => toggleCreditCardSelection(transaction)} className="h-4 w-4 rounded border-[#CFC7BD] text-[#A66932] focus:ring-[#D4A77A]" />選取請款</label>}</div>
+              <div className="mt-3 flex flex-wrap gap-3"><button type="button" onClick={() => setSelectedTransaction(transaction)} className="text-sm font-semibold text-[#5E7665]">查看明細</button>{creditAdvance && !claimed && <button type="button" onClick={() => openCreditCardEditor(transaction)} className="text-sm font-semibold text-[#A66932]">編輯／請款</button>}{!claimed && <button type="button" onClick={() => { void deleteTransaction(transaction); }} disabled={deletingId === transaction.id} className="text-sm font-semibold text-[#A35F37] disabled:cursor-not-allowed disabled:opacity-45">{deletingId === transaction.id ? "刪除中…" : "刪除"}</button>}</div>
+            </article>;
+          }) : <p className="px-5 py-12 text-center text-sm text-[#8D877E]">尚無收支紀錄。請新增第一筆記帳。</p>}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1370px] text-left">
             <thead className="bg-[#FBFAF8] text-[11px] font-semibold tracking-wide text-[#928C83]"><tr><th className="px-3 py-3 text-center">選取</th><th className="px-6 py-3">日期</th><th className="px-3 py-3">大分類</th><th className="px-3 py-3">小分類</th><th className="px-3 py-3">對象</th><th className="px-3 py-3">方式</th><th className="px-3 py-3">信用卡明細</th><th className="px-3 py-3">請款狀態</th><th className="px-3 py-3">紀錄者</th><th className="px-3 py-3">備註</th><th className="px-3 py-3 text-right">金額</th><th className="px-6 py-3 text-right">操作</th></tr></thead>
             <tbody className="divide-y divide-[#F0EDE8] text-sm">
