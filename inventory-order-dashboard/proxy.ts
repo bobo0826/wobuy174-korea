@@ -19,5 +19,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  // PWA metadata, icon and worker are intentionally public static assets. They contain
+  // no account data and must be available before a browser can offer installation.
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon|sw.js).*)"],
 };

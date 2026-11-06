@@ -16,9 +16,11 @@ html {
 
 body {
   margin: 0;
+  min-width: 320px;
   background: var(--background);
   color: var(--foreground);
   font-family: Inter, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button,
@@ -29,6 +31,13 @@ select {
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+input,
+select,
+textarea {
+  border-radius: 0;
 }
 
 ::selection {
@@ -55,6 +64,23 @@ aside.relative > p:first-child::after {
 /* 庫存總覽：摘要卡片固定每列兩張。 */
 main > section.grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* 手機使用時避免 iOS 因輸入欄位字級小於 16px 而自動放大畫面。 */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .mobile-safe-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .mobile-bottom-nav {
+    padding-bottom: max(0.45rem, env(safe-area-inset-bottom));
+  }
 }
 
 /* 出貨單固定使用單張 A4 直式，列印時保留畫面上的版面順序。 */
