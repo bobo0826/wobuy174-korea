@@ -549,7 +549,7 @@ export default function AdminProductsPage() {
 
   if (!isSupabaseConfigured) {
     return (
-      <main className="min-h-screen bg-[#F5F5F5] px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
+      <main className="min-h-screen bg-white px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
         <div className="mx-auto max-w-xl rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-7">
           <h1 className="text-2xl font-semibold">請先連接商品資料庫</h1>
           <Link className="mt-6 inline-flex rounded-full bg-[#605B51] px-5 py-3 text-sm font-medium text-[#F5F5F5]" href="/admin">回到後台</Link>
@@ -560,7 +560,7 @@ export default function AdminProductsPage() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-[#F5F5F5] px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
+      <main className="min-h-screen bg-white px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
         <div className="mx-auto max-w-xl rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-7">
           <h1 className="text-2xl font-semibold">請先登入商品後台</h1>
           <p className="mt-3 text-sm leading-6 text-[#605B51]/70">登入狀態會自動帶入這個商品列表頁面。</p>
@@ -571,7 +571,7 @@ export default function AdminProductsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F5F5] pb-16 text-[#605B51]">
+    <main className="min-h-screen bg-white pb-16 text-[#605B51]">
       <header className="border-b border-[#D9D6D0] px-5 py-5 sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-[1200px] items-center justify-between gap-4">
           <div><p className="text-lg font-semibold tracking-[0.1em]">信男代購</p><p className="mt-1 text-[10px] tracking-[0.2em] text-[#605B51]/65">WOBUY174_ / PRODUCTS</p></div>

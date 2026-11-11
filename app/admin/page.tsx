@@ -724,7 +724,7 @@ export default function AdminPage() {
 
   if (!isSupabaseConfigured) {
     return (
-      <main className="min-h-screen bg-[#F5F5F5] px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
+      <main className="min-h-screen bg-white px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
         <div className="mx-auto max-w-2xl rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-7 sm:p-10">
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">WOBUY174_ ADMIN</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">先連接商品資料庫</h1>
@@ -739,7 +739,7 @@ export default function AdminPage() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-[#F5F5F5] px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
+      <main className="min-h-screen bg-white px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
         <div className="mx-auto max-w-md rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-7 sm:p-10">
           <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">WOBUY174_ ADMIN</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">商品管理後台</h1>
@@ -757,7 +757,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F5F5] pb-16 text-[#605B51]">
+    <main className="min-h-screen bg-white pb-16 text-[#605B51]">
       <header className="border-b border-[#D9D6D0] px-5 py-5 sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-[1200px] items-center justify-between gap-4">
           <div><p className="text-lg font-semibold tracking-[0.1em]">信男代購</p><p className="mt-1 text-[10px] tracking-[0.2em] text-[#605B51]/65">WOBUY174_ ADMIN</p></div>

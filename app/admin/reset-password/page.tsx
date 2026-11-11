@@ -82,7 +82,7 @@ export default function ResetPasswordPage() {
 
   if (!isSupabaseConfigured) {
     return (
-      <main className="min-h-screen bg-[#F5F5F5] px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
+      <main className="min-h-screen bg-white px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
         <div className="mx-auto max-w-md rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-7 sm:p-10">
           <h1 className="text-2xl font-semibold">尚未連接商品資料庫</h1>
           <Link className="mt-6 inline-block text-sm font-medium underline underline-offset-4" href="/admin">回到後台登入</Link>
@@ -92,7 +92,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F5F5] px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
+    <main className="min-h-screen bg-white px-5 py-12 text-[#605B51] sm:px-8 lg:px-12">
       <div className="mx-auto max-w-md rounded-[6px] border border-[#D9D6D0] bg-[#EAE8E4] p-7 sm:p-10">
         <p className="text-[10px] font-semibold tracking-[0.22em] text-[#605B51]/65">WOBUY174_ ADMIN</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">{hasRecoverySession ? "設定新密碼" : "忘記密碼"}</h1>
