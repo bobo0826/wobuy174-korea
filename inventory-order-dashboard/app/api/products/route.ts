@@ -14,6 +14,7 @@ type ProductInput = {
   specification?: unknown;
   note?: unknown;
   cost?: unknown;
+  localPrice?: unknown;
   staffPrice?: unknown;
   retailPrice?: unknown;
   availableStock?: unknown;
@@ -32,6 +33,10 @@ const nonNegativeInteger = (value: unknown) => {
   const number = Number(value);
   return Number.isInteger(number) && number >= 0 ? number : null;
 };
+const nonNegativeAmount = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+};
 
 function validateProduct(input: ProductInput) {
   const supplierId = text(input.supplierId);
@@ -44,6 +49,7 @@ function validateProduct(input: ProductInput) {
     specification: text(input.specification),
     note: text(input.note),
     cost: nonNegativeInteger(input.cost),
+    local_price: nonNegativeAmount(input.localPrice),
     staff_price: nonNegativeInteger(input.staffPrice),
     retail_price: nonNegativeInteger(input.retailPrice),
     available_stock: nonNegativeInteger(input.availableStock),
@@ -59,8 +65,8 @@ function validateProduct(input: ProductInput) {
     return { error: "供應商資料不正確。" };
   }
 
-  if ([product.cost, product.staff_price, product.retail_price, product.available_stock, product.safety_stock].some((value) => value === null)) {
-    return { error: "價格與庫存必須為零或正整數。" };
+  if ([product.cost, product.local_price, product.staff_price, product.retail_price, product.available_stock, product.safety_stock].some((value) => value === null)) {
+    return { error: "價格與庫存必須為零或正數。" };
   }
 
   return { product };
@@ -70,11 +76,11 @@ function validateProductUpdate(input: ProductUpdateInput) {
   const supplierId = text(input.supplierId);
   const product = {
     sku: text(input.sku), name: text(input.name), country: text(input.country), category: text(input.category), subcategory: text(input.subcategory), specification: text(input.specification), note: text(input.note),
-    cost: nonNegativeInteger(input.cost), staff_price: nonNegativeInteger(input.staffPrice), retail_price: nonNegativeInteger(input.retailPrice), safety_stock: nonNegativeInteger(input.safetyStock), supplier_id: supplierId || null,
+    cost: nonNegativeInteger(input.cost), local_price: nonNegativeAmount(input.localPrice), staff_price: nonNegativeInteger(input.staffPrice), retail_price: nonNegativeInteger(input.retailPrice), safety_stock: nonNegativeInteger(input.safetyStock), supplier_id: supplierId || null,
   };
   if (!product.sku || !product.name || !product.country || !product.category) return { error: "請完整填寫商品編號、名稱、國家與商品種類。" };
   if (supplierId && !uuidPattern.test(supplierId)) return { error: "供應商資料不正確。" };
-  if ([product.cost, product.staff_price, product.retail_price, product.safety_stock].some((value) => value === null)) return { error: "價格與安全庫存必須為零或正整數。" };
+  if ([product.cost, product.local_price, product.staff_price, product.retail_price, product.safety_stock].some((value) => value === null)) return { error: "價格與安全庫存必須為零或正數。" };
   return { product, changeNote: text(input.changeNote) };
 }
 

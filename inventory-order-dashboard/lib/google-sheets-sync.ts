@@ -13,6 +13,7 @@ type ProductRecord = {
   specification: string;
   note: string;
   cost: number;
+  local_price: number;
   staff_price: number;
   retail_price: number;
   available_stock: number;

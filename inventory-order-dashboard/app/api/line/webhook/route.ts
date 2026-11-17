@@ -24,6 +24,7 @@ type ProductDraft = {
   specification: string;
   note: string;
   cost: number;
+  local_price: number;
   staff_price: number;
   retail_price: number;
   available_stock: number;
@@ -39,6 +40,7 @@ const fieldAliases: Record<keyof ProductDraft, string[]> = {
   specification: ["商品規格", "規格"],
   note: ["備註"],
   cost: ["最新成本", "成本"],
+  local_price: ["當地價格", "當地成本"],
   staff_price: ["員工價"],
   retail_price: ["一般售價", "零售價", "售價"],
   available_stock: ["可售庫存", "初始庫存", "庫存"],
@@ -54,6 +56,7 @@ const template = `請用以下格式傳送：
 商品子分類：涼感被
 商品規格：雙人
 最新成本：850
+當地價格：30000
 員工價：1000
 一般售價：1280
 可售庫存：0
@@ -108,12 +111,13 @@ function parseProduct(text: string): { product?: ProductDraft; error?: string } 
 
   const number = (field: keyof ProductDraft) => {
     const raw = values.get(field) ?? "0";
+    if (field === "local_price") return /^\d+(?:\.\d{1,2})?$/.test(raw.trim()) ? Number(raw) : null;
     if (!/^\d+$/.test(raw.trim())) return null;
     return Number(raw);
   };
-  const numericFields = ["cost", "staff_price", "retail_price", "available_stock", "safety_stock"] as const;
+  const numericFields = ["cost", "local_price", "staff_price", "retail_price", "available_stock", "safety_stock"] as const;
   if (numericFields.some((field) => number(field) === null)) {
-    return { error: "價格與庫存請填寫零或正整數，不要加上 NT$、逗號或小數點。" };
+    return { error: "價格與庫存請填寫零或正數；當地價格最多可填兩位小數，且不要加上幣別或逗號。" };
   }
 
   return {
@@ -126,6 +130,7 @@ function parseProduct(text: string): { product?: ProductDraft; error?: string } 
       specification: values.get("specification")?.trim() ?? "",
       note: values.get("note")?.trim() ?? "",
       cost: number("cost")!,
+      local_price: number("local_price")!,
       staff_price: number("staff_price")!,
       retail_price: number("retail_price")!,
       available_stock: number("available_stock")!,

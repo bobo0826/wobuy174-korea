@@ -10,6 +10,7 @@ create table if not exists products (
   specification text not null default '',
   note text not null default '',
   cost integer not null default 0 check (cost >= 0),
+  local_price numeric(14,2) not null default 0 check (local_price >= 0),
   staff_price integer not null default 0 check (staff_price >= 0),
   retail_price integer not null default 0 check (retail_price >= 0),
   available_stock integer not null default 0 check (available_stock >= 0),

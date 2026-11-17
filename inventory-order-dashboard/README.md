@@ -56,6 +56,7 @@ Webhook URL 為 `https://wobuy174-stock.vercel.app/api/line/webhook`。LINE Deve
 商品子分類：涼感被
 商品規格：雙人
 最新成本：850
+當地價格：30000
 員工價：1000
 一般售價：1280
 可售庫存：0
