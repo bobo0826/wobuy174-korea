@@ -41,6 +41,7 @@ const nonNegativeAmount = (value: unknown) => {
 
 function validateProduct(input: ProductInput) {
   const supplierId = text(input.supplierId);
+  const hasLocalPrice = input.localPrice !== undefined && input.localPrice !== null && String(input.localPrice).trim() !== "";
   const product = {
     sku: text(input.sku),
     name: text(input.name),
@@ -50,7 +51,7 @@ function validateProduct(input: ProductInput) {
     specification: text(input.specification),
     note: text(input.note),
     cost: nonNegativeInteger(input.cost),
-    local_price: nonNegativeAmount(input.localPrice),
+    local_price: hasLocalPrice ? nonNegativeAmount(input.localPrice) : null,
     staff_price: nonNegativeInteger(input.staffPrice),
     retail_price: nonNegativeInteger(input.retailPrice),
     available_stock: nonNegativeInteger(input.availableStock),
@@ -58,8 +59,8 @@ function validateProduct(input: ProductInput) {
     supplier_id: supplierId || null,
   };
 
-  if (!product.sku || !product.name || !product.country || !product.category) {
-    return { error: "請完整填寫商品編號、名稱、國家與商品種類。" };
+  if (!product.sku || !product.name || !product.country || product.local_price === null) {
+    return { error: "請完整填寫商品編號、名稱、國家與當地價格。" };
   }
 
   if (supplierId && !uuidPattern.test(supplierId)) {
@@ -79,7 +80,7 @@ function validateProductUpdate(input: ProductUpdateInput) {
     sku: text(input.sku), name: text(input.name), country: text(input.country), category: text(input.category), subcategory: text(input.subcategory), specification: text(input.specification), note: text(input.note),
     cost: nonNegativeInteger(input.cost), local_price: nonNegativeAmount(input.localPrice), staff_price: nonNegativeInteger(input.staffPrice), retail_price: nonNegativeInteger(input.retailPrice), safety_stock: nonNegativeInteger(input.safetyStock), supplier_id: supplierId || null,
   };
-  if (!product.sku || !product.name || !product.country || !product.category) return { error: "請完整填寫商品編號、名稱、國家與商品種類。" };
+  if (!product.sku || !product.name || !product.country) return { error: "請完整填寫商品編號、名稱與國家。" };
   if (supplierId && !uuidPattern.test(supplierId)) return { error: "供應商資料不正確。" };
   if ([product.cost, product.local_price, product.staff_price, product.retail_price, product.safety_stock].some((value) => value === null)) return { error: "價格與安全庫存必須為零或正數。" };
   return { product, changeNote: text(input.changeNote) };

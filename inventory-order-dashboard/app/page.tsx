@@ -590,37 +590,29 @@ function Products({ catalog, openProduct, openNewProduct, openImportProducts, de
   </>;
 }
 
+const isKoreaLiveProductPeriod = () => {
+  const date = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+  return date >= "2026-11-27" && date <= "2026-12-02";
+};
+
 function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onCreated: (product: Product) => void; initialProduct?: Product | null }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [country, setCountry] = useState(initialProduct?.country ?? "");
   const [category, setCategory] = useState(initialProduct?.category ?? "");
   const [subcategory, setSubcategory] = useState(initialProduct?.subcategory ?? "");
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [supplierId, setSupplierId] = useState(initialProduct?.supplierId ?? "");
   const [form, setForm] = useState({ sku: initialProduct?.sku ? `${initialProduct.sku}-COPY` : "", name: initialProduct?.name ?? "", specification: initialProduct?.specification ?? "", note: initialProduct?.note ?? "", cost: String(initialProduct?.cost ?? 0), localPrice: String(initialProduct?.localPrice ?? 0), staffPrice: String(initialProduct?.staffPrice ?? 0), retailPrice: String(initialProduct?.retailPrice ?? 0), availableStock: String(initialProduct?.available ?? 0), safetyStock: String(initialProduct?.safety ?? 0) });
   const inputClass = "mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]";
   const updateForm = (field: keyof typeof form, value: string) => setForm((previous) => ({ ...previous, [field]: value }));
   useEffect(() => {
-    let active = true;
-    const loadSuppliers = async () => {
-      try {
-        const response = await fetch("/api/suppliers");
-        const result = await response.json();
-        if (response.ok && active) setSuppliers(result.suppliers ?? []);
-      } catch {
-        // 供應商尚未建立時仍可先新增商品，之後再從商品頁連結。
-      }
-    };
-    void loadSuppliers();
-    return () => { active = false; };
-  }, []);
+    if (!initialProduct && isKoreaLiveProductPeriod()) setCountry("韓國");
+  }, [initialProduct]);
   const saveProduct = async () => {
     setSaving(true);
     setSaveError("");
 
     try {
-      const response = await fetch("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, country, category, subcategory, supplierId }) });
+      const response = await fetch("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, country, category, subcategory }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? result.message ?? "無法儲存商品。");
       if (!result.product) throw new Error("商品已送出但未取得建立結果，請重新整理商品資料庫確認。");
@@ -637,27 +629,28 @@ function NewProduct({ back, onCreated, initialProduct }: { back: () => void; onC
   return <>
     <Header eyebrow={initialProduct ? "DUPLICATE PRODUCT" : "NEW PRODUCT"} title={initialProduct ? "複製商品" : "新增商品"} description={initialProduct ? "已帶入原商品資料；請確認商品編號與內容後儲存。" : "建立商品基本資料、售價與初始庫存。"}><Secondary onClick={back}>← 返回商品資料庫</Secondary></Header>
     {saveError && <Card className="mb-5 border-[#F0D6C2] bg-[#FFF7F0] p-5"><b className="block text-[#965723]">商品尚未儲存</b><small className="mt-1 block text-sm text-[#A36B3C]">{saveError}</small></Card>}
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
-      <div className="space-y-5">
-        <Card className="p-5 sm:p-6">
-          <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">BASIC INFORMATION</p>
-          <h2 className="mt-1 text-lg font-semibold">商品基本資料</h2>
-          <div className="mt-5 grid grid-cols-2 gap-4">
-            <label className="text-sm font-semibold text-[#58534C]">商品編號<input value={form.sku} onChange={(event) => updateForm("sku", event.target.value)} placeholder="例如：KB-174-CR" className={inputClass} /></label>
-            <label className="text-sm font-semibold text-[#58534C]">商品名稱<input value={form.name} onChange={(event) => updateForm("name", event.target.value)} placeholder="例如：雲朵感純棉四季被" className={inputClass} /></label>
-            <label className="text-sm font-semibold text-[#58534C]">國家<select value={country} onChange={(event) => { setCountry(event.target.value); setCategory(""); setSubcategory(""); }} className={inputClass}><option value="">請選擇國家</option><option>韓國</option><option>日本</option><option>大陸</option><option>台灣</option><option>其他</option></select></label>
-            <ProductCategoryPicker country={country} value={category} onChange={(value) => { setCategory(value); setSubcategory(""); }} inputClass={inputClass} />
-            <ProductSubcategoryPicker country={country} category={category} value={subcategory} onChange={setSubcategory} inputClass={inputClass} />
-            <label className="col-span-2 text-sm font-semibold text-[#58534C]">供應商<select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={inputClass}><option value="">尚未指定供應商</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {supplier.country}</option>)}</select><small className="mt-2 block font-normal text-xs text-[#938D84]">供應商可先在供應商管理頁建立，再於新增商品時選取。</small></label>
-            <label className="col-span-2 text-sm font-semibold text-[#58534C]">商品規格<input value={form.specification} onChange={(event) => updateForm("specification", event.target.value)} placeholder="例如：奶油白／單人" className={inputClass} /></label>
-            <label className="col-span-2 text-sm font-semibold text-[#58534C]">備註<textarea value={form.note} onChange={(event) => updateForm("note", event.target.value)} placeholder="例如：限定款、預購商品或採購注意事項" className="mt-2 min-h-24 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /></label>
-          </div>
-        </Card>
-        <Card className="p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRICING</p><h2 className="mt-1 text-lg font-semibold">價格設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><label className="text-sm font-semibold text-[#58534C]">最新成本<input type="number" min="0" value={form.cost} onChange={(event) => updateForm("cost", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">當地價格<input type="number" min="0" step="0.01" value={form.localPrice} onChange={(event) => updateForm("localPrice", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">員工價<input type="number" min="0" value={form.staffPrice} onChange={(event) => updateForm("staffPrice", event.target.value)} className={inputClass} /></label><label className="text-sm font-semibold text-[#58534C]">一般售價<input type="number" min="0" value={form.retailPrice} onChange={(event) => updateForm("retailPrice", event.target.value)} className={inputClass} /></label></div><p className="mt-3 text-xs leading-5 text-[#938D84]">當地價格依商品採購地的幣別填寫，會獨立保存，不影響台幣最新成本與售價。</p></Card>
+    <Card className="mx-auto max-w-4xl p-5 sm:p-6">
+      <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PRODUCT FORM</p>
+      <h2 className="mt-1 text-lg font-semibold">商品資料</h2>
+      <p className="mt-2 text-sm text-[#807A72]">標示 <b className="text-[#A35F37]">*</b> 的欄位為必填。</p>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <label className="text-sm font-semibold text-[#58534C]"><span aria-hidden="true" className="mr-0.5 text-[#A35F37]">*</span>商品編號<input required value={form.sku} onChange={(event) => updateForm("sku", event.target.value)} placeholder="例如：KB-174-CR" className={inputClass} /></label>
+        <label className="text-sm font-semibold text-[#58534C]"><span aria-hidden="true" className="mr-0.5 text-[#A35F37]">*</span>商品名稱<input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} placeholder="例如：雲朵感純棉四季被" className={inputClass} /></label>
+        <label className="text-sm font-semibold text-[#58534C]"><span aria-hidden="true" className="mr-0.5 text-[#A35F37]">*</span>國家<select required value={country} onChange={(event) => { setCountry(event.target.value); setCategory(""); setSubcategory(""); }} className={inputClass}><option value="">請選擇國家</option><option>韓國</option><option>日本</option><option>大陸</option><option>台灣</option><option>其他</option></select>{!initialProduct && isKoreaLiveProductPeriod() && <small className="mt-2 block font-normal text-xs text-[#5E7665]">韓國連線期間（11/27–12/2）已預設為韓國。</small>}</label>
+        <ProductCategoryPicker country={country} value={category} onChange={(value) => { setCategory(value); setSubcategory(""); }} inputClass={inputClass} />
+        <ProductSubcategoryPicker country={country} category={category} value={subcategory} onChange={setSubcategory} inputClass={inputClass} />
+        <label className="sm:col-span-2 text-sm font-semibold text-[#58534C]">商品規格<input value={form.specification} onChange={(event) => updateForm("specification", event.target.value)} placeholder="例如：奶油白／單人" className={inputClass} /></label>
+        <label className="text-sm font-semibold text-[#58534C]">最新成本<input type="number" min="0" value={form.cost} onChange={(event) => updateForm("cost", event.target.value)} className={inputClass} /></label>
+        <label className="text-sm font-semibold text-[#58534C]"><span aria-hidden="true" className="mr-0.5 text-[#A35F37]">*</span>當地價格<div className="relative mt-2"><span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-bold text-[#635D55]">₩</span><input required type="number" min="0" step="0.01" value={form.localPrice} onChange={(event) => updateForm("localPrice", event.target.value)} className="h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 pl-8 text-sm font-normal outline-none" /></div></label>
+        <label className="text-sm font-semibold text-[#58534C]">員工價<input type="number" min="0" value={form.staffPrice} onChange={(event) => updateForm("staffPrice", event.target.value)} className={inputClass} /></label>
+        <label className="text-sm font-semibold text-[#58534C]">一般售價<input type="number" min="0" value={form.retailPrice} onChange={(event) => updateForm("retailPrice", event.target.value)} className={inputClass} /></label>
+        <label className="text-sm font-semibold text-[#58534C]">可售庫存<input type="number" min="0" value={form.availableStock} onChange={(event) => updateForm("availableStock", event.target.value)} className={inputClass} /></label>
+        <label className="text-sm font-semibold text-[#58534C]">安全庫存<input type="number" min="0" value={form.safetyStock} onChange={(event) => updateForm("safetyStock", event.target.value)} className={inputClass} /></label>
+        <label className="sm:col-span-2 text-sm font-semibold text-[#58534C]">備註<textarea value={form.note} onChange={(event) => updateForm("note", event.target.value)} placeholder="例如：限定款、預購商品或採購注意事項" className="mt-2 min-h-24 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] p-3 text-sm font-normal outline-none placeholder:text-[#AAA39A]" /></label>
       </div>
-      <aside className="h-fit rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6 xl:sticky xl:top-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INVENTORY</p><h2 className="mt-1 text-lg font-semibold">初始庫存</h2><label className="mt-5 block text-sm font-semibold text-[#58534C]">可售庫存<input type="number" min="0" value={form.availableStock} onChange={(event) => updateForm("availableStock", event.target.value)} className={inputClass} /></label><label className="mt-4 block text-sm font-semibold text-[#58534C]">安全庫存<input type="number" min="0" value={form.safetyStock} onChange={(event) => updateForm("safetyStock", event.target.value)} className={inputClass} /></label><p className="mt-5 rounded-xl bg-[#F8F6F2] p-4 text-xs leading-5 text-[#746D63]">建立後可從庫存管理頁面持續調整進貨、保留與可售數量。</p><Primary onClick={saveProduct} disabled={saving} className="mt-5 w-full">{saving ? "儲存中…" : "儲存商品"}</Primary></aside>
-    </div>
-    <div className="mt-6 flex justify-center"><Secondary onClick={back} className="w-full sm:w-auto">取消新增</Secondary></div>
+      <p className="mt-5 rounded-xl bg-[#F8F6F2] p-4 text-xs leading-5 text-[#746D63]">建立後可從商品頁面持續調整價格與庫存；當地價格會獨立保存，不影響台幣最新成本與售價。</p>
+      <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Secondary onClick={back} disabled={saving}>取消新增</Secondary><Primary onClick={saveProduct} disabled={saving}>{saving ? "儲存中…" : "儲存商品"}</Primary></div>
+    </Card>
   </>;
 }
 
