@@ -34,6 +34,7 @@ const nonNegativeInteger = (value: unknown) => {
   return Number.isInteger(number) && number >= 0 ? number : null;
 };
 const nonNegativeAmount = (value: unknown) => {
+  if (value === undefined || value === null || value === "") return 0;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
 };
