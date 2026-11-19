@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
 type OrderItemInput = { productId?: unknown; unitPrice?: unknown; quantity?: unknown };
-type UpdateOrderInput = { action?: unknown; orderNumber?: unknown; customerId?: unknown; orderDate?: unknown; status?: unknown; orderMethod?: unknown; paymentMethod?: unknown; paymentStatus?: unknown; deliveryMethod?: unknown; note?: unknown; items?: unknown };
+type UpdateOrderInput = { action?: unknown; orderNumber?: unknown; customerId?: unknown; orderDate?: unknown; status?: unknown; orderMethod?: unknown; paymentMethod?: unknown; paymentStatus?: unknown; deliveryMethod?: unknown; deliveryFee?: unknown; note?: unknown; items?: unknown };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -21,18 +21,19 @@ const integer = (value: unknown) => { const number = Number(value); return Numbe
 const orderSelect = "id, order_number, order_date, status, order_method, payment_method, reconciliation_status, delivery_method, delivery_fee, note, subtotal, total, net_profit, created_at, customers(id, name, line_name, phone, address), order_items(id, product_id, product_name, category, unit_price, unit_cost, quantity, products(specification))";
 
 function validateUpdate(input: UpdateOrderInput) {
-  const orderNumber = text(input.orderNumber); const customerId = text(input.customerId); const orderDate = text(input.orderDate); const status = text(input.status); const orderMethod = text(input.orderMethod); const paymentMethod = text(input.paymentMethod); const paymentStatus = text(input.paymentStatus); const deliveryMethod = text(input.deliveryMethod); const note = text(input.note);
+  const orderNumber = text(input.orderNumber); const customerId = text(input.customerId); const orderDate = text(input.orderDate); const status = text(input.status); const orderMethod = text(input.orderMethod); const paymentMethod = text(input.paymentMethod); const paymentStatus = text(input.paymentStatus); const deliveryMethod = text(input.deliveryMethod); const deliveryFee = input.deliveryFee === undefined ? null : integer(input.deliveryFee); const note = text(input.note);
   if (!orderNumberPattern.test(orderNumber)) return { error: "訂單編號須為日期加上至少三位流水號。" };
   if (!uuidPattern.test(customerId)) return { error: "請選擇客戶。" };
   if (!datePattern.test(orderDate)) return { error: "訂單日期格式不正確。" };
   if (!statuses.includes(status) || status === "已出貨") return { error: "訂單狀態不正確；出貨請使用扣除庫存按鈕。" };
   if (!orderMethods.includes(orderMethod)) return { error: "請選擇下單方式。" };
   if (!paymentMethods.includes(paymentMethod) || !paymentStatuses.includes(paymentStatus) || !deliveryMethods.includes(deliveryMethod)) return { error: "付款或配送資料不正確。" };
+  if (input.deliveryFee !== undefined && deliveryFee === null) return { error: "運費必須為零或正整數。" };
   if (!Array.isArray(input.items) || !input.items.length) return { error: "請至少保留一項商品。" };
   const items = (input.items as OrderItemInput[]).map((item) => ({ productId: text(item.productId), unitPrice: integer(item.unitPrice), quantity: integer(item.quantity) }));
   if (items.some((item) => !uuidPattern.test(item.productId) || item.unitPrice === null || item.quantity === null || item.quantity < 1)) return { error: "訂購商品資料不完整。" };
   if (new Set(items.map((item) => item.productId)).size !== items.length) return { error: "同一商品請合併為一筆訂購明細。" };
-  return { payload: { orderNumber, customerId, orderDate, status, orderMethod, paymentMethod, paymentStatus, deliveryMethod, note, items: items as Array<{ productId: string; unitPrice: number; quantity: number }> } };
+  return { payload: { orderNumber, customerId, orderDate, status, orderMethod, paymentMethod, paymentStatus, deliveryMethod, deliveryFee, note, items: items as Array<{ productId: string; unitPrice: number; quantity: number }> } };
 }
 
 async function completeOrder(id: string) {
@@ -95,7 +96,7 @@ async function updateOrder(id: string, input: UpdateOrderInput) {
   const productsById = new Map((products ?? []).map((product) => [product.id, product]));
   const subtotal = payload.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
   const costTotal = payload.items.reduce((sum, item) => sum + (productsById.get(item.productId)?.cost ?? 0) * item.quantity, 0);
-  const deliveryFee = payload.deliveryMethod === "賣貨便" && subtotal < 2500 ? 38 : 0;
+  const deliveryFee = payload.deliveryMethod === "賣貨便" && subtotal < 2500 ? payload.deliveryFee ?? 38 : 0;
   const { error: headerError } = await supabase.from("orders").update({ order_number: payload.orderNumber, customer_id: payload.customerId, order_date: payload.orderDate, status: payload.status, order_method: payload.orderMethod, payment_method: payload.paymentMethod, reconciliation_status: payload.paymentStatus, delivery_method: payload.deliveryMethod, delivery_fee: deliveryFee, note: payload.note, subtotal, total: subtotal + deliveryFee, net_profit: subtotal + deliveryFee - costTotal, updated_at: new Date().toISOString() }).eq("id", id);
   if (headerError) throw headerError;
   const { error: deleteError } = await supabase.from("order_items").delete().eq("order_id", id); if (deleteError) throw deleteError;

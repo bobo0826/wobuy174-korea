@@ -22,6 +22,7 @@ type CreateOrderInput = {
   paymentMethod?: unknown;
   reconciliationStatus?: unknown;
   deliveryMethod?: unknown;
+  deliveryFee?: unknown;
   note?: unknown;
   items?: unknown;
 };
@@ -82,6 +83,7 @@ function validateOrder(input: CreateOrderInput) {
   const paymentMethod = text(input.paymentMethod);
   const reconciliationStatus = text(input.reconciliationStatus) || "未付款";
   const deliveryMethod = text(input.deliveryMethod);
+  const requestedDeliveryFee = input.deliveryFee === undefined ? null : nonNegativeInteger(input.deliveryFee);
   const note = text(input.note);
 
   if (!datePattern.test(orderDate)) return { error: "訂單日期格式不正確。" };
@@ -91,6 +93,7 @@ function validateOrder(input: CreateOrderInput) {
   if (!paymentMethods.includes(paymentMethod)) return { error: "付款方式不正確。" };
   if (!reconciliationStatuses.includes(reconciliationStatus)) return { error: "付款狀態不正確。" };
   if (!deliveryMethods.includes(deliveryMethod)) return { error: "配送方式不正確。" };
+  if (input.deliveryFee !== undefined && requestedDeliveryFee === null) return { error: "運費必須為零或正整數。" };
   if (!customerId || !uuidPattern.test(customerId)) return { error: "請先選擇一位已建立的客戶。" };
   if (!Array.isArray(input.items) || input.items.length === 0) return { error: "請至少加入一項商品。" };
 
@@ -112,7 +115,11 @@ function validateOrder(input: CreateOrderInput) {
 
   const subtotal = items.reduce((sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0), 0);
   const costTotal = items.reduce((sum, item) => sum + (item.unit_cost ?? 0) * (item.quantity ?? 0), 0);
-  const deliveryFee = deliveryMethod === "賣貨便" && subtotal < 2500 ? 38 : 0;
+  // 賣貨便預設 NT$38，低於免運門檻時允許人員依實際費用調整；
+  // 達門檻或非賣貨便一律免運，避免前端傳入過期金額。
+  const deliveryFee = deliveryMethod === "賣貨便" && subtotal < 2500
+    ? requestedDeliveryFee ?? 38
+    : 0;
 
   return {
     order: {

@@ -79,6 +79,13 @@ async function rememberCustomerAlias({ sourceInboxId, customerId, communityName 
 
 type ResolvedItem = { product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
 
+async function lineUserIdForInbox(supabase: ReturnType<typeof getSupabaseAdmin>, inboxId: string) {
+  if (!inboxId) return "";
+  const { data, error } = await supabase.from("live_sale_inbox").select("line_user_id").eq("id", inboxId).maybeSingle();
+  if (error) throw error;
+  return typeof data?.line_user_id === "string" ? data.line_user_id.trim() : "";
+}
+
 function combineItems(items: ResolvedItem[]) {
   const combined = new Map<string, ResolvedItem>();
   for (const item of items) {
@@ -89,18 +96,25 @@ function combineItems(items: ResolvedItem[]) {
   return [...combined.values()];
 }
 
-async function appendToOpenClaim({ campaignId, customer, items, note }: { campaignId: string; customer: { id: string; name: string; line_name: string }; items: ResolvedItem[]; note: string }) {
+async function appendToOpenClaim({ campaignId, customer, items, note, sourceInboxId }: { campaignId: string; customer: { id: string; name: string; line_name: string }; items: ResolvedItem[]; note: string; sourceInboxId: string }) {
   const supabase = getSupabaseAdmin();
-  const { data: target, error: targetError } = await supabase
+  const sourceLineUserId = await lineUserIdForInbox(supabase, sourceInboxId);
+  if (!sourceLineUserId) return null;
+  const { data: candidates, error: targetError } = await supabase
     .from("live_sale_claims")
-    .select("id, claim_total, note")
+    .select("id, claim_total, note, source_inbox_id")
     .eq("campaign_id", campaignId)
     .eq("customer_id", customer.id)
     .in("status", ["待核對", "待結帳"])
     .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
   if (targetError) throw targetError;
+  const targetInboxIds = [...new Set((candidates ?? []).map((candidate) => candidate.source_inbox_id).filter(Boolean))] as string[];
+  const { data: targetInboxes, error: inboxError } = targetInboxIds.length
+    ? await supabase.from("live_sale_inbox").select("id, line_user_id").in("id", targetInboxIds)
+    : { data: [], error: null };
+  if (inboxError) throw inboxError;
+  const userIdByInbox = new Map((targetInboxes ?? []).map((inbox) => [inbox.id, inbox.line_user_id]));
+  const target = (candidates ?? []).find((candidate) => userIdByInbox.get(candidate.source_inbox_id ?? "") === sourceLineUserId);
   if (!target) return null;
   const { data: existingItems, error: existingItemsError } = await supabase
     .from("live_sale_claim_items")
@@ -155,7 +169,7 @@ export async function POST(request: NextRequest, { params }: Context) {
 
     // 同檔期、同客戶且尚未結帳的喊單會自動合併。未辨識客戶或商品的訊息
     // 仍保留為待核對，待人員完成配對後才會在修改流程中合併。
-    if (customer && resolved) createdId = await appendToOpenClaim({ campaignId, customer, items, note }) ?? "";
+    if (customer && resolved && sourceInboxId) createdId = await appendToOpenClaim({ campaignId, customer, items, note, sourceInboxId }) ?? "";
 
     for (let attempt = 0; !createdId && attempt < 3; attempt += 1) {
       const claimNumber = await nextClaimNumber(campaignId, campaign.campaign_code);

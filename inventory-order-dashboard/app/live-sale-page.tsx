@@ -152,7 +152,7 @@ const claimStatusLabel: Record<ClaimStatus, string> = {
 function Pill({ status }: { status: ClaimStatus }) {
   return (
     <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone[status]}`}
+      className={`inline-flex min-h-6 items-center justify-center rounded-full px-2.5 py-1 text-center text-[11px] font-semibold leading-none ${tone[status]}`}
     >
       {claimStatusLabel[status]}
     </span>
@@ -163,16 +163,18 @@ function Metric({
   label,
   value,
   note,
+  compact = false,
 }: {
   label: string;
   value: string;
   note: string;
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-[#EAE6E0] bg-[#FCFBF9] p-4">
-      <p className="text-xs font-semibold text-[#837D73]">{label}</p>
-      <p className="mt-2 text-xl font-semibold">{value}</p>
-      <p className="mt-1 text-xs text-[#938D84]">{note}</p>
+    <div className={`rounded-xl border border-[#EAE6E0] bg-[#FCFBF9] ${compact ? "p-2 text-center sm:p-3" : "p-4"}`}>
+      <p className={compact ? "truncate text-[10px] font-semibold text-[#837D73]" : "text-xs font-semibold text-[#837D73]"}>{label}</p>
+      <p className={compact ? "mt-1 truncate text-sm font-semibold sm:text-lg" : "mt-2 text-xl font-semibold"}>{value}</p>
+      <p className={compact ? "hidden" : "mt-1 text-xs text-[#938D84]"}>{note}</p>
     </div>
   );
 }
@@ -713,7 +715,25 @@ function ClaimEditor({
           </p>
           <h2 className="mt-1 text-lg font-semibold">加入商品</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-[#F0EDE8] md:hidden">
+          {lines.length ? (
+            lines.map((line) => {
+              const product = catalogById.get(line.productId);
+              return (
+                <div key={line.key} className="flex min-w-0 items-center gap-1.5 px-3 py-3">
+                  <span className="w-16 shrink-0 truncate font-mono text-[10px] text-[#6E695F]">{product?.sku || "—"}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#403C36]">{line.productName || "待核對商品"}{line.specification ? ` · ${line.specification}` : ""}</span>
+                  <input aria-label={`${line.productName} 單價`} disabled={locked} type="number" min="0" value={line.unitPrice} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, unitPrice: Math.max(0, Number(event.target.value) || 0) } : item))} className="h-9 w-[58px] shrink-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1.5 text-center text-sm" />
+                  <input aria-label={`${line.productName} 數量`} disabled={locked} type="number" min="1" value={line.quantity} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, quantity: Math.max(1, Number(event.target.value) || 1) } : item))} className="h-9 w-10 shrink-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1 text-center text-sm" />
+                  <button aria-label={`移除 ${line.productName}`} disabled={locked} type="button" onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))} className="flex h-8 w-8 shrink-0 items-center justify-center text-lg font-semibold text-[#A35F37] disabled:opacity-40">×</button>
+                </div>
+              );
+            })
+          ) : (
+            <p className="px-5 py-10 text-center text-sm text-[#8D877E]">請先搜尋並加入商品。</p>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]">
               <tr>
@@ -1118,7 +1138,7 @@ function CampaignDetailPage({
           <button
             type="button"
             onClick={() => setShowCampaignSettings((visible) => !visible)}
-            className={secondary}
+            className={`${secondary} h-11 w-[120px] px-2`}
             aria-expanded={showCampaignSettings}
             aria-controls="campaign-settings"
           >
@@ -1127,9 +1147,9 @@ function CampaignDetailPage({
           <button
             onClick={() => void openEditor({ inbox: null })}
             disabled={campaign.status === "已封存" || opening}
-            className={button}
+            className={`${button} h-11 w-[120px] px-2`}
           >
-            {opening ? "準備中…" : "＋ 建立喊單"}
+            {opening ? "準備中…" : "建立喊單"}
           </button>
         </div>
       </div>
@@ -1279,52 +1299,16 @@ function CampaignDetailPage({
         </div>
         <div className="divide-y divide-[#F0EDE8] md:hidden">
           {visibleClaims.length ? (
-            visibleClaims.map((claim) => {
-              const claimProfit = claim.items.reduce<number | null>(
-                (sum, item) => {
-                  const product = item.product_id
-                    ? catalogById.get(item.product_id)
-                    : undefined;
-                  return sum === null || !product
-                    ? null
-                    : sum + (item.unit_price - product.cost) * item.quantity;
-                },
-                0,
-              );
-              return (
-                <article key={claim.id} className="p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void openEditor({ claim })}
-                      className="text-left text-sm font-semibold text-[#5E7665]"
-                    >
-                      {claim.claim_number} →
-                    </button>
-                    <Pill status={claim.status} />
-                  </div>
-                  <p className="mt-2 text-sm font-medium">
-                    {claim.customer_name || "未配對客戶"}
-                  </p>
-                  <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-[#F8F6F2] p-3 text-sm">
-                    <span className="text-[#817B72]">
-                      總金額
-                      <b className="mt-1 block text-[#403C36]">
-                        {money(claim.claim_total)}
-                      </b>
-                    </span>
-                    <span className="text-right text-[#817B72]">
-                      訂單淨利
-                      <b
-                        className={`mt-1 block ${claimProfit === null ? "text-[#928C83]" : claimProfit < 0 ? "text-[#A66932]" : "text-[#477154]"}`}
-                      >
-                        {claimProfit === null ? "待核對" : money(claimProfit)}
-                      </b>
-                    </span>
-                  </div>
-                </article>
-              );
-            })
+            visibleClaims.map((claim) => (
+              <article key={claim.id} onClick={() => void openEditor({ claim })} className="grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 px-3 py-2.5 hover:bg-[#FCFBF9]">
+                <span className="flex min-w-0 items-center gap-2">
+                  <b className="shrink-0 whitespace-nowrap text-[15px] tracking-[-.02em] text-[#5E7665]">{claim.claim_number}</b>
+                  <span className="min-w-0 truncate text-[15px] font-extrabold leading-none text-[#403C36]">{claim.customer_name || "未配對客戶"}</span>
+                </span>
+                <b className="justify-self-end whitespace-nowrap text-sm text-[#403C36]">{money(claim.claim_total)}</b>
+                <span className="justify-self-end"><Pill status={claim.status} /></span>
+              </article>
+            ))
           ) : (
             <p className="p-10 text-center text-[#8D877E]">尚未建立未結單。</p>
           )}
@@ -1357,7 +1341,7 @@ function CampaignDetailPage({
                     0,
                   );
                   return (
-                    <tr key={claim.id}>
+                    <tr key={claim.id} onClick={() => void openEditor({ claim })} className="cursor-pointer hover:bg-[#FCFBF9]">
                       <td className="px-5 py-4 font-semibold">
                         <button
                           type="button"
@@ -1403,21 +1387,24 @@ function CampaignDetailPage({
           </table>
         </div>
       </section>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-5 grid grid-cols-5 gap-1.5 sm:gap-3">
         <Metric
           label="目前連線業績"
           value={money(summary.activeAmount)}
           note="未取消喊單總額"
+          compact
         />
         <Metric
           label="已結單"
           value={money(summary.paidAmount)}
           note="人員已確認完成結單"
+          compact
         />
         <Metric
           label="未結單"
           value={money(summary.pendingAmount)}
           note="完成核對、等待結單"
+          compact
         />
         <Metric
           label="喊單筆數"
@@ -1427,11 +1414,13 @@ function CampaignDetailPage({
               ? `${summary.unresolvedCount} 筆待核對`
               : "皆已核對"
           }
+          compact
         />
         <Metric
           label="採購商品"
           value={`${procurement.length} 項`}
           note="依商品與規格彙整"
+          compact
         />
       </div>
       <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
@@ -1444,7 +1433,15 @@ function CampaignDetailPage({
             需求量統計未取消喊單；商品資料庫的可售庫存會自動同步，需採購為需求量扣除可售庫存。
           </p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-[#F0EDE8] md:hidden">
+          {procurement.length ? procurement.map((line) => (
+            <div key={line.productId ?? `${line.productName}-${line.specification}`} className="flex min-w-0 items-center gap-3 px-3 py-3">
+              <span className="min-w-0 flex-1"><b className="block truncate text-sm">{line.productName}</b><small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"} · 可售 {line.availableQuantity ?? "—"}</small></span>
+              <span className="shrink-0 text-right text-xs"><b className={line.purchaseQuantity ? "block text-[#A35F37]" : "block text-[#477154]"}>{line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</b><small className="mt-1 block text-[#817B72]">需求 {line.demandQuantity} · 已結 {line.paidQuantity}</small></span>
+            </div>
+          )) : <p className="p-8 text-center text-sm text-[#8D877E]">建立喊單後，這裡會依商品規格自動統整採購數量。</p>}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]">
               <tr>
@@ -1537,10 +1534,12 @@ export function LiveSalePage({
   catalog,
   openOrder,
   back,
+  initialCampaignId = "",
 }: {
   catalog: Product[];
   openOrder: (id: string) => void;
   back: () => void;
+  initialCampaignId?: string;
 }) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selected, setSelected] = useState("");
@@ -1563,7 +1562,9 @@ export function LiveSalePage({
       const response = await fetch("/api/live-sale/campaigns");
       const result = await response.json();
       if (!response.ok) throw new Error(result.message ?? "無法讀取連線檔期。");
-      setCampaigns(result.campaigns ?? []);
+      const loadedCampaigns = result.campaigns ?? [];
+      setCampaigns(loadedCampaigns);
+      if (initialCampaignId && loadedCampaigns.some((campaign: Campaign) => campaign.id === initialCampaignId)) setSelected(initialCampaignId);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "無法讀取連線檔期。");

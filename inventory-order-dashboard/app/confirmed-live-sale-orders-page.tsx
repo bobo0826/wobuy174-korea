@@ -13,7 +13,7 @@ type ConfirmedLiveSaleOrder = {
   notification_status: "未通知" | "已通知";
   claim_total: number;
   created_at: string;
-  campaign: { name: string; campaign_code: string } | null;
+  campaign: { id: string; name: string; campaign_code: string } | null;
   display_status: DisplayStatus;
   order: {
     id: string;
@@ -67,6 +67,8 @@ export function ConfirmedLiveSaleOrdersPage() {
   const [bulkStatus, setBulkStatus] = useState<DisplayStatus>("未通知");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const campaignId = orders.find((item) => item.campaign?.id)?.campaign?.id ?? "";
+  const campaignHref = campaignId ? `/?view=liveSale&campaignId=${encodeURIComponent(campaignId)}` : "/?view=liveSale";
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
@@ -220,7 +222,7 @@ export function ConfirmedLiveSaleOrdersPage() {
           <h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em]">已結單訂單管理</h1>
           <p className="mt-2 text-sm text-[#7B766E]">已由連線檔期轉成一般訂單的清單；可勾選多筆後批量列印、匯出或更新通知／出貨狀況。</p>
         </div>
-        <a href="/?view=liveSale" className="inline-flex h-11 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-4 text-sm font-semibold text-[#5E7665]">連線檔期</a>
+        <a href={campaignHref} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-4 text-sm font-semibold text-[#5E7665]">連線檔期</a>
       </div>
 
       {error && <p role="alert" className="mb-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] px-4 py-3 text-sm font-semibold text-[#9B562A]">{error}</p>}
@@ -229,11 +231,12 @@ export function ConfirmedLiveSaleOrdersPage() {
       <section className="overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
         <div className="flex flex-col gap-4 border-b border-[#F0EDE8] p-5 sm:p-6">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex h-11 min-w-[230px] max-w-md flex-1 items-center gap-2 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#928C84]">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent outline-none" placeholder="搜尋訂單、檔期、客戶或商品" /></label>
-              <label className="flex h-11 items-center gap-2 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#6D675E]">起日<input aria-label="起始日期" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="min-w-0 bg-transparent text-sm outline-none" /></label>
-              <span className="text-[#A29B92]">—</span>
-              <label className="flex h-11 items-center gap-2 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#6D675E]">迄日<input aria-label="結束日期" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="min-w-0 bg-transparent text-sm outline-none" /></label>
+            <div className="w-full max-w-md space-y-2">
+              <label className="flex h-10 w-full items-center gap-2 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#928C84]">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent outline-none" placeholder="搜尋訂單、檔期、客戶或商品" /></label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex h-10 min-w-0 items-center gap-1 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-xs text-[#6D675E]">起日<input aria-label="起始日期" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="min-w-0 flex-1 bg-transparent text-xs outline-none" /></label>
+                <label className="flex h-10 min-w-0 items-center gap-1 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-xs text-[#6D675E]">迄日<input aria-label="結束日期" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="min-w-0 flex-1 bg-transparent text-xs outline-none" /></label>
+              </div>
               {(startDate || endDate) && <button onClick={() => { setStartDate(""); setEndDate(""); }} className="h-9 px-2 text-sm font-semibold text-[#5E7665]">清除日期</button>}
             </div>
             <span className="text-xs text-[#807A71]">本頁 {orders.length} 筆／共 {pagination.total} 筆</span>
@@ -242,7 +245,28 @@ export function ConfirmedLiveSaleOrdersPage() {
           {selectedOrders.length > 0 && <div className="flex flex-col gap-3 rounded-xl border border-[#D9E4DE] bg-[#F5F8F5] p-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-[#4B5F50]">已選取 {selectedOrders.length} 筆已結單訂單</p><div className="flex flex-wrap gap-2"><button onClick={printSelected} disabled={!printableOrders.length || bulkSaving} className={outlineButton}>批量列印出貨單</button><button onClick={exportSelected} disabled={bulkSaving} className={outlineButton}>批量匯出訂單</button><select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value as DisplayStatus)} disabled={bulkSaving} className="h-10 rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665] disabled:opacity-45"><option>未通知</option><option>已通知</option><option>已出貨</option></select><button onClick={() => { void applyBulkStatus(); }} disabled={bulkSaving} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-3 text-sm font-semibold text-white disabled:opacity-45">{bulkSaving ? "更新中…" : "修改訂單狀況"}</button><button onClick={() => setSelectedIds([])} disabled={bulkSaving} className="h-10 px-2 text-sm font-semibold text-[#5E7665]">取消選取</button></div></div>}
         </div>
 
-        <div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="w-12 px-4 py-3"><input aria-label="選取全部目前列表已結單訂單" type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} /></th><th className="px-3 py-3">一般訂單編號</th><th className="px-3 py-3">檔期</th><th className="px-3 py-3">訂單日期</th><th className="px-3 py-3">客戶</th><th className="px-3 py-3">商品</th><th className="px-3 py-3">總金額</th><th className="px-3 py-3">付款方式</th><th className="px-3 py-3">付款狀態</th><th className="px-3 py-3">訂單狀況</th><th className="px-3 py-3">一般訂單狀態</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={12} className="px-6 py-10 text-center text-[#8D877E]">載入已結單訂單中…</td></tr> : orders.length ? orders.map((item) => <tr key={item.id} onClick={() => openOrder(item.order.id)} className="cursor-pointer hover:bg-[#FCFBF9]"><td className="px-4 py-4"><input aria-label={`選取訂單 ${item.order.order_number}`} type="checkbox" checked={selectedIds.includes(item.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleOrder(item.id)} /></td><td className="px-3 py-4 font-semibold">{item.order.order_number}<small className="mt-1 block text-xs font-normal text-[#938D84]">喊單 {item.claim_number}</small></td><td className="px-3 py-4"><p className="font-medium">{item.campaign?.name ?? "—"}</p><small className="mt-1 block text-xs text-[#938D84]">{item.campaign?.campaign_code ?? ""}</small></td><td className="px-3 py-4 text-[#777168]">{item.order.order_date}</td><td className="px-3 py-4"><p>{item.customer_name || "未指定"}</p>{item.line_name && <small className="mt-1 block text-xs text-[#938D84]">{item.line_name}</small>}</td><td className="px-3 py-4">{item.order.order_items.reduce((sum, line) => sum + line.quantity, 0)} 件</td><td className="px-3 py-4 font-medium">{currency(item.order.total || item.claim_total)}</td><td className="px-3 py-4 text-[#625D55]">{item.order.payment_method}</td><td className="px-3 py-4"><Pill tone={item.order.reconciliation_status === "已付款" ? "green" : "orange"}>{item.order.reconciliation_status}</Pill></td><td className="px-3 py-4"><Pill tone={confirmedTone(item.display_status)}>{item.display_status}</Pill></td><td className="px-3 py-4"><Pill tone={orderTone(item.order.status)}>{item.order.status}</Pill></td><td className="px-6 py-4 text-right"><button onClick={(event) => { event.stopPropagation(); openOrder(item.order.id); }} className="text-sm font-semibold text-[#5E7665]">查看／修改 →</button></td></tr>) : <tr><td colSpan={12} className="px-6 py-10 text-center text-[#8D877E]">找不到符合條件的已結單訂單。</td></tr>}</tbody></table></div>
+        <div className="divide-y divide-[#F0EDE8] md:hidden">
+          {loading ? (
+            <p className="px-5 py-10 text-center text-[#8D877E]">載入已結單訂單中…</p>
+          ) : orders.length ? (
+            orders.map((item) => (
+              <article key={item.id} onClick={() => openOrder(item.order.id)} className="grid min-w-0 cursor-pointer grid-cols-[1rem_6.25rem_2.5rem_minmax(0,1fr)_auto_auto] items-center gap-x-1.5 px-3 py-2.5 hover:bg-[#FCFBF9]">
+                <input aria-label={`選取訂單 ${item.order.order_number}`} type="checkbox" checked={selectedIds.includes(item.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleOrder(item.id)} className="h-4 w-4 shrink-0 accent-[#5D7B64]" />
+                <span className="w-[100px] shrink-0 whitespace-nowrap text-left text-[12px] font-bold tracking-[-.02em] text-[#5E7665]">{item.order.order_number}</span>
+                <span className="shrink-0 text-xs font-medium text-[#A09A90]">{item.order.order_date.slice(5).replace("-", "/")}</span>
+                <span className="min-w-0 truncate text-[15px] font-extrabold leading-none text-[#403C36]">{item.customer_name || "未指定"}</span>
+                <b aria-label="訂單金額" className="justify-self-end whitespace-nowrap text-sm text-[#403C36]">{currency(item.order.total || item.claim_total)}</b>
+                <span className="flex justify-self-end gap-1" aria-label={`訂單狀況 ${item.display_status}；付款狀態 ${item.order.reconciliation_status}`}>
+                  <Pill tone={confirmedTone(item.display_status)}>{item.display_status}</Pill>
+                  <Pill tone={item.order.reconciliation_status === "已付款" ? "green" : "orange"}>{item.order.reconciliation_status}</Pill>
+                </span>
+              </article>
+            ))
+          ) : (
+            <p className="px-5 py-10 text-center text-[#8D877E]">找不到符合條件的已結單訂單。</p>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[1250px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="w-12 px-4 py-3"><input aria-label="選取全部目前列表已結單訂單" type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} /></th><th className="px-3 py-3">一般訂單編號</th><th className="px-3 py-3">檔期</th><th className="px-3 py-3">訂單日期</th><th className="px-3 py-3">客戶</th><th className="px-3 py-3">商品</th><th className="px-3 py-3">總金額</th><th className="px-3 py-3">付款方式</th><th className="px-3 py-3">付款狀態</th><th className="px-3 py-3">訂單狀況</th><th className="px-3 py-3">一般訂單狀態</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={12} className="px-6 py-10 text-center text-[#8D877E]">載入已結單訂單中…</td></tr> : orders.length ? orders.map((item) => <tr key={item.id} onClick={() => openOrder(item.order.id)} className="cursor-pointer hover:bg-[#FCFBF9]"><td className="px-4 py-4"><input aria-label={`選取訂單 ${item.order.order_number}`} type="checkbox" checked={selectedIds.includes(item.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleOrder(item.id)} /></td><td className="px-3 py-4 font-semibold">{item.order.order_number}<small className="mt-1 block text-xs font-normal text-[#938D84]">喊單 {item.claim_number}</small></td><td className="px-3 py-4"><p className="font-medium">{item.campaign?.name ?? "—"}</p><small className="mt-1 block text-xs text-[#938D84]">{item.campaign?.campaign_code ?? ""}</small></td><td className="px-3 py-4 text-[#777168]">{item.order.order_date}</td><td className="px-3 py-4"><p>{item.customer_name || "未指定"}</p>{item.line_name && <small className="mt-1 block text-xs text-[#938D84]">{item.line_name}</small>}</td><td className="px-3 py-4">{item.order.order_items.reduce((sum, line) => sum + line.quantity, 0)} 件</td><td className="px-3 py-4 font-medium">{currency(item.order.total || item.claim_total)}</td><td className="px-3 py-4 text-[#625D55]">{item.order.payment_method}</td><td className="px-3 py-4"><Pill tone={item.order.reconciliation_status === "已付款" ? "green" : "orange"}>{item.order.reconciliation_status}</Pill></td><td className="px-3 py-4"><Pill tone={confirmedTone(item.display_status)}>{item.display_status}</Pill></td><td className="px-3 py-4"><Pill tone={orderTone(item.order.status)}>{item.order.status}</Pill></td><td className="px-6 py-4 text-right"><button onClick={(event) => { event.stopPropagation(); openOrder(item.order.id); }} className="text-sm font-semibold text-[#5E7665]">查看／修改 →</button></td></tr>) : <tr><td colSpan={12} className="px-6 py-10 text-center text-[#8D877E]">找不到符合條件的已結單訂單。</td></tr>}</tbody></table></div>
         <div className="flex items-center justify-between gap-3 border-t border-[#F0EDE8] px-5 py-4 text-sm"><span className="text-[#807A71]">第 {pagination.page}／{pagination.totalPages} 頁</span><div className="flex gap-2"><button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={loading || pagination.page <= 1} className={outlineButton}>上一頁</button><button onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))} disabled={loading || pagination.page >= pagination.totalPages} className={outlineButton}>下一頁</button></div></div>
       </section>
     </div>

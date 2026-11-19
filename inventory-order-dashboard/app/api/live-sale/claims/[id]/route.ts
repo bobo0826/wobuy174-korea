@@ -81,6 +81,13 @@ async function rememberAlias(sourceInboxId: string | null, customerId: string, c
 
 type ResolvedItem = { product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
 
+async function lineUserIdForInbox(supabase: ReturnType<typeof getSupabaseAdmin>, inboxId: string | null) {
+  if (!inboxId) return "";
+  const { data, error } = await supabase.from("live_sale_inbox").select("line_user_id").eq("id", inboxId).maybeSingle();
+  if (error) throw error;
+  return typeof data?.line_user_id === "string" ? data.line_user_id.trim() : "";
+}
+
 function combineItems(items: ResolvedItem[]) {
   const combined = new Map<string, ResolvedItem>();
   for (const item of items) {
@@ -91,19 +98,26 @@ function combineItems(items: ResolvedItem[]) {
   return [...combined.values()];
 }
 
-async function mergeIntoOpenClaim({ currentId, campaignId, customer, items, note }: { currentId: string; campaignId: string; customer: { id: string; name: string; line_name: string }; items: ResolvedItem[]; note: string }) {
+async function mergeIntoOpenClaim({ currentId, campaignId, customer, items, note, sourceInboxId }: { currentId: string; campaignId: string; customer: { id: string; name: string; line_name: string }; items: ResolvedItem[]; note: string; sourceInboxId: string | null }) {
   const supabase = getSupabaseAdmin();
-  const { data: target, error: targetError } = await supabase
+  const sourceLineUserId = await lineUserIdForInbox(supabase, sourceInboxId);
+  if (!sourceLineUserId) return null;
+  const { data: candidates, error: targetError } = await supabase
     .from("live_sale_claims")
-    .select("id, claim_total, note")
+    .select("id, claim_total, note, source_inbox_id")
     .eq("campaign_id", campaignId)
     .eq("customer_id", customer.id)
     .in("status", ["待核對", "待結帳"])
     .neq("id", currentId)
     .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
   if (targetError) throw targetError;
+  const targetInboxIds = [...new Set((candidates ?? []).map((candidate) => candidate.source_inbox_id).filter(Boolean))] as string[];
+  const { data: targetInboxes, error: inboxError } = targetInboxIds.length
+    ? await supabase.from("live_sale_inbox").select("id, line_user_id").in("id", targetInboxIds)
+    : { data: [], error: null };
+  if (inboxError) throw inboxError;
+  const userIdByInbox = new Map((targetInboxes ?? []).map((inbox) => [inbox.id, inbox.line_user_id]));
+  const target = (candidates ?? []).find((candidate) => userIdByInbox.get(candidate.source_inbox_id ?? "") === sourceLineUserId);
   if (!target) return null;
   const { data: targetItems, error: targetItemsError } = await supabase.from("live_sale_claim_items").select("product_id, product_name, category, specification, unit_price, quantity").eq("claim_id", target.id);
   if (targetItemsError) throw targetItemsError;
@@ -143,7 +157,7 @@ async function updateClaim(id: string, body: Record<string, unknown>) {
   if (itemError) throw itemError;
   if (customer) await rememberAlias(current.source_inbox_id, customer.id, communityName);
   if (customer && resolved) {
-    const mergedId = await mergeIntoOpenClaim({ currentId: id, campaignId: current.campaign_id, customer, items, note });
+    const mergedId = await mergeIntoOpenClaim({ currentId: id, campaignId: current.campaign_id, customer, items, note, sourceInboxId: current.source_inbox_id });
     if (mergedId) return { ...(await fetchClaim(mergedId)), items };
   }
   return { ...current, customer_id: customer?.id ?? null, customer_name: customer?.name ?? "", line_name: customer?.line_name ?? "", community_name: communityName, note, status, claim_total: total, updated_at: new Date().toISOString(), items };

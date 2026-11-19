@@ -23,7 +23,7 @@ function matchesSearch(
     claim_number: string;
     customer_name: string;
     line_name: string;
-    campaign: { name: string; campaign_code: string } | null;
+    campaign: { id: string; name: string; campaign_code: string } | null;
     order: { order_number: string; order_items: Array<{ product_name: string }> };
   },
   query: string,
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
           notification_status: claim.notification_status || "未通知",
           claim_total: Number(claim.claim_total) || 0,
           created_at: claim.created_at,
-          campaign: campaign ? { name: campaign.name, campaign_code: campaign.campaign_code } : null,
+          campaign: campaign ? { id: campaign.id, name: campaign.name, campaign_code: campaign.campaign_code } : null,
           order: {
             ...order,
             total: Number(order.total) || 0,
