@@ -57,7 +57,9 @@ export function OrderDetail({ order, back, onUpdated, onDeleted, onInventoryChan
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const subtotal = order.order_items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
+  const costTotal = order.order_items.reduce((sum, item) => sum + item.unit_cost * item.quantity, 0);
   const total = subtotal + order.delivery_fee;
+  const netProfit = total - costTotal;
   const customer = order.customers;
 
   const complete = async () => {
@@ -94,14 +96,12 @@ export function OrderDetail({ order, back, onUpdated, onDeleted, onInventoryChan
   };
 
   return <>
-    <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <button onClick={back} className="text-sm font-semibold text-[#5E7665]">← {backLabel}</button>
-        <p className="mt-5 text-[11px] font-bold tracking-[.18em] text-[#A09A90]">ORDER DETAIL</p>
-        <h1 className="mt-2 text-[29px] font-semibold tracking-[-.055em]">訂單 {order.order_number}</h1>
-        <p className="mt-2 text-sm text-[#7B766E]">訂單日期 {order.order_date.replaceAll("-", ".")}</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
+    <div className="mb-7">
+      <button onClick={back} className="text-sm font-semibold text-[#5E7665]">← {backLabel}</button>
+      <p className="mt-5 text-[11px] font-bold tracking-[.18em] text-[#A09A90]">ORDER DETAIL</p>
+      <h1 className="mt-2 whitespace-nowrap text-[28px] font-semibold leading-tight tracking-[-.055em] sm:text-[29px]">訂單 {order.order_number}</h1>
+      <p className="mt-2 text-sm text-[#7B766E]">訂單日期 {order.order_date.replaceAll("-", ".")}</p>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <Pill tone={toneFor(order.status)}>{order.status}</Pill>
         <Pill tone={order.reconciliation_status === "已付款" ? "green" : "orange"}>{order.reconciliation_status}</Pill>
         <a href={`/shipping-slip?orderId=${encodeURIComponent(order.id)}`} target="_blank" rel="noreferrer" className={outlineButton}>列印出貨單</a>
@@ -111,22 +111,23 @@ export function OrderDetail({ order, back, onUpdated, onDeleted, onInventoryChan
       </div>
     </div>
     {error && <p role="alert" className="mb-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] px-4 py-3 text-sm font-semibold text-[#9B562A]">{error}</p>}
-    <div className="grid gap-5 xl:grid-cols-2">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,.75fr)]">
       <div className="space-y-5">
         <section className="rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6">
           <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CUSTOMER</p>
           <h2 className="mt-1 text-lg font-semibold">客戶資料</h2>
-          <div className="mt-5 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">{[["客戶姓名", customer?.name ?? "未指定"], ["LINE@名稱", customer?.line_name ?? "—"], ["電話", customer?.phone ?? "—"], ["地址", customer?.address ?? "—"]].map(([label, value]) => <div key={label}><p className="text-xs text-[#938D84]">{label}</p><p className="mt-1 font-semibold">{value}</p></div>)}</div>
+          <div className="mt-5 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">{[["客戶姓名", customer?.name ?? "未指定"], ["LINE@名稱", customer?.line_name ?? "—"], ["電話", customer?.phone ?? "—"], ["地址", customer?.address ?? "—"]].map(([label, value]) => <div key={label}><p className="text-xs text-[#938D84]">{label}</p><p className="mt-1 break-words font-semibold">{value}</p></div>)}</div>
         </section>
         <section className="overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
           <div className="border-b border-[#F0EDE8] px-5 py-5 sm:px-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ITEMS</p><h2 className="mt-1 text-lg font-semibold">訂購商品</h2></div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="px-6 py-3">商品名稱／規格</th><th className="px-3 py-3">單價</th><th className="px-3 py-3">數量</th><th className="px-6 py-3 text-right">小計</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{order.order_items.map((item) => <tr key={item.id}><td className="px-6 py-4"><b>{item.product_name}</b><small className="mt-1 block text-xs text-[#938D84]">{item.products?.specification || "—"}</small></td><td className="px-3 py-4">{currency(item.unit_price)}</td><td className="px-3 py-4">{item.quantity}</td><td className="px-6 py-4 text-right font-semibold">{currency(item.unit_price * item.quantity)}</td></tr>)}</tbody></table></div>
+          <div className="divide-y divide-[#F0EDE8] md:hidden">{order.order_items.map((item) => { const itemCost = item.unit_cost * item.quantity; const itemProfit = item.unit_price * item.quantity - itemCost; return <article key={item.id} className="p-4"><p className="font-semibold">{item.product_name}</p><p className="mt-1 text-xs text-[#938D84]">{item.products?.specification || "—"}</p><div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[#F8F6F2] p-3 text-sm"><span className="text-[#817B72]">單價<b className="mt-1 block text-[#403C36]">{currency(item.unit_price)}</b></span><span className="text-right text-[#817B72]">數量<b className="mt-1 block text-[#403C36]">{item.quantity}</b></span><span className="text-[#817B72]">成本<b className="mt-1 block text-[#403C36]">{currency(itemCost)}</b></span><span className="text-right text-[#817B72]">淨利<b className={`mt-1 block ${itemProfit < 0 ? "text-[#A66932]" : "text-[#477154]"}`}>{currency(itemProfit)}</b></span></div></article>; })}</div>
+          <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="px-6 py-3">商品名稱／規格</th><th className="px-3 py-3">單價</th><th className="px-3 py-3">數量</th><th className="px-3 py-3 text-right">成本</th><th className="px-6 py-3 text-right">淨利</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{order.order_items.map((item) => { const itemCost = item.unit_cost * item.quantity; const itemProfit = item.unit_price * item.quantity - itemCost; return <tr key={item.id}><td className="px-6 py-4"><b>{item.product_name}</b><small className="mt-1 block text-xs text-[#938D84]">{item.products?.specification || "—"}</small></td><td className="px-3 py-4">{currency(item.unit_price)}</td><td className="px-3 py-4">{item.quantity}</td><td className="px-3 py-4 text-right">{currency(itemCost)}</td><td className={`px-6 py-4 text-right font-semibold ${itemProfit < 0 ? "text-[#A66932]" : "text-[#477154]"}`}>{currency(itemProfit)}</td></tr>; })}</tbody></table></div>
         </section>
-        <section className="rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ORDER SUMMARY</p><h2 className="mt-1 text-lg font-semibold">訂單摘要</h2><div className="mt-5 space-y-3 text-sm"><div className="flex justify-between text-[#777168]"><span>商品小計</span><span>{currency(subtotal)}</span></div>{order.delivery_method === "賣貨便" && <div className="flex justify-between text-[#777168]"><span>賣貨便運費</span><span>{order.delivery_fee ? currency(order.delivery_fee) : "免運"}</span></div>}<div className="flex justify-between border-t border-[#F0EDE8] pt-4 text-base font-semibold"><span>訂單總額</span><span>{currency(total)}</span></div></div></section>
+        <section className="rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ORDER SUMMARY</p><h2 className="mt-1 text-lg font-semibold">訂單摘要</h2><div className="mt-5 space-y-3 text-sm"><div className="flex justify-between text-[#777168]"><span>商品小計</span><span>{currency(subtotal)}</span></div><div className="flex justify-between text-[#777168]"><span>商品成本</span><span>{currency(costTotal)}</span></div>{order.delivery_method === "賣貨便" && <div className="flex justify-between text-[#777168]"><span>賣貨便運費</span><span>{order.delivery_fee ? currency(order.delivery_fee) : "免運"}</span></div>}<div className="flex justify-between border-t border-[#F0EDE8] pt-4 text-base font-semibold"><span>訂單總額</span><span>{currency(total)}</span></div><div className={`flex justify-between text-base font-semibold ${netProfit < 0 ? "text-[#A66932]" : "text-[#477154]"}`}><span>訂單淨利</span><span>{currency(netProfit)}</span></div></div></section>
       </div>
       <aside className="space-y-5">
         <section className="rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PAYMENT</p><h2 className="mt-1 text-lg font-semibold">付款資訊</h2><div className="mt-5 grid grid-cols-2 gap-4 text-sm"><div><p className="text-xs text-[#938D84]">付款方式</p><p className="mt-1 font-semibold">{order.payment_method}</p></div><div><p className="text-xs text-[#938D84]">付款狀態</p><p className="mt-1 font-semibold">{order.reconciliation_status}</p></div></div></section>
-        <section className="rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INTERNAL NOTE</p><h2 className="mt-1 text-lg font-semibold">訂單備註</h2><p className="mt-4 rounded-xl bg-[#F8F6F2] p-4 text-sm leading-6 text-[#706A61]">{order.note || "—"}</p></section>
+        <section className="rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">INTERNAL NOTE</p><h2 className="mt-1 text-lg font-semibold">訂單備註</h2><p className="mt-4 break-words rounded-xl bg-[#F8F6F2] p-4 text-sm leading-6 text-[#706A61]">{order.note || "—"}</p></section>
         <section className="rounded-2xl border border-[#E9E5DF] bg-white p-5 sm:p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ORDER ACTIVITY</p><h2 className="mt-1 text-lg font-semibold">訂單活動</h2><div className="mt-5 space-y-5"><div className="border-l border-[#D7E4D9] pl-3"><p className="text-xs text-[#938D84]">{order.order_date}</p><p className="mt-1 text-sm font-semibold">建立訂單</p></div><div className="border-l border-[#D7E4D9] pl-3"><p className="text-xs text-[#938D84]">目前狀態</p><p className="mt-1 text-sm font-semibold">{order.status}</p><p className="mt-1 text-xs text-[#6C776D]">{order.status === "已出貨" ? "庫存已扣除完成。" : "尚未扣庫存。"}</p></div></div></section>
       </aside>
     </div>
@@ -282,7 +283,38 @@ export function OrdersV2({ created, go, goLiveSale, onInventoryChanged, initialQ
         <div className="flex gap-2 overflow-x-auto">{["全部", "預購中", "未出貨", "已出貨", "已取消", "未付款"].map((item) => <button key={item} onClick={() => { setStatus(item); setPage(1); }} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${status === item ? "bg-[#292824] text-white" : "bg-[#F4F1ED] text-[#706A61]"}`}>{item}</button>)}</div>
         {selectedOrders.length > 0 && <div className="flex flex-col gap-3 rounded-xl border border-[#D9E4DE] bg-[#F5F8F5] p-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-[#4B5F50]">已選取 {selectedOrders.length} 筆訂單</p><div className="flex flex-wrap gap-2"><button onClick={printSelected} disabled={!printableOrders.length || bulkSaving !== null} className={outlineButton}>批量列印出貨單</button><button onClick={() => { void runBulkAction("arrive"); }} disabled={!arrivalOrders.length || bulkSaving !== null} className={outlineButton}>{bulkSaving === "arrive" ? "標記中…" : "批量標記到貨"}</button><button onClick={() => { void runBulkAction("complete"); }} disabled={!shippableOrders.length || bulkSaving !== null} className="inline-flex h-10 items-center justify-center rounded-xl bg-[#5D7B64] px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">{bulkSaving === "complete" ? "出貨處理中…" : "批量已出貨"}</button><button onClick={() => setSelectedIds([])} disabled={bulkSaving !== null} className="h-10 px-2 text-sm font-semibold text-[#5E7665]">取消選取</button></div></div>}
       </div>
-      <div className="divide-y divide-[#F0EDE8] md:hidden">{loading ? <p className="px-5 py-10 text-center text-sm text-[#8D877E]">載入訂單中…</p> : visible.length ? visible.map((order) => { const total = order.order_items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0) + order.delivery_fee; const quantity = order.order_items.reduce((sum, item) => sum + item.quantity, 0); return <article key={order.id} onClick={() => setSelected(order)} className="cursor-pointer p-4 active:bg-[#F8F6F2]"><div className="flex items-start gap-3"><input aria-label={`選取訂單 ${order.order_number}`} type="checkbox" checked={selectedIds.includes(order.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleOrder(order.id)} className="mt-1 h-4 w-4 shrink-0 accent-[#5D7B64]"/><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><b className="text-sm">{order.order_number}</b><Pill tone={toneFor(order.status)}>{order.status}</Pill></div><p className="mt-1 text-xs text-[#847E75]">{order.order_date} · {order.customers?.name ?? "未指定客戶"}</p><p className="mt-3 truncate text-sm font-medium text-[#544F48]">{order.order_items.map((item) => item.product_name).join("、") || "尚無商品"}</p><div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-[#F8F6F2] p-3 text-xs"><span className="text-[#817B72]">商品 <b className="ml-1 text-[#403C36]">{quantity} 件</b></span><span className="text-right text-[#817B72]">總額 <b className="ml-1 text-sm text-[#403C36]">{currency(total)}</b></span><span className="text-[#817B72]">{order.payment_method || "未設定付款方式"}</span><span className="flex justify-end"><Pill tone={order.reconciliation_status === "已付款" ? "green" : "orange"}>{order.reconciliation_status}</Pill></span></div><button onClick={(event) => { event.stopPropagation(); setSelected(order); }} className="mt-3 text-sm font-semibold text-[#5E7665]">查看／修改訂單 →</button></div></div></article>; }) : <p className="px-5 py-10 text-center text-sm text-[#8D877E]">找不到符合條件的訂單。</p>}</div>
+      <div className="divide-y divide-[#F0EDE8] md:hidden">
+        {loading ? (
+          <p className="px-5 py-10 text-center text-sm text-[#8D877E]">載入訂單中…</p>
+        ) : visible.length ? (
+          visible.map((order) => {
+            const total = order.order_items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0) + order.delivery_fee;
+            return (
+              <article key={order.id} className="p-4">
+                <div className="flex items-start gap-3">
+                  <input aria-label={`選取訂單 ${order.order_number}`} type="checkbox" checked={selectedIds.includes(order.id)} onChange={() => toggleOrder(order.id)} className="mt-1 h-4 w-4 shrink-0 accent-[#5D7B64]" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <button type="button" onClick={() => setSelected(order)} className="min-w-0 text-left text-sm font-semibold text-[#5E7665]">
+                        {order.order_number}
+                      </button>
+                      <span className="flex shrink-0 flex-col items-end gap-1 text-xs text-[#817B72]">出貨狀態<Pill tone={toneFor(order.status)}>{order.status}</Pill></span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[#F8F6F2] p-3 text-sm">
+                      <span className="text-[#817B72]">訂單日期<b className="mt-1 block text-[#403C36]">{order.order_date}</b></span>
+                      <span className="text-right text-[#817B72]">姓名<b className="mt-1 block truncate text-[#403C36]">{order.customers?.name ?? "未指定客戶"}</b></span>
+                      <span className="text-[#817B72]">金額<b className="mt-1 block text-[#403C36]">{currency(total)}</b></span>
+                      <span className="text-right text-[#817B72]">付款狀態<span className="mt-1 flex justify-end"><Pill tone={order.reconciliation_status === "已付款" ? "green" : "orange"}>{order.reconciliation_status}</Pill></span></span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            );
+          })
+        ) : (
+          <p className="px-5 py-10 text-center text-sm text-[#8D877E]">找不到符合條件的訂單。</p>
+        )}
+      </div>
       <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[1140px] text-left text-sm"><thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="w-12 px-4 py-3"><input aria-label="選取全部目前列表訂單" type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} /></th><th className="px-3 py-3">訂單編號</th><th className="px-3 py-3">訂單日期</th><th className="px-3 py-3">客戶</th><th className="px-3 py-3">商品</th><th className="px-3 py-3">金額</th><th className="px-3 py-3">付款方式</th><th className="px-3 py-3">付款狀態</th><th className="px-3 py-3">訂單狀態</th><th className="px-3 py-3">庫存狀態</th><th className="px-6 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={11} className="px-6 py-10 text-center text-[#8D877E]">載入訂單中…</td></tr> : visible.length ? visible.map((order) => { const total = order.order_items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0) + order.delivery_fee; return <tr key={order.id} onClick={() => setSelected(order)} className="cursor-pointer hover:bg-[#FCFBF9]"><td className="px-4 py-4"><input aria-label={`選取訂單 ${order.order_number}`} type="checkbox" checked={selectedIds.includes(order.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleOrder(order.id)} /></td><td className="px-3 py-4 font-semibold">{order.order_number}</td><td className="px-3 py-4 text-[#777168]">{order.order_date}</td><td className="px-3 py-4">{order.customers?.name ?? "未指定"}</td><td className="px-3 py-4">{order.order_items.reduce((sum, item) => sum + item.quantity, 0)} 件</td><td className="px-3 py-4 font-medium">{currency(total)}</td><td className="px-3 py-4 text-[#625D55]">{order.payment_method}</td><td className="px-3 py-4"><Pill tone={order.reconciliation_status === "已付款" ? "green" : "orange"}>{order.reconciliation_status}</Pill></td><td className="px-3 py-4"><Pill tone={toneFor(order.status)}>{order.status}</Pill></td><td className="px-3 py-4"><Pill tone={order.status === "已出貨" ? "green" : "stone"}>{order.status === "已出貨" ? "已扣除" : "未扣除"}</Pill></td><td className="px-6 py-4 text-right"><button onClick={(event) => { event.stopPropagation(); setSelected(order); }} className="text-sm font-semibold text-[#5E7665]">查看／修改 →</button></td></tr>; }) : <tr><td colSpan={11} className="px-6 py-10 text-center text-[#8D877E]">找不到符合條件的訂單。</td></tr>}</tbody></table></div>
       <div className="flex items-center justify-between gap-3 border-t border-[#F0EDE8] px-5 py-4 text-sm"><span className="text-[#807A71]">第 {pagination.page}／{pagination.totalPages} 頁</span><div className="flex gap-2"><button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={loading || pagination.page <= 1} className={outlineButton}>上一頁</button><button onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))} disabled={loading || pagination.page >= pagination.totalPages} className={outlineButton}>下一頁</button></div></div>
     </section>
