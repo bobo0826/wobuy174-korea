@@ -893,6 +893,7 @@ function CampaignDetailPage({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [note, setNote] = useState("");
+  const [showCampaignSettings, setShowCampaignSettings] = useState(false);
   const catalogById = useMemo(
     () => new Map(catalog.map((item) => [String(item.id), item])),
     [catalog],
@@ -1113,13 +1114,24 @@ function CampaignDetailPage({
             檔期編號 {campaign.campaign_code} · {day(campaign.start_date)} 開始
           </p>
         </div>
-        <button
-          onClick={() => void openEditor({ inbox: null })}
-          disabled={campaign.status === "已封存" || opening}
-          className={button}
-        >
-          {opening ? "準備中…" : "＋ 建立喊單"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowCampaignSettings((visible) => !visible)}
+            className={secondary}
+            aria-expanded={showCampaignSettings}
+            aria-controls="campaign-settings"
+          >
+            {showCampaignSettings ? "收合檔期設定" : "檔期設定"}
+          </button>
+          <button
+            onClick={() => void openEditor({ inbox: null })}
+            disabled={campaign.status === "已封存" || opening}
+            className={button}
+          >
+            {opening ? "準備中…" : "＋ 建立喊單"}
+          </button>
+        </div>
       </div>
       {error && (
         <p className="mb-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] p-3 text-sm text-[#A35F37]">
@@ -1131,38 +1143,14 @@ function CampaignDetailPage({
           {notice}
         </p>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric
-          label="目前連線業績"
-          value={money(summary.activeAmount)}
-          note="未取消喊單總額"
-        />
-        <Metric
-          label="已結單"
-          value={money(summary.paidAmount)}
-          note="人員已確認完成結單"
-        />
-        <Metric
-          label="未結單"
-          value={money(summary.pendingAmount)}
-          note="完成核對、等待結單"
-        />
-        <Metric
-          label="喊單筆數"
-          value={`${summary.claimCount} 筆`}
-          note={
-            summary.unresolvedCount
-              ? `${summary.unresolvedCount} 筆待核對`
-              : "皆已核對"
-          }
-        />
-        <Metric
-          label="採購商品"
-          value={`${procurement.length} 項`}
-          note="依商品與規格彙整"
-        />
-      </div>
-      <section className="mt-5 rounded-2xl border border-[#E9E5DF] bg-white p-5">
+      {showCampaignSettings && <section id="campaign-settings" className="mb-5 rounded-2xl border border-[#E9E5DF] bg-white p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CAMPAIGN SETTINGS</p>
+            <h2 className="mt-1 text-lg font-semibold">檔期設定</h2>
+          </div>
+          <button type="button" onClick={() => setShowCampaignSettings(false)} className="text-sm font-semibold text-[#5E7665]">收合</button>
+        </div>
         <div className="grid gap-4 lg:grid-cols-4">
           <label className="text-sm font-semibold">
             檔期名稱
@@ -1194,9 +1182,7 @@ function CampaignDetailPage({
             檔期狀態
             <select
               value={status}
-              onChange={(event) =>
-                setStatus(event.target.value as Campaign["status"])
-              }
+              onChange={(event) => setStatus(event.target.value as Campaign["status"])}
               className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] px-3 font-normal"
             >
               <option>進行中</option>
@@ -1212,7 +1198,7 @@ function CampaignDetailPage({
               className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] px-3 font-normal"
             />
           </label>
-          <div className="flex items-end justify-end gap-2">
+          <div className="flex flex-wrap items-end justify-end gap-2">
             <button onClick={() => void saveCampaign()} className={secondary}>
               儲存檔期設定
             </button>
@@ -1225,6 +1211,56 @@ function CampaignDetailPage({
             </button>
           </div>
         </div>
+      </section>}
+      <section className="mb-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
+        <div className="border-b border-[#F0EDE8] p-5">
+          <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">
+            LINE DIRECT MESSAGES
+          </p>
+          <h2 className="mt-1 text-lg font-semibold">待確認 LINE 私訊</h2>
+          <p className="mt-1 text-xs text-[#8D877E]">
+            所有連線期間的 LINE 喊單會先留在這裡；人員確認客戶與商品後，才會自動併入同檔期、同客戶的未結單。
+          </p>
+        </div>
+        {inbox.length ? (
+          <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3">
+            {inbox.map((item) => (
+              <article
+                key={item.id}
+                className="rounded-xl border border-[#E9E5DF] bg-[#FCFBF9] p-4"
+              >
+                <p className="whitespace-pre-wrap text-sm font-semibold">
+                  {item.message_text}
+                </p>
+                <p className="mt-3 text-xs text-[#8D877E]">
+                  {item.matched_customer
+                    ? `已配對：${item.matched_customer.name}`
+                    : "尚未配對客戶"}
+                </p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => void openEditor({ inbox: item })}
+                    disabled={deletingInboxId === item.id}
+                    className="text-sm font-semibold text-[#5E7665] disabled:opacity-45"
+                  >
+                    建立／核對喊單 →
+                  </button>
+                  <button
+                    onClick={() => void deleteInbox(item)}
+                    disabled={deletingInboxId === item.id}
+                    className="text-sm font-semibold text-[#B35B3B] disabled:opacity-45"
+                  >
+                    {deletingInboxId === item.id ? "刪除中…" : "刪除"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="p-8 text-center text-sm text-[#8D877E]">
+            目前沒有待處理的 LINE 私訊。
+          </p>
+        )}
       </section>
       <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F0EDE8] p-5">
@@ -1241,7 +1277,59 @@ function CampaignDetailPage({
             </a>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-[#F0EDE8] md:hidden">
+          {visibleClaims.length ? (
+            visibleClaims.map((claim) => {
+              const claimProfit = claim.items.reduce<number | null>(
+                (sum, item) => {
+                  const product = item.product_id
+                    ? catalogById.get(item.product_id)
+                    : undefined;
+                  return sum === null || !product
+                    ? null
+                    : sum + (item.unit_price - product.cost) * item.quantity;
+                },
+                0,
+              );
+              return (
+                <article key={claim.id} className="p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void openEditor({ claim })}
+                      className="text-left text-sm font-semibold text-[#5E7665]"
+                    >
+                      {claim.claim_number} →
+                    </button>
+                    <Pill status={claim.status} />
+                  </div>
+                  <p className="mt-2 text-sm font-medium">
+                    {claim.customer_name || "未配對客戶"}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-[#F8F6F2] p-3 text-sm">
+                    <span className="text-[#817B72]">
+                      總金額
+                      <b className="mt-1 block text-[#403C36]">
+                        {money(claim.claim_total)}
+                      </b>
+                    </span>
+                    <span className="text-right text-[#817B72]">
+                      訂單淨利
+                      <b
+                        className={`mt-1 block ${claimProfit === null ? "text-[#928C83]" : claimProfit < 0 ? "text-[#A66932]" : "text-[#477154]"}`}
+                      >
+                        {claimProfit === null ? "待核對" : money(claimProfit)}
+                      </b>
+                    </span>
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            <p className="p-10 text-center text-[#8D877E]">尚未建立未結單。</p>
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]">
               <tr>
@@ -1271,7 +1359,13 @@ function CampaignDetailPage({
                   return (
                     <tr key={claim.id}>
                       <td className="px-5 py-4 font-semibold">
-                        {claim.claim_number}
+                        <button
+                          type="button"
+                          onClick={() => void openEditor({ claim })}
+                          className="text-left text-[#5E7665] hover:underline"
+                        >
+                          {claim.claim_number}
+                        </button>
                       </td>
                       <td className="px-3 py-4">
                         {claim.customer_name || "未配對客戶"}
@@ -1309,6 +1403,37 @@ function CampaignDetailPage({
           </table>
         </div>
       </section>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Metric
+          label="目前連線業績"
+          value={money(summary.activeAmount)}
+          note="未取消喊單總額"
+        />
+        <Metric
+          label="已結單"
+          value={money(summary.paidAmount)}
+          note="人員已確認完成結單"
+        />
+        <Metric
+          label="未結單"
+          value={money(summary.pendingAmount)}
+          note="完成核對、等待結單"
+        />
+        <Metric
+          label="喊單筆數"
+          value={`${summary.claimCount} 筆`}
+          note={
+            summary.unresolvedCount
+              ? `${summary.unresolvedCount} 筆待核對`
+              : "皆已核對"
+          }
+        />
+        <Metric
+          label="採購商品"
+          value={`${procurement.length} 項`}
+          note="依商品與規格彙整"
+        />
+      </div>
       <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
         <div className="border-b border-[#F0EDE8] p-5">
           <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">
@@ -1403,56 +1528,6 @@ function CampaignDetailPage({
             </tbody>
           </table>
         </div>
-      </section>
-      <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
-        <div className="border-b border-[#F0EDE8] p-5">
-          <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">
-            LINE DIRECT MESSAGES
-          </p>
-          <h2 className="mt-1 text-lg font-semibold">待確認 LINE 私訊</h2>
-          <p className="mt-1 text-xs text-[#8D877E]">
-            所有連線期間的 LINE 喊單會先留在這裡；人員確認客戶與商品後，才會自動併入同檔期、同客戶的未結單。
-          </p>
-        </div>
-        {inbox.length ? (
-          <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3">
-            {inbox.map((item) => (
-              <article
-                key={item.id}
-                className="rounded-xl border border-[#E9E5DF] bg-[#FCFBF9] p-4"
-              >
-                <p className="whitespace-pre-wrap text-sm font-semibold">
-                  {item.message_text}
-                </p>
-                <p className="mt-3 text-xs text-[#8D877E]">
-                  {item.matched_customer
-                    ? `已配對：${item.matched_customer.name}`
-                    : "尚未配對客戶"}
-                </p>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <button
-                    onClick={() => void openEditor({ inbox: item })}
-                    disabled={deletingInboxId === item.id}
-                    className="text-sm font-semibold text-[#5E7665] disabled:opacity-45"
-                  >
-                    建立／核對喊單 →
-                  </button>
-                  <button
-                    onClick={() => void deleteInbox(item)}
-                    disabled={deletingInboxId === item.id}
-                    className="text-sm font-semibold text-[#B35B3B] disabled:opacity-45"
-                  >
-                    {deletingInboxId === item.id ? "刪除中…" : "刪除"}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="p-8 text-center text-sm text-[#8D877E]">
-            目前沒有待處理的 LINE 私訊。
-          </p>
-        )}
       </section>
     </>
   );
