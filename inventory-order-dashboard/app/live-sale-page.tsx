@@ -717,18 +717,29 @@ function ClaimEditor({
         </div>
         <div className="divide-y divide-[#F0EDE8] md:hidden">
           {lines.length ? (
-            lines.map((line) => {
+            <>
+              <div className="grid grid-cols-[minmax(0,1fr)_34px_54px_54px_54px] gap-1 border-b border-[#F0EDE8] bg-[#FBFAF8] px-3 py-2.5 text-[10px] font-bold tracking-wide text-[#928C83]">
+                <span>品名</span>
+                <span className="text-center">數量</span>
+                <span className="text-right">售價</span>
+                <span className="text-right">成本</span>
+                <span className="text-right text-[#477154]">淨利</span>
+              </div>
+              {lines.map((line) => {
               const product = catalogById.get(line.productId);
+              const lineCost = product ? product.cost * line.quantity : null;
+              const profit = product ? (line.unitPrice - product.cost) * line.quantity : null;
               return (
-                <div key={line.key} className="flex min-w-0 items-center gap-1.5 px-3 py-3">
-                  <span className="w-16 shrink-0 truncate font-mono text-[10px] text-[#6E695F]">{product?.sku || "—"}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#403C36]">{line.productName || "待核對商品"}{line.specification ? ` · ${line.specification}` : ""}</span>
-                  <input aria-label={`${line.productName} 單價`} disabled={locked} type="number" min="0" value={line.unitPrice} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, unitPrice: Math.max(0, Number(event.target.value) || 0) } : item))} className="h-9 w-[58px] shrink-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1.5 text-center text-sm" />
-                  <input aria-label={`${line.productName} 數量`} disabled={locked} type="number" min="1" value={line.quantity} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, quantity: Math.max(1, Number(event.target.value) || 1) } : item))} className="h-9 w-10 shrink-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1 text-center text-sm" />
-                  <button aria-label={`移除 ${line.productName}`} disabled={locked} type="button" onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))} className="flex h-8 w-8 shrink-0 items-center justify-center text-lg font-semibold text-[#A35F37] disabled:opacity-40">×</button>
+                <div key={line.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_34px_54px_54px_54px] items-center gap-1 px-3 py-3">
+                  <span className="min-w-0"><b className="block truncate text-sm text-[#403C36]">{line.productName || "待核對商品"}</b><small className="mt-0.5 block truncate text-[11px] text-[#938D84]">{line.specification || "—"}</small></span>
+                  <input aria-label={`${line.productName} 數量`} disabled={locked} type="number" min="0" value={line.quantity} onChange={(event) => { const quantity = Math.max(0, Number(event.target.value) || 0); setLines((current) => quantity === 0 ? current.filter((item) => item.key !== line.key) : current.map((item) => item.key === line.key ? { ...item, quantity } : item)); }} className="h-9 min-w-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1 text-center text-sm" />
+                  <input aria-label={`${line.productName} 單價`} disabled={locked} type="number" min="0" value={line.unitPrice} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, unitPrice: Math.max(0, Number(event.target.value) || 0) } : item))} className="h-9 min-w-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1 text-right text-sm" />
+                  <span className="truncate text-right text-[11px] text-[#817B72]">{lineCost === null ? "—" : money(lineCost)}</span>
+                  <span className={`truncate text-right text-[11px] font-semibold ${profit === null ? "text-[#928C83]" : profit < 0 ? "text-[#A66932]" : "text-[#477154]"}`}>{profit === null ? "—" : money(profit)}</span>
                 </div>
               );
-            })
+              })}
+            </>
           ) : (
             <p className="px-5 py-10 text-center text-sm text-[#8D877E]">請先搜尋並加入商品。</p>
           )}
@@ -1142,7 +1153,7 @@ function CampaignDetailPage({
             aria-expanded={showCampaignSettings}
             aria-controls="campaign-settings"
           >
-            {showCampaignSettings ? "收合檔期設定" : "檔期設定"}
+            檔期設定
           </button>
           <button
             onClick={() => void openEditor({ inbox: null })}
@@ -1580,6 +1591,11 @@ export function LiveSalePage({
     // 首次進入時載入連線檔期清單。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (initialCampaignId && campaigns.some((campaign) => campaign.id === initialCampaignId)) {
+      setSelected(initialCampaignId);
+    }
+  }, [campaigns, initialCampaignId]);
   const create = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);

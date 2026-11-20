@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type DashboardView = "stock" | "create" | "orders" | "purchases" | "reports";
+type DashboardView = "stock" | "create" | "orders" | "purchases" | "reports" | "products" | "liveSale";
 type Summary = { preorders: number; lowStock: number; pendingPurchases: number; monthlySales: number; shippedOrders: number; orderCount: number };
 
 const emptySummary: Summary = { preorders: 0, lowStock: 0, pendingPurchases: 0, monthlySales: 0, shippedOrders: 0, orderCount: 0 };
@@ -12,6 +12,7 @@ export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
   const [summary, setSummary] = useState<Summary>(emptySummary);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [hasActiveCampaign, setHasActiveCampaign] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -33,6 +34,25 @@ export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const loadCampaign = async () => {
+      try {
+        const response = await fetch("/api/live-sale/campaigns");
+        const result = await response.json();
+        if (!response.ok || !active) return;
+        const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+        const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+        const today = `${part("year")}-${part("month")}-${part("day")}`;
+        setHasActiveCampaign((result.campaigns ?? []).some((campaign: { status?: string; start_date?: string; end_date?: string | null }) => campaign.status === "進行中" && campaign.start_date && campaign.start_date <= today && (!campaign.end_date || campaign.end_date >= today)));
+      } catch {
+        if (active) setHasActiveCampaign(false);
+      }
+    };
+    void loadCampaign();
+    return () => { active = false; };
+  }, []);
+
   const items: { count: number; title: string; note: string; action: string; target: DashboardView }[] = [
     { count: summary.preorders, title: "筆訂單預購中", note: "等待到貨與後續出貨處理", action: "查看訂單", target: "orders" },
     { count: summary.lowStock, title: "項商品庫存不足", note: "已低於或等於安全庫存，建議補貨", action: "查看庫存", target: "stock" },
@@ -41,8 +61,10 @@ export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
 
   return <>
     <div className="mb-5 flex flex-wrap gap-2">
-      <button onClick={() => go("stock")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">查看庫存總覽</button>
-      <button onClick={() => go("create")} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white hover:bg-[#46423D]">＋ 建立訂單</button>
+      {hasActiveCampaign && <button onClick={() => go("liveSale")} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white hover:bg-[#46423D]">正在連線檔期</button>}
+      <button onClick={() => go("orders")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">訂單管理</button>
+      <button onClick={() => go("products")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">商品資料庫</button>
+      <button onClick={() => go("stock")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">庫存總覽</button>
     </div>
     {loadError && <p role="alert" className="mb-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] px-4 py-3 text-sm font-semibold text-[#9B562A]">{loadError}</p>}
 
