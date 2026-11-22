@@ -2216,9 +2216,9 @@ export default function Home() {
       // 商品資料庫連線失敗時，仍保留既有示範資料供介面操作。
     });
   }, [currentUser, productsLoaded, productsLoading, refreshProducts, view]);
-  const go = (next: View) => {
+  const go = (next: View, options?: { campaignId?: string }) => {
     if (next === "orders") { setOrderSearchQuery(""); setOrderSearchTargetId(""); }
-    if (next === "liveSale") setLiveSaleCampaignId("");
+    if (next === "liveSale") setLiveSaleCampaignId(options?.campaignId ?? "");
     setView(next);
     setMenuOpen(false);
     setMobileSearchOpen(false);

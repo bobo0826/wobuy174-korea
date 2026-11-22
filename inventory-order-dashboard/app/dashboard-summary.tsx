@@ -4,15 +4,17 @@ import { useEffect, useState } from "react";
 
 type DashboardView = "stock" | "create" | "orders" | "purchases" | "reports" | "products" | "liveSale";
 type Summary = { preorders: number; lowStock: number; pendingPurchases: number; monthlySales: number; shippedOrders: number; orderCount: number };
+type DashboardGo = (view: DashboardView, options?: { campaignId?: string }) => void;
+type Campaign = { id: string; campaign_code?: string };
 
 const emptySummary: Summary = { preorders: 0, lowStock: 0, pendingPurchases: 0, monthlySales: 0, shippedOrders: 0, orderCount: 0 };
 const currency = (value: number) => `NT$ ${value.toLocaleString("zh-TW")}`;
 
-export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
+export function Dashboard({ go }: { go: DashboardGo }) {
   const [summary, setSummary] = useState<Summary>(emptySummary);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [hasActiveCampaign, setHasActiveCampaign] = useState(false);
+  const [currentCampaignId, setCurrentCampaignId] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -41,12 +43,12 @@ export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
         const response = await fetch("/api/live-sale/campaigns");
         const result = await response.json();
         if (!response.ok || !active) return;
-        const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
-        const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
-        const today = `${part("year")}-${part("month")}-${part("day")}`;
-        setHasActiveCampaign((result.campaigns ?? []).some((campaign: { status?: string; start_date?: string; end_date?: string | null }) => campaign.status === "進行中" && campaign.start_date && campaign.start_date <= today && (!campaign.end_date || campaign.end_date >= today)));
+        const campaign = (result.campaigns ?? []).find(
+          (item: Campaign) => item.campaign_code === "KR202612",
+        );
+        if (active) setCurrentCampaignId(campaign?.id ?? "");
       } catch {
-        if (active) setHasActiveCampaign(false);
+        if (active) setCurrentCampaignId("");
       }
     };
     void loadCampaign();
@@ -61,7 +63,7 @@ export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
 
   return <>
     <div className="mb-5 flex flex-wrap gap-2">
-      {hasActiveCampaign && <button onClick={() => go("liveSale")} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white hover:bg-[#46423D]">連線檔期</button>}
+      <button onClick={() => go("liveSale", { campaignId: currentCampaignId || undefined })} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white hover:bg-[#46423D]">連線檔期</button>
       <button onClick={() => go("orders")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">訂單管理</button>
       <button onClick={() => go("products")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">商品資料庫</button>
       <button onClick={() => go("stock")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">庫存總覽</button>
