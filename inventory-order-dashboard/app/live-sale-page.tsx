@@ -265,6 +265,7 @@ function ProductSearch({
 
 function ClaimEditor({
   campaignId,
+  campaignArchived,
   catalog,
   customers,
   initial,
@@ -276,6 +277,7 @@ function ClaimEditor({
   onCustomerCreated,
 }: {
   campaignId: string;
+  campaignArchived: boolean;
   catalog: Product[];
   customers: Customer[];
   initial?: Claim;
@@ -328,7 +330,7 @@ function ClaimEditor({
     () => new Map(catalog.map((item) => [String(item.id), item])),
     [catalog],
   );
-  const locked = initial?.status === "已轉訂單";
+  const locked = campaignArchived || initial?.status === "已轉訂單";
   const foundCustomers = useMemo(() => {
     const word = customerName.trim().toLocaleLowerCase("zh-TW");
     return !word || customerId
@@ -416,6 +418,10 @@ function ClaimEditor({
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    if (locked) {
+      setError("此連線檔期已封存，喊單僅供查看，無法修改。");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -479,59 +485,63 @@ function ClaimEditor({
         {initial && (
           <div className="flex flex-wrap gap-2">
             <Pill status={initial.status} />
-            {initial.status === "待結帳" && (
-              <button
-                type="button"
-                onClick={() => void onAction(initial, "markPaid")}
-                className={button}
-              >
-                確認結單並轉一般訂單
-              </button>
-            )}
-            {initial.status === "已結帳" && (
+            {!locked && (
               <>
+                {initial.status === "待結帳" && (
+                  <button
+                    type="button"
+                    onClick={() => void onAction(initial, "markPaid")}
+                    className={button}
+                  >
+                    確認結單並轉一般訂單
+                  </button>
+                )}
+                {initial.status === "已結帳" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void onAction(initial, "convert")}
+                      className={button}
+                    >
+                      轉一般訂單
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onAction(initial, "markUnpaid")}
+                      className={secondary}
+                    >
+                      回未結單
+                    </button>
+                  </>
+                )}
+                {initial.status === "已取消" && (
+                  <button
+                    type="button"
+                    onClick={() => void onAction(initial, "restore")}
+                    className={secondary}
+                  >
+                    復原喊單
+                  </button>
+                )}
+                {initial.status !== "已取消" && initial.status !== "已轉訂單" && (
+                  <button
+                    type="button"
+                    onClick={() => void onAction(initial, "cancel")}
+                    className="inline-flex h-10 items-center rounded-xl border border-[#F0D6C2] bg-white px-3 text-sm font-semibold text-[#A35F37]"
+                  >
+                    取消喊單
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => void onAction(initial, "convert")}
-                  className={button}
+                  onClick={() => void onAction(initial, "delete")}
+                  className="inline-flex h-10 items-center rounded-xl border border-[#F0D6C2] bg-white px-3 text-sm font-semibold text-[#A35F37]"
                 >
-                  轉一般訂單
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void onAction(initial, "markUnpaid")}
-                  className={secondary}
-                >
-                  回未結單
+                  刪除喊單
                 </button>
               </>
             )}
-            {initial.status === "已取消" && (
-              <button
-                type="button"
-                onClick={() => void onAction(initial, "restore")}
-                className={secondary}
-              >
-                復原喊單
-              </button>
-            )}
-            {initial.status !== "已取消" && initial.status !== "已轉訂單" && (
-              <button
-                type="button"
-                onClick={() => void onAction(initial, "cancel")}
-                className="inline-flex h-10 items-center rounded-xl border border-[#F0D6C2] bg-white px-3 text-sm font-semibold text-[#A35F37]"
-              >
-                取消喊單
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => void onAction(initial, "delete")}
-              className="inline-flex h-10 items-center rounded-xl border border-[#F0D6C2] bg-white px-3 text-sm font-semibold text-[#A35F37]"
-            >
-              刪除喊單
-            </button>
-            {initial.converted_order_id && (
+            {!locked && initial.converted_order_id && (
               <button
                 type="button"
                 onClick={() => openOrder(initial.converted_order_id!)}
@@ -543,6 +553,11 @@ function ClaimEditor({
           </div>
         )}
       </div>
+      {campaignArchived && (
+        <p className="mb-5 rounded-xl border border-[#E1DED8] bg-[#F7F5F2] p-3 text-sm text-[#6F6960]">
+          此連線檔期已封存，喊單資料僅供查看，無法修改、刪除或轉單。
+        </p>
+      )}
       {inbox && (
         <section className="mb-5 rounded-2xl border border-[#DEE8DF] bg-[#F8FBF8] p-5">
           <p className="text-xs font-semibold text-[#5E7665]">LINE 私訊原文</p>
@@ -588,7 +603,7 @@ function ClaimEditor({
               placeholder="搜尋姓名、LINE@ 名稱或員工"
               className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal outline-none"
             />
-            {!customerId && customerName && (
+            {!locked && !customerId && customerName && (
               <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-[#DDD8D1] bg-white p-1 shadow-lg">
                 {foundCustomers.length ? (
                   foundCustomers.map((item) => (
@@ -623,7 +638,7 @@ function ClaimEditor({
             )}
           </div>
         </div>
-        {showNewCustomer && (
+        {!locked && showNewCustomer && (
           <div className="mt-5 rounded-xl border border-[#D9E5DB] bg-[#F6FAF6] p-4">
             <div className="mb-3 flex items-center justify-between">
               <b className="text-sm">建立客戶並直接帶入喊單</b>
@@ -992,6 +1007,10 @@ function CampaignDetailPage({
     }
   };
   const deleteInbox = async (item: Inbox) => {
+    if (detail?.campaign.status === "已封存") {
+      setError("此連線檔期已封存，LINE 私訊僅供查看，無法修改。");
+      return;
+    }
     if (!window.confirm("確定刪除這則待確認 LINE 私訊？此動作無法復原。")) return;
     setDeletingInboxId(item.id);
     setError("");
@@ -1012,6 +1031,10 @@ function CampaignDetailPage({
     }
   };
   const action = async (claim: Claim, actionName: ActionName) => {
+    if (detail?.campaign.status === "已封存") {
+      setError("此連線檔期已封存，喊單僅供查看，無法修改。");
+      return;
+    }
     const message =
       actionName === "convert"
         ? `確認把 ${claim.claim_number} 重新轉為一般訂單？`
@@ -1045,6 +1068,10 @@ function CampaignDetailPage({
     setEditor(null);
   };
   const saveCampaign = async () => {
+    if (detail?.campaign.status === "已封存") {
+      setError("此連線檔期已封存，檔期設定僅供查看，無法修改。");
+      return;
+    }
     const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -1099,6 +1126,7 @@ function CampaignDetailPage({
     return (
       <ClaimEditor
         campaignId={campaignId}
+        campaignArchived={detail.campaign.status === "已封存"}
         catalog={catalog}
         customers={customers}
         initial={editor.claim}
@@ -1126,6 +1154,7 @@ function CampaignDetailPage({
     );
 
   const { campaign, claims, summary, procurement } = detail;
+  const campaignArchived = campaign.status === "已封存";
   const visibleClaims = claims.filter((claim) => claim.status !== "已轉訂單");
   return (
     <>
@@ -1182,10 +1211,16 @@ function CampaignDetailPage({
           </div>
           <button type="button" onClick={() => setShowCampaignSettings(false)} className="text-sm font-semibold text-[#5E7665]">收合</button>
         </div>
+        {campaignArchived && (
+          <p className="mb-4 rounded-xl border border-[#E1DED8] bg-[#F7F5F2] p-3 text-sm text-[#6F6960]">
+            此檔期已封存，設定與喊單資料僅供查看。
+          </p>
+        )}
         <div className="grid gap-4 lg:grid-cols-4">
           <label className="text-sm font-semibold">
             檔期名稱
             <input
+              disabled={campaignArchived}
               value={name}
               onChange={(event) => setName(event.target.value)}
               className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] px-3 font-normal"
@@ -1194,6 +1229,7 @@ function CampaignDetailPage({
           <label className="text-sm font-semibold">
             開始日期
             <input
+              disabled={campaignArchived}
               type="date"
               value={startDate}
               onChange={(event) => setStartDate(event.target.value)}
@@ -1203,6 +1239,7 @@ function CampaignDetailPage({
           <label className="text-sm font-semibold">
             結束日期
             <input
+              disabled={campaignArchived}
               type="date"
               value={endDate}
               onChange={(event) => setEndDate(event.target.value)}
@@ -1212,6 +1249,7 @@ function CampaignDetailPage({
           <label className="text-sm font-semibold">
             檔期狀態
             <select
+              disabled={campaignArchived}
               value={status}
               onChange={(event) => setStatus(event.target.value as Campaign["status"])}
               className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] px-3 font-normal"
@@ -1224,18 +1262,19 @@ function CampaignDetailPage({
           <label className="text-sm font-semibold lg:col-span-3">
             檔期備註
             <input
+              disabled={campaignArchived}
               value={note}
               onChange={(event) => setNote(event.target.value)}
               className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] px-3 font-normal"
             />
           </label>
           <div className="flex flex-wrap items-end justify-end gap-2">
-            <button onClick={() => void saveCampaign()} className={secondary}>
+            <button disabled={campaignArchived} onClick={() => void saveCampaign()} className={`${secondary} disabled:opacity-45`}>
               儲存檔期設定
             </button>
             <button
               onClick={() => void deleteCampaign()}
-              disabled={summary.claimCount > 0}
+              disabled={campaignArchived || summary.claimCount > 0}
               className="inline-flex h-10 items-center rounded-xl border border-[#F0D6C2] bg-white px-3 text-sm font-semibold text-[#A35F37] disabled:opacity-45"
             >
               刪除空白檔期
@@ -1274,15 +1313,17 @@ function CampaignDetailPage({
                     disabled={deletingInboxId === item.id}
                     className="text-sm font-semibold text-[#5E7665] disabled:opacity-45"
                   >
-                    建立／核對喊單 →
+                    {campaignArchived ? "查看內容 →" : "建立／核對喊單 →"}
                   </button>
-                  <button
-                    onClick={() => void deleteInbox(item)}
-                    disabled={deletingInboxId === item.id}
-                    className="text-sm font-semibold text-[#B35B3B] disabled:opacity-45"
-                  >
-                    {deletingInboxId === item.id ? "刪除中…" : "刪除"}
-                  </button>
+                  {!campaignArchived && (
+                    <button
+                      onClick={() => void deleteInbox(item)}
+                      disabled={deletingInboxId === item.id}
+                      className="text-sm font-semibold text-[#B35B3B] disabled:opacity-45"
+                    >
+                      {deletingInboxId === item.id ? "刪除中…" : "刪除"}
+                    </button>
+                  )}
                 </div>
               </article>
             ))}

@@ -156,6 +156,16 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     const body = await request.json() as Record<string, unknown>;
     const action = text(body.action);
     const supabase = getSupabaseAdmin();
+    const { data: currentCampaign, error: currentCampaignError } = await supabase
+      .from("live_sale_campaigns")
+      .select("id, status")
+      .eq("id", id)
+      .maybeSingle();
+    if (currentCampaignError) throw currentCampaignError;
+    if (!currentCampaign) return NextResponse.json({ message: "找不到連線檔期。" }, { status: 404 });
+    if (currentCampaign.status === "已封存") {
+      return NextResponse.json({ message: "已封存檔期僅供查看，不能再修改。" }, { status: 409 });
+    }
 
     if (action === "updateSupply") {
       const productId = text(body.productId);
@@ -200,6 +210,16 @@ export async function DELETE(request: NextRequest, { params }: Context) {
     if (!uuidPattern.test(id)) return NextResponse.json({ message: "連線檔期資料不正確。" }, { status: 400 });
 
     const supabase = getSupabaseAdmin();
+    const { data: campaign, error: campaignError } = await supabase
+      .from("live_sale_campaigns")
+      .select("id, status")
+      .eq("id", id)
+      .maybeSingle();
+    if (campaignError) throw campaignError;
+    if (!campaign) return NextResponse.json({ message: "找不到連線檔期。" }, { status: 404 });
+    if (campaign.status === "已封存") {
+      return NextResponse.json({ message: "已封存檔期僅供查看，不能再刪除。" }, { status: 409 });
+    }
     const { count, error: countError } = await supabase
       .from("live_sale_claims")
       .select("id", { count: "exact", head: true })

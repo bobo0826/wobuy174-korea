@@ -56,8 +56,27 @@ export async function PATCH(request: NextRequest) {
     const id = text(body.id);
     const action = text(body.action);
     if (!uuidPattern.test(id) || !["dismiss", "restore"].includes(action)) return NextResponse.json({ message: "LINE 私訊操作資料不正確。" }, { status: 400 });
+    const supabase = getSupabaseAdmin();
+    const { data: inbox, error: inboxError } = await supabase
+      .from("live_sale_inbox")
+      .select("id, campaign_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (inboxError) throw inboxError;
+    if (!inbox) return NextResponse.json({ message: "找不到這則 LINE 私訊。" }, { status: 404 });
+    if (inbox.campaign_id) {
+      const { data: campaign, error: campaignError } = await supabase
+        .from("live_sale_campaigns")
+        .select("status")
+        .eq("id", inbox.campaign_id)
+        .maybeSingle();
+      if (campaignError) throw campaignError;
+      if (campaign?.status === "已封存") {
+        return NextResponse.json({ message: "已封存檔期的 LINE 私訊僅供查看，不能再修改。" }, { status: 409 });
+      }
+    }
     const update = action === "dismiss" ? { status: "已略過", processed_at: new Date().toISOString() } : { status: "待處理", processed_at: null };
-    const { data, error } = await getSupabaseAdmin().from("live_sale_inbox").update(update).eq("id", id).select("id, status, processed_at").single();
+    const { data, error } = await supabase.from("live_sale_inbox").update(update).eq("id", id).select("id, status, processed_at").single();
     if (error) throw error;
     return withRefreshedSession(NextResponse.json({ inbox: data }), auth.context);
   } catch (error) {
@@ -76,13 +95,24 @@ export async function DELETE(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const { data: inbox, error: lookupError } = await supabase
       .from("live_sale_inbox")
-      .select("id, status")
+      .select("id, status, campaign_id")
       .eq("id", id)
       .maybeSingle();
     if (lookupError) throw lookupError;
     if (!inbox) return NextResponse.json({ message: "找不到這則 LINE 私訊。" }, { status: 404 });
     if (inbox.status !== "待處理") {
       return NextResponse.json({ message: "只有待確認的 LINE 私訊可以刪除。" }, { status: 409 });
+    }
+    if (inbox.campaign_id) {
+      const { data: campaign, error: campaignError } = await supabase
+        .from("live_sale_campaigns")
+        .select("status")
+        .eq("id", inbox.campaign_id)
+        .maybeSingle();
+      if (campaignError) throw campaignError;
+      if (campaign?.status === "已封存") {
+        return NextResponse.json({ message: "已封存檔期的 LINE 私訊僅供查看，不能再刪除。" }, { status: 409 });
+      }
     }
 
     const { data: linkedClaim, error: claimError } = await supabase

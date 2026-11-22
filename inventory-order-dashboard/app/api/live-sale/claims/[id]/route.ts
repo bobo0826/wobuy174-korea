@@ -299,6 +299,20 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     if (!uuidPattern.test(id)) return NextResponse.json({ message: "連線喊單資料不正確。" }, { status: 400 });
     const body = await request.json() as Record<string, unknown>;
     const action = text(body.action);
+    if (!["update", "markPaid", "markUnpaid", "cancel", "restore", "setNotification", "delete", "convert"].includes(action)) {
+      return NextResponse.json({ message: "不支援的連線喊單操作。" }, { status: 400 });
+    }
+    const claim = await fetchClaim(id);
+    const { data: campaign, error: campaignError } = await getSupabaseAdmin()
+      .from("live_sale_campaigns")
+      .select("id, status")
+      .eq("id", claim.campaign_id)
+      .maybeSingle();
+    if (campaignError) throw campaignError;
+    if (!campaign) return NextResponse.json({ message: "找不到原始連線檔期。" }, { status: 404 });
+    if (campaign.status === "已封存") {
+      return NextResponse.json({ message: "已封存檔期的喊單僅供查看，不能再修改。" }, { status: 409 });
+    }
     if (action === "update") return withRefreshedSession(NextResponse.json({ claim: await updateClaim(id, body) }), auth.context);
     if (action === "markPaid") return withRefreshedSession(NextResponse.json(await confirmAndConvert(id, auth.context.profile.displayName)), auth.context);
     if (action === "markUnpaid" || action === "cancel" || action === "restore") return withRefreshedSession(NextResponse.json({ claim: await setClaimStatus(id, action) }), auth.context);
