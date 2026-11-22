@@ -61,7 +61,7 @@ export function Dashboard({ go }: { go: (view: DashboardView) => void }) {
 
   return <>
     <div className="mb-5 flex flex-wrap gap-2">
-      {hasActiveCampaign && <button onClick={() => go("liveSale")} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white hover:bg-[#46423D]">正在連線檔期</button>}
+      {hasActiveCampaign && <button onClick={() => go("liveSale")} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#292824] px-4 text-sm font-semibold text-white hover:bg-[#46423D]">連線檔期</button>}
       <button onClick={() => go("orders")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">訂單管理</button>
       <button onClick={() => go("products")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">商品資料庫</button>
       <button onClick={() => go("stock")} className="inline-flex h-11 items-center justify-center rounded-xl border border-[#E5E1DB] bg-white px-4 text-sm font-semibold text-[#58544D] hover:bg-[#FCFBF9]">庫存總覽</button>
