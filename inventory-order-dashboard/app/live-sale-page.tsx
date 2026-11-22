@@ -1616,7 +1616,10 @@ export function LiveSalePage({
       if (!response.ok) throw new Error(result.message ?? "無法讀取連線檔期。");
       const loadedCampaigns = result.campaigns ?? [];
       setCampaigns(loadedCampaigns);
-      if (initialCampaignId && loadedCampaigns.some((campaign: Campaign) => campaign.id === initialCampaignId)) setSelected(initialCampaignId);
+      const requestedCampaign = loadedCampaigns.find(
+        (campaign: Campaign) => campaign.id === initialCampaignId || campaign.campaign_code === initialCampaignId,
+      );
+      if (requestedCampaign) setSelected(requestedCampaign.id);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "無法讀取連線檔期。");
@@ -1633,8 +1636,11 @@ export function LiveSalePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
-    if (initialCampaignId && campaigns.some((campaign) => campaign.id === initialCampaignId)) {
-      setSelected(initialCampaignId);
+    const requestedCampaign = campaigns.find(
+      (campaign) => campaign.id === initialCampaignId || campaign.campaign_code === initialCampaignId,
+    );
+    if (requestedCampaign) {
+      setSelected(requestedCampaign.id);
     }
   }, [campaigns, initialCampaignId]);
   const create = async (event: FormEvent) => {
