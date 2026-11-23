@@ -128,7 +128,7 @@ export async function GET(request: NextRequest, { params }: Context) {
     if (claimError) throw claimError;
     const claimIds = (claims ?? []).map((claim) => claim.id);
     const { data: items, error: itemError } = claimIds.length
-      ? await supabase.from("live_sale_claim_items").select("id, claim_id, product_id, product_name, category, specification, unit_price, quantity, created_at").in("claim_id", claimIds)
+      ? await supabase.from("live_sale_claim_items").select("id, claim_id, product_id, live_sale_product_id, product_name, category, specification, unit_price, quantity, created_at").in("claim_id", claimIds)
       : { data: [], error: null };
     if (itemError) throw itemError;
     const productIds = [...new Set((items ?? []).map((item) => item.product_id).filter((item): item is string => typeof item === "string" && uuidPattern.test(item)))];
@@ -193,7 +193,20 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       if (endDate && endDate < startDate) return NextResponse.json({ message: "結束日期不可早於開始日期。" }, { status: 400 });
       const { data, error } = await supabase.from("live_sale_campaigns").update({ name, status, note, start_date: startDate, end_date: endDate || null, updated_at: new Date().toISOString() }).eq("id", id).select("id, name, campaign_code, status, start_date, end_date, note, created_by, created_at, updated_at").single();
       if (error) throw error;
-      return withRefreshedSession(NextResponse.json({ campaign: data }), auth.context);
+      // 未被喊單的檔期商品只作為本檔期暫存資料。檔期封存時清除它們，
+      // 已有人喊單的品項則已保留在正式商品資料庫，不會被這裡影響。
+      let clearedLiveProductCount = 0;
+      if (status === "已封存") {
+        const { data: cleared, error: cleanupError } = await supabase
+          .from("live_sale_products")
+          .delete()
+          .eq("campaign_id", id)
+          .is("promoted_product_id", null)
+          .select("id");
+        if (cleanupError) throw cleanupError;
+        clearedLiveProductCount = cleared?.length ?? 0;
+      }
+      return withRefreshedSession(NextResponse.json({ campaign: data, clearedLiveProductCount }), auth.context);
     }
 
     return NextResponse.json({ message: "不支援的連線檔期操作。" }, { status: 400 });

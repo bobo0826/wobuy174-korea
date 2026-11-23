@@ -78,7 +78,7 @@ main > section.grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4 {
 
   .mobile-safe-bottom {
     /* 主內容需避開固定導覽列與中央建立按鈕，不能被頁尾蓋住。 */
-    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom)) !important;
+    padding-bottom: calc(7.25rem + env(safe-area-inset-bottom)) !important;
     overflow-x: clip;
   }
 

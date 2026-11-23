@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSignedIn, withRefreshedSession } from "@/lib/auth";
+import { promoteLiveSaleProduct } from "@/lib/live-sale-products";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
-type ItemInput = { productId?: unknown; productName?: unknown; specification?: unknown; unitPrice?: unknown; quantity?: unknown };
+type ItemInput = { productId?: unknown; liveSaleProductId?: unknown; productName?: unknown; specification?: unknown; unitPrice?: unknown; quantity?: unknown };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -24,21 +25,29 @@ async function nextClaimNumber(campaignId: string, campaignCode: string) {
   return `${prefix}${String(sequence + 1).padStart(3, "0")}`;
 }
 
-async function resolveItems(rawItems: unknown) {
+async function resolveItems(rawItems: unknown, campaign: { id: string; campaign_code: string }) {
   if (!Array.isArray(rawItems) || !rawItems.length) throw new Error("請至少加入一項喊單商品。");
   const inputs = rawItems as ItemInput[];
   const productIds = [...new Set(inputs.map((item) => text(item.productId)).filter((id) => id && uuidPattern.test(id)))];
+  const liveSaleProductIds = [...new Set(inputs.map((item) => text(item.liveSaleProductId)).filter((id) => id && uuidPattern.test(id)))];
   const supabase = getSupabaseAdmin();
   const { data: products, error: productError } = productIds.length
     ? await supabase.from("products").select("id, name, category, specification, retail_price").in("id", productIds)
     : { data: [], error: null };
   if (productError) throw productError;
   const byId = new Map((products ?? []).map((product) => [product.id, product]));
+  const promotedByLiveId = new Map<string, Awaited<ReturnType<typeof promoteLiveSaleProduct>>["product"]>();
+  for (const liveSaleProductId of liveSaleProductIds) {
+    const promoted = await promoteLiveSaleProduct(campaign, liveSaleProductId);
+    promotedByLiveId.set(liveSaleProductId, promoted.product);
+  }
 
   const items = inputs.map((input) => {
     const productId = text(input.productId);
-    const product = productId ? byId.get(productId) : undefined;
+    const liveSaleProductId = text(input.liveSaleProductId);
+    const product = liveSaleProductId ? promotedByLiveId.get(liveSaleProductId) : productId ? byId.get(productId) : undefined;
     if (productId && !product) throw new Error("選擇的商品已不存在，請重新選擇。 ");
+    if (liveSaleProductId && !product) throw new Error("選擇的檔期商品已不存在，請重新選擇。 ");
     const productName = product?.name ?? text(input.productName);
     const unitPrice = integer(input.unitPrice);
     const quantity = integer(input.quantity);
@@ -47,6 +56,7 @@ async function resolveItems(rawItems: unknown) {
     if (price === null) throw new Error("請填寫手動帶入商品的售價。 ");
     return {
       product_id: product?.id ?? null,
+      live_sale_product_id: liveSaleProductId || null,
       product_name: productName,
       category: product?.category ?? "",
       specification: text(input.specification) || product?.specification || "",
@@ -77,7 +87,7 @@ async function rememberCustomerAlias({ sourceInboxId, customerId, communityName 
   }
 }
 
-type ResolvedItem = { product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
+type ResolvedItem = { product_id: string | null; live_sale_product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
 
 async function lineUserIdForInbox(supabase: ReturnType<typeof getSupabaseAdmin>, inboxId: string) {
   if (!inboxId) return "";
@@ -89,7 +99,7 @@ async function lineUserIdForInbox(supabase: ReturnType<typeof getSupabaseAdmin>,
 function combineItems(items: ResolvedItem[]) {
   const combined = new Map<string, ResolvedItem>();
   for (const item of items) {
-    const itemKey = `${item.product_id ?? item.product_name}::${item.specification}::${item.unit_price}`;
+    const itemKey = `${item.product_id ?? item.live_sale_product_id ?? item.product_name}::${item.specification}::${item.unit_price}`;
     const current = combined.get(itemKey);
     combined.set(itemKey, current ? { ...current, quantity: current.quantity + item.quantity } : { ...item });
   }
@@ -118,7 +128,7 @@ async function appendToOpenClaim({ campaignId, customer, items, note, sourceInbo
   if (!target) return null;
   const { data: existingItems, error: existingItemsError } = await supabase
     .from("live_sale_claim_items")
-    .select("product_id, product_name, category, specification, unit_price, quantity")
+    .select("product_id, live_sale_product_id, product_name, category, specification, unit_price, quantity")
     .eq("claim_id", target.id);
   if (existingItemsError) throw existingItemsError;
   const mergedItems = combineItems([...(existingItems ?? []), ...items] as ResolvedItem[]);
@@ -149,13 +159,15 @@ export async function POST(request: NextRequest, { params }: Context) {
     if (sourceInboxId && !uuidPattern.test(sourceInboxId)) return NextResponse.json({ message: "LINE 私訊資料不正確。" }, { status: 400 });
 
     const supabase = getSupabaseAdmin();
-    const [{ data: campaign, error: campaignError }, items] = await Promise.all([
-      supabase.from("live_sale_campaigns").select("id, campaign_code, status").eq("id", campaignId).maybeSingle(),
-      resolveItems(body.items),
-    ]);
+    const { data: campaign, error: campaignError } = await supabase
+      .from("live_sale_campaigns")
+      .select("id, campaign_code, status")
+      .eq("id", campaignId)
+      .maybeSingle();
     if (campaignError) throw campaignError;
     if (!campaign) return NextResponse.json({ message: "找不到連線檔期。" }, { status: 404 });
     if (campaign.status === "已封存") return NextResponse.json({ message: "已封存檔期不可新增喊單。" }, { status: 409 });
+    const items = await resolveItems(body.items, campaign);
 
     const { data: customer, error: customerError } = customerId
       ? await supabase.from("customers").select("id, name, line_name").eq("id", customerId).maybeSingle()

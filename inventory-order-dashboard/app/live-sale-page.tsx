@@ -13,6 +13,20 @@ type Product = {
   cost: number;
   retailPrice: number;
 };
+type LiveSaleProduct = {
+  id: string;
+  campaign_id: string;
+  name: string;
+  country: string;
+  category: string;
+  subcategory: string;
+  specification: string;
+  local_price: number;
+  cost: number;
+  retail_price: number;
+  note: string;
+  promoted_product_id: string | null;
+};
 type Customer = {
   id: string;
   name: string;
@@ -27,6 +41,7 @@ type NotificationStatus = "未通知" | "已通知";
 type ClaimItem = {
   id?: string;
   product_id: string | null;
+  live_sale_product_id?: string | null;
   product_name: string;
   category: string;
   specification: string;
@@ -115,6 +130,7 @@ type Inbox = {
 type Line = {
   key: string;
   productId: string;
+  liveSaleProductId: string;
   productName: string;
   category: string;
   specification: string;
@@ -126,6 +142,13 @@ type ActionName =
 
 const money = (value: number) =>
   `NT$ ${Number(value || 0).toLocaleString("zh-TW")}`;
+const localCurrency: Record<string, string> = {
+  韓國: "₩",
+  日本: "¥",
+  大陸: "CN¥",
+  台灣: "NT$",
+  其他: "$",
+};
 const day = (value: string | null) =>
   value ? value.replaceAll("-", "/") : "—";
 const lineKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -181,10 +204,14 @@ function Metric({
 
 function ProductSearch({
   products,
+  liveProducts,
   onAdd,
+  onAddLive,
 }: {
   products: Product[];
+  liveProducts: LiveSaleProduct[];
   onAdd: (product: Product) => void;
+  onAddLive: (product: LiveSaleProduct) => void;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -204,6 +231,15 @@ function ProductSearch({
         .includes(word),
     );
   }, [products, query]);
+  const liveMatches = useMemo(() => {
+    const word = query.trim().toLocaleLowerCase("zh-TW");
+    return liveProducts.filter((item) =>
+      [item.name, item.country, item.category, item.subcategory, item.specification]
+        .join(" ")
+        .toLocaleLowerCase("zh-TW")
+        .includes(word),
+    );
+  }, [liveProducts, query]);
 
   return (
     <div className="relative">
@@ -222,8 +258,27 @@ function ProductSearch({
       </label>
       {open && (
         <div className="absolute z-30 mt-2 max-h-80 w-full overflow-y-auto rounded-xl border border-[#E6E1DB] bg-white p-1 shadow-lg">
-          {matches.length ? (
-            matches.map((item) => (
+          {matches.length || liveMatches.length ? (
+            <>
+            {liveMatches.map((item) => (
+              <button
+                key={`live-${item.id}`}
+                type="button"
+                onClick={() => {
+                  onAddLive(item);
+                  setQuery("");
+                  setOpen(false);
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left hover:bg-[#F3F7F3]"
+              >
+                <span className="min-w-0">
+                  <b className="block truncate text-sm">{item.name}</b>
+                  <small className="mt-1 block truncate text-xs text-[#8D877E]">本檔期暫存商品 · {[item.country, item.category, item.subcategory, item.specification].filter(Boolean).join(" · ")}</small>
+                </span>
+                <span className="shrink-0 text-xs font-semibold text-[#5E7665]">加入商品</span>
+              </button>
+            ))}
+            {matches.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -253,7 +308,8 @@ function ProductSearch({
                   加入商品
                 </span>
               </button>
-            ))
+            ))}
+            </>
           ) : (
             <p className="p-4 text-sm text-[#8D877E]">找不到可加入的商品。</p>
           )}
@@ -267,6 +323,7 @@ function ClaimEditor({
   campaignId,
   campaignArchived,
   catalog,
+  liveProducts,
   customers,
   initial,
   inbox,
@@ -279,6 +336,7 @@ function ClaimEditor({
   campaignId: string;
   campaignArchived: boolean;
   catalog: Product[];
+  liveProducts: LiveSaleProduct[];
   customers: Customer[];
   initial?: Claim;
   inbox?: Inbox | null;
@@ -310,6 +368,7 @@ function ClaimEditor({
       ? initial.items.map((item) => ({
           key: item.id ?? lineKey(),
           productId: item.product_id ?? "",
+          liveSaleProductId: item.live_sale_product_id ?? "",
           productName: item.product_name,
           category: item.category,
           specification: item.specification,
@@ -319,6 +378,7 @@ function ClaimEditor({
       : (inbox?.parsed_items.map((item) => ({
           key: lineKey(),
           productId: item.product_id ?? "",
+          liveSaleProductId: "",
           productName: item.product_name,
           category: "",
           specification: item.specification,
@@ -329,6 +389,10 @@ function ClaimEditor({
   const catalogById = useMemo(
     () => new Map(catalog.map((item) => [String(item.id), item])),
     [catalog],
+  );
+  const liveProductById = useMemo(
+    () => new Map(liveProducts.map((item) => [item.id, item])),
+    [liveProducts],
   );
   const locked = campaignArchived || initial?.status === "已轉訂單";
   const foundCustomers = useMemo(() => {
@@ -349,9 +413,11 @@ function ClaimEditor({
   );
   const totalProfit = lines.reduce<number | null>((sum, line) => {
     const product = catalogById.get(line.productId);
-    return sum === null || !product
+    const liveProduct = liveProductById.get(line.liveSaleProductId);
+    const cost = product?.cost ?? liveProduct?.cost;
+    return sum === null || cost === undefined
       ? null
-      : sum + (line.unitPrice - product.cost) * line.quantity;
+      : sum + (line.unitPrice - cost) * line.quantity;
   }, 0);
 
   const add = (product: Product) =>
@@ -370,12 +436,41 @@ function ClaimEditor({
             {
               key: lineKey(),
               productId: String(product.id),
+              liveSaleProductId: "",
               productName: product.name,
               category: [product.country, product.category, product.subcategory]
                 .filter(Boolean)
                 .join(" · "),
               specification: product.specification,
               unitPrice: product.retailPrice,
+              quantity: 1,
+            },
+          ];
+    });
+
+  const addLiveProduct = (product: LiveSaleProduct) =>
+    setLines((current) => {
+      const existing = current.find(
+        (line) => line.liveSaleProductId === product.id,
+      );
+      return existing
+        ? current.map((line) =>
+            line.key === existing.key
+              ? { ...line, quantity: line.quantity + 1 }
+              : line,
+          )
+        : [
+            ...current,
+            {
+              key: lineKey(),
+              productId: "",
+              liveSaleProductId: product.id,
+              productName: product.name,
+              category: [product.country, product.category, product.subcategory]
+                .filter(Boolean)
+                .join(" · "),
+              specification: product.specification,
+              unitPrice: product.retail_price,
               quantity: 1,
             },
           ];
@@ -433,6 +528,7 @@ function ClaimEditor({
         sourceInboxId: initial?.source_inbox_id ?? inbox?.id ?? undefined,
         items: lines.map((line) => ({
           productId: line.productId || undefined,
+          liveSaleProductId: line.liveSaleProductId || undefined,
           productName: line.productName,
           specification: line.specification,
           unitPrice: line.unitPrice,
@@ -742,8 +838,10 @@ function ClaimEditor({
               </div>
               {lines.map((line) => {
               const product = catalogById.get(line.productId);
-              const lineCost = product ? product.cost * line.quantity : null;
-              const profit = product ? (line.unitPrice - product.cost) * line.quantity : null;
+              const liveProduct = liveProductById.get(line.liveSaleProductId);
+              const unitCost = product?.cost ?? liveProduct?.cost;
+              const lineCost = unitCost === undefined ? null : unitCost * line.quantity;
+              const profit = unitCost === undefined ? null : (line.unitPrice - unitCost) * line.quantity;
               return (
                 <div key={line.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_34px_54px_54px_54px] items-center gap-1 px-3 py-3">
                   <span className="min-w-0"><b className="block truncate text-sm text-[#403C36]">{line.productName || "待核對商品"}</b><small className="mt-0.5 block truncate text-[11px] text-[#938D84]">{line.specification || "—"}</small></span>
@@ -776,13 +874,15 @@ function ClaimEditor({
               {lines.length ? (
                 lines.map((line) => {
                   const product = catalogById.get(line.productId);
-                  const profit = product
-                    ? (line.unitPrice - product.cost) * line.quantity
-                    : null;
+                  const liveProduct = liveProductById.get(line.liveSaleProductId);
+                  const unitCost = product?.cost ?? liveProduct?.cost;
+                  const profit = unitCost === undefined
+                    ? null
+                    : (line.unitPrice - unitCost) * line.quantity;
                   return (
                     <tr key={line.key}>
                       <td className="px-5 py-4 font-mono text-xs text-[#6E695F]">
-                        {product?.sku || "—"}
+                        {product?.sku || (liveProduct ? "檔期暫存" : "—")}
                       </td>
                       <td className="px-3 py-4 text-xs">
                         {line.category || "—"}
@@ -875,7 +975,7 @@ function ClaimEditor({
         </div>
         {!locked && (
           <div className="border-t border-[#F0EDE8] p-5">
-            <ProductSearch products={catalog} onAdd={add} />
+            <ProductSearch products={catalog} liveProducts={liveProducts} onAdd={add} onAddLive={addLiveProduct} />
           </div>
         )}
         <div className="flex flex-wrap justify-between gap-3 border-t border-[#F0EDE8] px-5 py-4 text-sm">
@@ -908,6 +1008,125 @@ function ClaimEditor({
   );
 }
 
+const blankLiveProduct = () => ({
+  id: "",
+  name: "",
+  country: "韓國",
+  category: "",
+  subcategory: "",
+  specification: "",
+  localPrice: "",
+  cost: "",
+  retailPrice: "",
+  note: "",
+});
+
+function LiveSaleProductPanel({
+  campaignId,
+  archived,
+  products,
+  onChanged,
+}: {
+  campaignId: string;
+  archived: boolean;
+  products: LiveSaleProduct[];
+  onChanged: () => Promise<void>;
+}) {
+  const [form, setForm] = useState(blankLiveProduct);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const currencySymbol = localCurrency[form.country] ?? "$";
+  const update = (key: keyof ReturnType<typeof blankLiveProduct>, value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  const edit = (product: LiveSaleProduct) => {
+    setForm({
+      id: product.id,
+      name: product.name,
+      country: product.country,
+      category: product.category,
+      subcategory: product.subcategory,
+      specification: product.specification,
+      localPrice: String(product.local_price),
+      cost: String(product.cost),
+      retailPrice: String(product.retail_price),
+      note: product.note,
+    });
+    setError("");
+    setOpen(true);
+  };
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/live-sale/campaigns/${campaignId}/products`, {
+        method: form.id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法儲存檔期商品。");
+      setForm(blankLiveProduct());
+      setOpen(false);
+      await onChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法儲存檔期商品。");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async (product: LiveSaleProduct) => {
+    if (!window.confirm(`確定刪除檔期暫存商品「${product.name}」？`)) return;
+    setError("");
+    try {
+      const response = await fetch(`/api/live-sale/campaigns/${campaignId}/products?id=${encodeURIComponent(product.id)}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法刪除檔期商品。");
+      await onChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法刪除檔期商品。");
+    }
+  };
+
+  return (
+    <section className="mb-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F0EDE8] p-5">
+        <div>
+          <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">CAMPAIGN PRODUCTS</p>
+          <h2 className="mt-1 text-lg font-semibold">檔期商品庫</h2>
+          <p className="mt-1 text-xs text-[#8D877E]">只暫存於此檔期；客人喊單後才會建立正式商品。封存時會清除未被喊單的品項。</p>
+        </div>
+        {!archived && <button type="button" onClick={() => { setForm(blankLiveProduct()); setError(""); setOpen((value) => !value); }} className={secondary}>{open ? "收合表單" : "新增檔期商品"}</button>}
+      </div>
+      {error && <p className="mx-5 mt-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] p-3 text-sm text-[#A35F37]">{error}</p>}
+      {!archived && open && (
+        <form onSubmit={save} className="grid gap-3 border-b border-[#F0EDE8] p-5 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-sm font-semibold">商品名稱<input required value={form.name} onChange={(event) => update("name", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal" /></label>
+          <label className="text-sm font-semibold">國家<select value={form.country} onChange={(event) => update("country", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal"><option>韓國</option><option>日本</option><option>大陸</option><option>台灣</option><option>其他</option></select></label>
+          <label className="text-sm font-semibold">商品分類<input value={form.category} onChange={(event) => update("category", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal" /></label>
+          <label className="text-sm font-semibold">商品子分類<input value={form.subcategory} onChange={(event) => update("subcategory", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal" /></label>
+          <label className="text-sm font-semibold">商品規格<input value={form.specification} onChange={(event) => update("specification", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal" /></label>
+          <label className="text-sm font-semibold">當地價格<div className="relative mt-2"><span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-bold text-[#635D55]">{currencySymbol}</span><input required type="number" min="0" value={form.localPrice} onChange={(event) => update("localPrice", event.target.value)} className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] pl-12 pr-3 font-normal" /></div></label>
+          <label className="text-sm font-semibold">台幣成本<input required type="number" min="0" value={form.cost} onChange={(event) => update("cost", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal" /></label>
+          <label className="text-sm font-semibold">一般售價<input required type="number" min="0" value={form.retailPrice} onChange={(event) => update("retailPrice", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal" /></label>
+          <label className="text-sm font-semibold sm:col-span-2 lg:col-span-3">備註<input value={form.note} onChange={(event) => update("note", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal" /></label>
+          <div className="flex items-end justify-end"><button disabled={saving} className={button}>{saving ? "儲存中…" : form.id ? "儲存修改" : "新增檔期商品"}</button></div>
+        </form>
+      )}
+      <div className="divide-y divide-[#F0EDE8]">
+        {products.length ? products.map((product) => (
+          <article key={product.id} className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
+            <span className="min-w-0 flex-1"><b className="block truncate text-sm">{product.name}</b><small className="mt-1 block truncate text-xs text-[#8D877E]">{[product.country, product.category, product.subcategory, product.specification].filter(Boolean).join(" · ") || "尚未填寫分類或規格"}</small></span>
+            <span className="text-right text-xs text-[#6F6960]">當地 {localCurrency[product.country] ?? "$"} {Number(product.local_price).toLocaleString("zh-TW")}<br />成本 {money(product.cost)} · 售價 {money(product.retail_price)}</span>
+            {product.promoted_product_id ? <span className="rounded-full bg-[#E7F0E8] px-2.5 py-1 text-[11px] font-semibold text-[#477154]">已轉正式商品</span> : !archived && <span className="flex gap-2"><button type="button" onClick={() => edit(product)} className="text-sm font-semibold text-[#5E7665]">修改</button><button type="button" onClick={() => void remove(product)} className="text-sm font-semibold text-[#A35F37]">刪除</button></span>}
+          </article>
+        )) : <p className="p-8 text-center text-sm text-[#8D877E]">尚未建立檔期商品；可在客人喊單前先暫存品項。</p>}
+      </div>
+    </section>
+  );
+}
+
 function CampaignDetailPage({
   campaignId,
   catalog,
@@ -925,6 +1144,7 @@ function CampaignDetailPage({
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersLoaded, setCustomersLoaded] = useState(false);
   const [inbox, setInbox] = useState<Inbox[]>([]);
+  const [liveProducts, setLiveProducts] = useState<LiveSaleProduct[]>([]);
   const [editor, setEditor] = useState<{
     claim?: Claim;
     inbox?: Inbox | null;
@@ -940,6 +1160,7 @@ function CampaignDetailPage({
   const [endDate, setEndDate] = useState("");
   const [note, setNote] = useState("");
   const [showCampaignSettings, setShowCampaignSettings] = useState(false);
+  const [showLiveProducts, setShowLiveProducts] = useState(false);
   const catalogById = useMemo(
     () => new Map(catalog.map((item) => [String(item.id), item])),
     [catalog],
@@ -948,23 +1169,28 @@ function CampaignDetailPage({
   const load = async () => {
     setLoading(true);
     try {
-      const [detailResponse, inboxResponse] = await Promise.all([
+      const [detailResponse, inboxResponse, liveProductsResponse] = await Promise.all([
         fetch(`/api/live-sale/campaigns/${campaignId}`),
         fetch(
           `/api/live-sale/inbox?status=%E5%BE%85%E8%99%95%E7%90%86&campaignId=${encodeURIComponent(campaignId)}`,
         ),
+        fetch(`/api/live-sale/campaigns/${campaignId}/products`),
       ]);
-      const [detailData, inboxData] = await Promise.all([
+      const [detailData, inboxData, liveProductsData] = await Promise.all([
         detailResponse.json(),
         inboxResponse.json(),
+        liveProductsResponse.json(),
       ]);
       if (!detailResponse.ok)
         throw new Error(detailData.message ?? "無法讀取連線檔期。");
       if (!inboxResponse.ok)
         throw new Error(inboxData.message ?? "無法讀取 LINE 私訊。");
+      if (!liveProductsResponse.ok)
+        throw new Error(liveProductsData.message ?? "無法讀取檔期商品。");
       const next = detailData as Detail;
       setDetail(next);
       setInbox(inboxData.inbox ?? []);
+      setLiveProducts(liveProductsData.products ?? []);
       setName(next.campaign.name);
       setStatus(next.campaign.status);
       setStartDate(next.campaign.start_date);
@@ -1087,7 +1313,11 @@ function CampaignDetailPage({
     const result = await response.json();
     if (!response.ok) setError(result.message ?? "無法更新檔期。");
     else {
-      setNotice("檔期資訊已更新。");
+      setNotice(
+        result.clearedLiveProductCount
+          ? `檔期已封存，並清除了 ${result.clearedLiveProductCount} 項未被喊單的暫存商品。`
+          : "檔期資訊已更新。",
+      );
       await load();
     }
   };
@@ -1128,6 +1358,7 @@ function CampaignDetailPage({
         campaignId={campaignId}
         campaignArchived={detail.campaign.status === "已封存"}
         catalog={catalog}
+        liveProducts={liveProducts}
         customers={customers}
         initial={editor.claim}
         inbox={editor.inbox}
@@ -1175,6 +1406,15 @@ function CampaignDetailPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowLiveProducts((visible) => !visible)}
+            className={`${secondary} h-11 w-[120px] px-2`}
+            aria-expanded={showLiveProducts}
+            aria-controls="campaign-products"
+          >
+            檔期商品庫
+          </button>
           <button
             type="button"
             onClick={() => setShowCampaignSettings((visible) => !visible)}
@@ -1282,6 +1522,7 @@ function CampaignDetailPage({
           </div>
         </div>
       </section>}
+      {showLiveProducts && <div id="campaign-products"><LiveSaleProductPanel campaignId={campaignId} archived={campaignArchived} products={liveProducts} onChanged={load} /></div>}
       <section className="mb-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
         <div className="border-b border-[#F0EDE8] p-5">
           <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">

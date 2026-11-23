@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSignedIn, withRefreshedSession } from "@/lib/auth";
+import { promoteLiveSaleProduct } from "@/lib/live-sale-products";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
-type ItemInput = { productId?: unknown; productName?: unknown; specification?: unknown; unitPrice?: unknown; quantity?: unknown };
+type ItemInput = { productId?: unknown; liveSaleProductId?: unknown; productName?: unknown; specification?: unknown; unitPrice?: unknown; quantity?: unknown };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -18,23 +19,31 @@ function taipeiToday() {
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
-async function resolveItems(rawItems: unknown) {
+async function resolveItems(rawItems: unknown, campaign: { id: string; campaign_code: string }) {
   if (!Array.isArray(rawItems) || !rawItems.length) throw new Error("請至少加入一項喊單商品。 ");
   const inputs = rawItems as ItemInput[];
   const ids = [...new Set(inputs.map((item) => text(item.productId)).filter((id) => id && uuidPattern.test(id)))];
+  const liveSaleProductIds = [...new Set(inputs.map((item) => text(item.liveSaleProductId)).filter((id) => id && uuidPattern.test(id)))];
   const supabase = getSupabaseAdmin();
   const { data: products, error } = ids.length ? await supabase.from("products").select("id, name, category, specification, retail_price").in("id", ids) : { data: [], error: null };
   if (error) throw error;
   const byId = new Map((products ?? []).map((product) => [product.id, product]));
+  const promotedByLiveId = new Map<string, Awaited<ReturnType<typeof promoteLiveSaleProduct>>["product"]>();
+  for (const liveSaleProductId of liveSaleProductIds) {
+    const promoted = await promoteLiveSaleProduct(campaign, liveSaleProductId);
+    promotedByLiveId.set(liveSaleProductId, promoted.product);
+  }
   return inputs.map((input) => {
     const productId = text(input.productId);
-    const product = productId ? byId.get(productId) : undefined;
+    const liveSaleProductId = text(input.liveSaleProductId);
+    const product = liveSaleProductId ? promotedByLiveId.get(liveSaleProductId) : productId ? byId.get(productId) : undefined;
     if (productId && !product) throw new Error("選擇的商品已不存在，請重新選擇。 ");
+    if (liveSaleProductId && !product) throw new Error("選擇的檔期商品已不存在，請重新選擇。 ");
     const quantity = integer(input.quantity);
     const price = integer(input.unitPrice) ?? (product ? Number(product.retail_price) : null);
     const productName = product?.name ?? text(input.productName);
     if (!productName || !quantity || quantity < 1 || price === null) throw new Error("喊單商品的名稱、售價與數量不可空白。 ");
-    return { product_id: product?.id ?? null, product_name: productName, category: product?.category ?? "", specification: text(input.specification) || product?.specification || "", unit_price: price, quantity };
+    return { product_id: product?.id ?? null, live_sale_product_id: liveSaleProductId || null, product_name: productName, category: product?.category ?? "", specification: text(input.specification) || product?.specification || "", unit_price: price, quantity };
   });
 }
 
@@ -79,7 +88,7 @@ async function rememberAlias(sourceInboxId: string | null, customerId: string, c
   if (result.error) throw result.error;
 }
 
-type ResolvedItem = { product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
+type ResolvedItem = { product_id: string | null; live_sale_product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
 
 async function lineUserIdForInbox(supabase: ReturnType<typeof getSupabaseAdmin>, inboxId: string | null) {
   if (!inboxId) return "";
@@ -91,7 +100,7 @@ async function lineUserIdForInbox(supabase: ReturnType<typeof getSupabaseAdmin>,
 function combineItems(items: ResolvedItem[]) {
   const combined = new Map<string, ResolvedItem>();
   for (const item of items) {
-    const itemKey = `${item.product_id ?? item.product_name}::${item.specification}::${item.unit_price}`;
+    const itemKey = `${item.product_id ?? item.live_sale_product_id ?? item.product_name}::${item.specification}::${item.unit_price}`;
     const current = combined.get(itemKey);
     combined.set(itemKey, current ? { ...current, quantity: current.quantity + item.quantity } : { ...item });
   }
@@ -119,7 +128,7 @@ async function mergeIntoOpenClaim({ currentId, campaignId, customer, items, note
   const userIdByInbox = new Map((targetInboxes ?? []).map((inbox) => [inbox.id, inbox.line_user_id]));
   const target = (candidates ?? []).find((candidate) => userIdByInbox.get(candidate.source_inbox_id ?? "") === sourceLineUserId);
   if (!target) return null;
-  const { data: targetItems, error: targetItemsError } = await supabase.from("live_sale_claim_items").select("product_id, product_name, category, specification, unit_price, quantity").eq("claim_id", target.id);
+  const { data: targetItems, error: targetItemsError } = await supabase.from("live_sale_claim_items").select("product_id, live_sale_product_id, product_name, category, specification, unit_price, quantity").eq("claim_id", target.id);
   if (targetItemsError) throw targetItemsError;
   const mergedItems = combineItems([...(targetItems ?? []), ...items] as ResolvedItem[]);
   const total = mergedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
@@ -144,7 +153,14 @@ async function updateClaim(id: string, body: Record<string, unknown>) {
   const note = text(body.note);
   if (!communityName || communityName.length > 80) throw new Error("請填寫喊單來源。 ");
   const customer = customerId ? await ensureCustomer(customerId) : null;
-  const items = await resolveItems(body.items);
+  const { data: campaign, error: campaignError } = await getSupabaseAdmin()
+    .from("live_sale_campaigns")
+    .select("id, campaign_code")
+    .eq("id", current.campaign_id)
+    .maybeSingle();
+  if (campaignError) throw campaignError;
+  if (!campaign) throw new Error("找不到原始連線檔期。 ");
+  const items = await resolveItems(body.items, campaign);
   const total = items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
   const resolved = Boolean(customer) && items.every((item) => Boolean(item.product_id));
   const status = current.status === "已結帳" ? "已結帳" : (resolved ? "待結帳" : "待核對");
