@@ -89,6 +89,7 @@ type Campaign = {
   start_date: string;
   end_date: string | null;
   note: string;
+  source_spreadsheet_url: string;
   summary: Summary;
 };
 type Procurement = {
@@ -1025,17 +1026,21 @@ function LiveSaleProductPanel({
   campaignId,
   archived,
   products,
+  sourceSpreadsheetUrl,
   onChanged,
 }: {
   campaignId: string;
   archived: boolean;
   products: LiveSaleProduct[];
+  sourceSpreadsheetUrl: string;
   onChanged: () => Promise<void>;
 }) {
   const [form, setForm] = useState(blankLiveProduct);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState("");
   const currencySymbol = localCurrency[form.country] ?? "$";
   const update = (key: keyof ReturnType<typeof blankLiveProduct>, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -1088,6 +1093,22 @@ function LiveSaleProductPanel({
       setError(reason instanceof Error ? reason.message : "無法刪除檔期商品。");
     }
   };
+  const sync = async () => {
+    setSyncing(true);
+    setError("");
+    setSyncNotice("");
+    try {
+      const response = await fetch(`/api/live-sale/campaigns/${campaignId}/products/sync`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法同步 Google 試算表商品。");
+      setSyncNotice(`已新增 ${result.importedCount ?? 0} 項；略過 ${result.skippedDuplicateCount ?? 0} 項重複資料${result.skippedInvalidRows?.length ? `；第 ${result.skippedInvalidRows.join("、")} 列資料不完整` : ""}。`);
+      await onChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法同步 Google 試算表商品。");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <section className="mb-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
@@ -1097,9 +1118,11 @@ function LiveSaleProductPanel({
           <h2 className="mt-1 text-lg font-semibold">檔期商品庫</h2>
           <p className="mt-1 text-xs text-[#8D877E]">只暫存於此檔期；客人喊單後才會建立正式商品。封存時會清除未被喊單的品項。</p>
         </div>
-        {!archived && <button type="button" onClick={() => { setForm(blankLiveProduct()); setError(""); setOpen((value) => !value); }} className={secondary}>{open ? "收合表單" : "新增檔期商品"}</button>}
+        {!archived && <div className="flex flex-wrap gap-2"><button type="button" disabled={!sourceSpreadsheetUrl || syncing} onClick={() => void sync()} className={secondary}>{syncing ? "同步中…" : "同步試算表"}</button><button type="button" onClick={() => { setForm(blankLiveProduct()); setError(""); setOpen((value) => !value); }} className={secondary}>{open ? "收合表單" : "新增檔期商品"}</button></div>}
       </div>
       {error && <p className="mx-5 mt-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] p-3 text-sm text-[#A35F37]">{error}</p>}
+      {syncNotice && <p className="mx-5 mt-5 rounded-xl border border-[#D9E5DB] bg-[#EEF5EF] p-3 text-sm text-[#477154]">{syncNotice}</p>}
+      {!archived && !sourceSpreadsheetUrl && <p className="mx-5 mt-5 rounded-xl border border-[#E1DED8] bg-[#F7F5F2] p-3 text-sm text-[#6F6960]">請先在「檔期設定」填入 Google 試算表連結，才能同步商品。</p>}
       {!archived && open && (
         <form onSubmit={save} className="grid gap-3 border-b border-[#F0EDE8] p-5 sm:grid-cols-2 lg:grid-cols-4">
           <label className="text-sm font-semibold">商品名稱<input required value={form.name} onChange={(event) => update("name", event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 font-normal" /></label>
@@ -1159,6 +1182,7 @@ function CampaignDetailPage({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [note, setNote] = useState("");
+  const [sourceSpreadsheetUrl, setSourceSpreadsheetUrl] = useState("");
   const [showCampaignSettings, setShowCampaignSettings] = useState(false);
   const [showLiveProducts, setShowLiveProducts] = useState(false);
   const catalogById = useMemo(
@@ -1196,6 +1220,7 @@ function CampaignDetailPage({
       setStartDate(next.campaign.start_date);
       setEndDate(next.campaign.end_date ?? "");
       setNote(next.campaign.note);
+      setSourceSpreadsheetUrl(next.campaign.source_spreadsheet_url ?? "");
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "無法讀取連線檔期。");
@@ -1308,6 +1333,7 @@ function CampaignDetailPage({
         startDate,
         endDate: endDate || undefined,
         note,
+        sourceSpreadsheetUrl,
       }),
     });
     const result = await response.json();
@@ -1508,6 +1534,16 @@ function CampaignDetailPage({
               className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] px-3 font-normal"
             />
           </label>
+          <label className="text-sm font-semibold lg:col-span-3">
+            Google 試算表連結
+            <input
+              disabled={campaignArchived}
+              value={sourceSpreadsheetUrl}
+              onChange={(event) => setSourceSpreadsheetUrl(event.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/..."
+              className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] px-3 font-normal"
+            />
+          </label>
           <div className="flex flex-wrap items-end justify-end gap-2">
             <button disabled={campaignArchived} onClick={() => void saveCampaign()} className={`${secondary} disabled:opacity-45`}>
               儲存檔期設定
@@ -1522,7 +1558,7 @@ function CampaignDetailPage({
           </div>
         </div>
       </section>}
-      {showLiveProducts && <div id="campaign-products"><LiveSaleProductPanel campaignId={campaignId} archived={campaignArchived} products={liveProducts} onChanged={load} /></div>}
+      {showLiveProducts && <div id="campaign-products"><LiveSaleProductPanel campaignId={campaignId} archived={campaignArchived} products={liveProducts} sourceSpreadsheetUrl={campaign.source_spreadsheet_url ?? ""} onChanged={load} /></div>}
       <section className="mb-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
         <div className="border-b border-[#F0EDE8] p-5">
           <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">

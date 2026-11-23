@@ -114,7 +114,7 @@ export async function GET(request: NextRequest, { params }: Context) {
     const supabase = getSupabaseAdmin();
     const { data: campaign, error: campaignError } = await supabase
       .from("live_sale_campaigns")
-      .select("id, name, campaign_code, status, start_date, end_date, note, created_by, created_at, updated_at")
+      .select("id, name, campaign_code, status, start_date, end_date, note, source_spreadsheet_url, created_by, created_at, updated_at")
       .eq("id", id)
       .maybeSingle();
     if (campaignError) throw campaignError;
@@ -187,11 +187,20 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       const name = text(body.name);
       const startDate = text(body.startDate);
       const endDate = text(body.endDate);
+      const sourceSpreadsheetUrl = text(body.sourceSpreadsheetUrl);
       if (!campaignStatuses.includes(status)) return NextResponse.json({ message: "檔期狀態不正確。" }, { status: 400 });
       if (!name || name.length > 80) return NextResponse.json({ message: "請輸入 1 至 80 字的連線檔期名稱。" }, { status: 400 });
       if (!datePattern.test(startDate) || (endDate && !datePattern.test(endDate))) return NextResponse.json({ message: "檔期日期格式不正確。" }, { status: 400 });
       if (endDate && endDate < startDate) return NextResponse.json({ message: "結束日期不可早於開始日期。" }, { status: 400 });
-      const { data, error } = await supabase.from("live_sale_campaigns").update({ name, status, note, start_date: startDate, end_date: endDate || null, updated_at: new Date().toISOString() }).eq("id", id).select("id, name, campaign_code, status, start_date, end_date, note, created_by, created_at, updated_at").single();
+      if (sourceSpreadsheetUrl) {
+        try {
+          const url = new URL(sourceSpreadsheetUrl);
+          if (url.hostname !== "docs.google.com" || !/^\/spreadsheets\/d\//.test(url.pathname)) throw new Error("invalid");
+        } catch {
+          return NextResponse.json({ message: "請填入有效的 Google 試算表連結。" }, { status: 400 });
+        }
+      }
+      const { data, error } = await supabase.from("live_sale_campaigns").update({ name, status, note, start_date: startDate, end_date: endDate || null, source_spreadsheet_url: sourceSpreadsheetUrl, updated_at: new Date().toISOString() }).eq("id", id).select("id, name, campaign_code, status, start_date, end_date, note, source_spreadsheet_url, created_by, created_at, updated_at").single();
       if (error) throw error;
       // 未被喊單的檔期商品只作為本檔期暫存資料。檔期封存時清除它們，
       // 已有人喊單的品項則已保留在正式商品資料庫，不會被這裡影響。
