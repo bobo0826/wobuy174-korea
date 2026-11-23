@@ -100,6 +100,7 @@ type Procurement = {
   demandQuantity: number;
   paidQuantity: number;
   unresolvedQuantity: number;
+  receivedQuantity: number | null;
   availableQuantity: number | null;
   purchaseQuantity: number | null;
   shortageQuantity: number | null;
@@ -1041,6 +1042,23 @@ function LiveSaleProductPanel({
   const [open, setOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
+  const [search, setSearch] = useState("");
+  const [specificationFilter, setSpecificationFilter] = useState("");
+  const specifications = useMemo(
+    () => [...new Set(products.map((product) => product.specification.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-Hant")),
+    [products],
+  );
+  const visibleProducts = useMemo(() => {
+    const keyword = search.trim().toLocaleLowerCase();
+    return products.filter((product) => {
+      const matchesSpecification = !specificationFilter || product.specification === specificationFilter;
+      const matchesKeyword = !keyword || [product.name, product.country, product.category, product.subcategory, product.specification]
+        .join(" ")
+        .toLocaleLowerCase()
+        .includes(keyword);
+      return matchesSpecification && matchesKeyword;
+    });
+  }, [products, search, specificationFilter]);
   const currencySymbol = localCurrency[form.country] ?? "$";
   const update = (key: keyof ReturnType<typeof blankLiveProduct>, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -1137,14 +1155,34 @@ function LiveSaleProductPanel({
           <div className="flex items-end justify-end"><button disabled={saving} className={button}>{saving ? "儲存中…" : form.id ? "儲存修改" : "新增檔期商品"}</button></div>
         </form>
       )}
+      <div className="grid gap-2 border-b border-[#F0EDE8] p-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+        <label className="sr-only" htmlFor="live-product-search">搜尋檔期商品</label>
+        <input
+          id="live-product-search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="搜尋商品名稱、分類或規格"
+          className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm"
+        />
+        <label className="sr-only" htmlFor="live-product-specification">篩選商品規格</label>
+        <select
+          id="live-product-specification"
+          value={specificationFilter}
+          onChange={(event) => setSpecificationFilter(event.target.value)}
+          className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm"
+        >
+          <option value="">全部規格</option>
+          {specifications.map((specification) => <option key={specification} value={specification}>{specification}</option>)}
+        </select>
+      </div>
       <div className="divide-y divide-[#F0EDE8]">
-        {products.length ? products.map((product) => (
+        {visibleProducts.length ? visibleProducts.map((product) => (
           <article key={product.id} className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
             <span className="min-w-0 flex-1"><b className="block truncate text-sm">{product.name}</b><small className="mt-1 block truncate text-xs text-[#8D877E]">{[product.country, product.category, product.subcategory, product.specification].filter(Boolean).join(" · ") || "尚未填寫分類或規格"}</small></span>
             <span className="text-right text-xs text-[#6F6960]">當地 {localCurrency[product.country] ?? "$"} {Number(product.local_price).toLocaleString("zh-TW")}<br />成本 {money(product.cost)} · 售價 {money(product.retail_price)}</span>
             {product.promoted_product_id ? <span className="rounded-full bg-[#E7F0E8] px-2.5 py-1 text-[11px] font-semibold text-[#477154]">已轉正式商品</span> : !archived && <span className="flex gap-2"><button type="button" onClick={() => edit(product)} className="text-sm font-semibold text-[#5E7665]">修改</button><button type="button" onClick={() => void remove(product)} className="text-sm font-semibold text-[#A35F37]">刪除</button></span>}
           </article>
-        )) : <p className="p-8 text-center text-sm text-[#8D877E]">尚未建立檔期商品；可在客人喊單前先暫存品項。</p>}
+        )) : <p className="p-8 text-center text-sm text-[#8D877E]">{products.length ? "沒有符合目前搜尋或規格篩選的商品。" : "尚未建立檔期商品；可在客人喊單前先暫存品項。"}</p>}
       </div>
     </section>
   );
@@ -1185,6 +1223,9 @@ function CampaignDetailPage({
   const [sourceSpreadsheetUrl, setSourceSpreadsheetUrl] = useState("");
   const [showCampaignSettings, setShowCampaignSettings] = useState(false);
   const [showLiveProducts, setShowLiveProducts] = useState(false);
+  const [procurementSearch, setProcurementSearch] = useState("");
+  const [receivedDrafts, setReceivedDrafts] = useState<Record<string, string>>({});
+  const [receivingProductId, setReceivingProductId] = useState("");
   const catalogById = useMemo(
     () => new Map(catalog.map((item) => [String(item.id), item])),
     [catalog],
@@ -1228,11 +1269,43 @@ function CampaignDetailPage({
       setLoading(false);
     }
   };
+  const saveReceivedQuantity = async (line: Procurement, value: string) => {
+    if (!line.productId || line.receivedQuantity === null) return;
+    const receivedQuantity = Number(value);
+    if (!Number.isInteger(receivedQuantity) || receivedQuantity < 0) {
+      setError("到貨數量請填寫零或正整數。");
+      setReceivedDrafts((current) => ({ ...current, [line.productId!]: String(line.receivedQuantity) }));
+      return;
+    }
+    if (receivedQuantity === line.receivedQuantity) return;
+    setReceivingProductId(line.productId);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updateReceived", productId: line.productId, receivedQuantity }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法更新到貨數量。");
+      setReceivedDrafts((current) => ({ ...current, [line.productId!]: String(receivedQuantity) }));
+      setNotice("已更新累計到貨數量，商品資料庫可售庫存也已同步。" );
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法更新到貨數量。");
+      setReceivedDrafts((current) => ({ ...current, [line.productId!]: String(line.receivedQuantity) }));
+    } finally {
+      setReceivingProductId("");
+    }
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setCustomers([]);
       setCustomersLoaded(false);
+      setReceivedDrafts({});
+      setProcurementSearch("");
       void load();
     }, 0);
     return () => window.clearTimeout(timer);
@@ -1413,6 +1486,13 @@ function CampaignDetailPage({
   const { campaign, claims, summary, procurement } = detail;
   const campaignArchived = campaign.status === "已封存";
   const visibleClaims = claims.filter((claim) => claim.status !== "已轉訂單");
+  const visibleProcurement = procurement.filter((line) => {
+    const keyword = procurementSearch.trim().toLocaleLowerCase();
+    return !keyword || [line.productName, line.specification, line.category]
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(keyword);
+  });
   return (
     <>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
@@ -1754,28 +1834,56 @@ function CampaignDetailPage({
       </div>
       <section className="mt-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
         <div className="border-b border-[#F0EDE8] p-5">
-          <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">
-            PURCHASING SUMMARY
-          </p>
-          <h2 className="mt-1 text-lg font-semibold">商品採購與缺貨統整</h2>
-          <p className="mt-1 text-xs text-[#8D877E]">
-            需求量統計未取消喊單；商品資料庫的可售庫存會自動同步，需採購為需求量扣除可售庫存。
-          </p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">
+                PURCHASING SUMMARY
+              </p>
+              <h2 className="mt-1 text-lg font-semibold">商品採購與缺貨統整</h2>
+              <p className="mt-1 text-xs text-[#8D877E]">
+                可直接填寫累計到貨數量；系統會同步更新商品資料庫的可售庫存與庫存異動紀錄。
+              </p>
+            </div>
+            <label className="w-full sm:w-72">
+              <span className="sr-only">搜尋採購商品</span>
+              <input
+                value={procurementSearch}
+                onChange={(event) => setProcurementSearch(event.target.value)}
+                placeholder="搜尋商品、分類或規格"
+                className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm"
+              />
+            </label>
+          </div>
         </div>
         <div className="divide-y divide-[#F0EDE8] md:hidden">
-          {procurement.length ? procurement.map((line) => (
-            <div key={line.productId ?? `${line.productName}-${line.specification}`} className="flex min-w-0 items-center gap-3 px-3 py-3">
-              <span className="min-w-0 flex-1"><b className="block truncate text-sm">{line.productName}</b><small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"} · 可售 {line.availableQuantity ?? "—"}</small></span>
-              <span className="shrink-0 text-right text-xs"><b className={line.purchaseQuantity ? "block text-[#A35F37]" : "block text-[#477154]"}>{line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</b><small className="mt-1 block text-[#817B72]">需求 {line.demandQuantity} · 已結 {line.paidQuantity}</small></span>
+          {visibleProcurement.length ? visibleProcurement.map((line) => (
+            <div key={line.productId ?? `${line.productName}-${line.specification}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_92px] items-center gap-3 px-3 py-3">
+              <span className="min-w-0"><b className="block truncate text-sm">{line.productName}</b><small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small><small className="mt-1 block text-xs text-[#817B72]">需求 {line.demandQuantity} · 可售 {line.availableQuantity ?? "—"} · {line.purchaseQuantity === null ? "待核對" : line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</small></span>
+              {line.productId && line.receivedQuantity !== null ? (
+                <label className="text-right text-[11px] font-semibold text-[#6F6960]">到貨累計
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    disabled={campaignArchived || receivingProductId === line.productId}
+                    value={receivedDrafts[line.productId] ?? String(line.receivedQuantity)}
+                    onChange={(event) => setReceivedDrafts((current) => ({ ...current, [line.productId!]: event.target.value }))}
+                    onBlur={(event) => void saveReceivedQuantity(line, event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                    className="mt-1 h-10 w-full rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-right text-sm font-semibold text-[#403C36] disabled:opacity-50"
+                  />
+                </label>
+              ) : <span className="text-right text-xs text-[#8D877E]">請先核對商品</span>}
             </div>
-          )) : <p className="p-8 text-center text-sm text-[#8D877E]">建立喊單後，這裡會依商品規格自動統整採購數量。</p>}
+          )) : <p className="p-8 text-center text-sm text-[#8D877E]">{procurement.length ? "沒有符合搜尋條件的商品。" : "建立喊單後，這裡會依商品規格自動統整採購數量。"}</p>}
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]">
               <tr>
                 <th className="px-5 py-3">商品／規格</th>
                 <th className="px-3 py-3">喊單需求</th>
+                <th className="px-3 py-3">到貨累計</th>
                 <th className="px-3 py-3">商品資料庫可售庫存</th>
                 <th className="px-3 py-3">需採購</th>
                 <th className="px-3 py-3">已結單</th>
@@ -1784,8 +1892,8 @@ function CampaignDetailPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F0EDE8]">
-              {procurement.length ? (
-                procurement.map((line) => (
+              {visibleProcurement.length ? (
+                visibleProcurement.map((line) => (
                   <tr
                     key={
                       line.productId ??
@@ -1802,6 +1910,22 @@ function CampaignDetailPage({
                     </td>
                     <td className="px-3 py-4 font-semibold">
                       {line.demandQuantity}
+                    </td>
+                    <td className="px-3 py-4">
+                      {line.productId && line.receivedQuantity !== null ? (
+                        <input
+                          type="number"
+                          min="0"
+                          inputMode="numeric"
+                          aria-label={`${line.productName} 累計到貨數量`}
+                          disabled={campaignArchived || receivingProductId === line.productId}
+                          value={receivedDrafts[line.productId] ?? String(line.receivedQuantity)}
+                          onChange={(event) => setReceivedDrafts((current) => ({ ...current, [line.productId!]: event.target.value }))}
+                          onBlur={(event) => void saveReceivedQuantity(line, event.target.value)}
+                          onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                          className="h-10 w-24 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-right font-semibold disabled:opacity-50"
+                        />
+                      ) : <span className="text-[#8D877E]">請先核對</span>}
                     </td>
                     <td className="px-3 py-4">
                       {line.availableQuantity === null
@@ -1846,8 +1970,8 @@ function CampaignDetailPage({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="p-10 text-center text-[#8D877E]">
-                    建立喊單後，這裡會依商品規格自動統整採購數量。
+                  <td colSpan={8} className="p-10 text-center text-[#8D877E]">
+                    {procurement.length ? "沒有符合搜尋條件的商品。" : "建立喊單後，這裡會依商品規格自動統整採購數量。"}
                   </td>
                 </tr>
               )}

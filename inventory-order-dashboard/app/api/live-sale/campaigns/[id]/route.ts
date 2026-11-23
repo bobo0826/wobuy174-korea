@@ -14,7 +14,14 @@ const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const nonNegativeInteger = (value: unknown) => value === null || value === "" || value === undefined ? null : (Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : undefined);
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
-function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Record<string, unknown>>, items: Array<Record<string, unknown>>, products: Array<Record<string, unknown>>, convertedOrders: Array<Record<string, unknown>>) {
+function buildCampaignDetail(
+  campaign: Record<string, unknown>,
+  claims: Array<Record<string, unknown>>,
+  items: Array<Record<string, unknown>>,
+  products: Array<Record<string, unknown>>,
+  allocations: Array<Record<string, unknown>>,
+  convertedOrders: Array<Record<string, unknown>>,
+) {
   const itemsByClaim = new Map<string, Array<Record<string, unknown>>>();
   for (const item of items) {
     const claimItems = itemsByClaim.get(item.claim_id as string) ?? [];
@@ -22,6 +29,12 @@ function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Re
     itemsByClaim.set(item.claim_id as string, claimItems);
   }
   const productById = new Map(products.map((product) => [product.id as string, product]));
+  const receivedByProductId = new Map(
+    allocations.map((allocation) => [
+      allocation.product_id as string,
+      Number(allocation.received_quantity) || 0,
+    ]),
+  );
   const convertedOrderById = new Map(convertedOrders.map((order) => [order.id as string, order]));
   const hydratedClaims: Array<Record<string, unknown> & { items: Array<Record<string, unknown>> }> = claims.map((claim) => ({
     ...claim,
@@ -94,6 +107,9 @@ function buildCampaignDetail(campaign: Record<string, unknown>, claims: Array<Re
     }
     return {
       ...line,
+      receivedQuantity: line.productId
+        ? receivedByProductId.get(line.productId) ?? 0
+        : null,
       availableQuantity,
       purchaseQuantity: availableQuantity === null ? null : Math.max(0, line.demandQuantity - availableQuantity),
       availabilityNote: product ? "已同步商品資料庫可售庫存" : "",
@@ -136,12 +152,20 @@ export async function GET(request: NextRequest, { params }: Context) {
       ? await supabase.from("products").select("id, available_stock").in("id", productIds)
       : { data: [], error: null };
     if (productError) throw productError;
+    const { data: allocations, error: allocationError } = productIds.length
+      ? await supabase
+        .from("live_sale_campaign_products")
+        .select("product_id, received_quantity")
+        .eq("campaign_id", id)
+        .in("product_id", productIds)
+      : { data: [], error: null };
+    if (allocationError) throw allocationError;
     const convertedOrderIds = [...new Set((claims ?? []).map((claim) => claim.converted_order_id).filter((orderId): orderId is string => typeof orderId === "string" && uuidPattern.test(orderId)))];
     const { data: convertedOrders, error: convertedOrderError } = convertedOrderIds.length
       ? await supabase.from("orders").select("id, order_number, status, payment_method, reconciliation_status, delivery_method, total").in("id", convertedOrderIds)
       : { data: [], error: null };
     if (convertedOrderError) throw convertedOrderError;
-    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], products ?? [], convertedOrders ?? [])), auth.context);
+    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], products ?? [], allocations ?? [], convertedOrders ?? [])), auth.context);
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法讀取連線檔期內容。") }, { status: 503 });
   }
@@ -179,6 +203,23 @@ export async function PATCH(request: NextRequest, { params }: Context) {
         .single();
       if (error) throw error;
       return withRefreshedSession(NextResponse.json({ allocation: data }), auth.context);
+    }
+
+    if (action === "updateReceived") {
+      const productId = text(body.productId);
+      const receivedQuantity = nonNegativeInteger(body.receivedQuantity);
+      if (!uuidPattern.test(productId) || receivedQuantity === undefined || receivedQuantity === null) {
+        return NextResponse.json({ message: "到貨數量資料不正確。" }, { status: 400 });
+      }
+      const { data, error } = await supabase.rpc("set_live_sale_received_quantity", {
+        p_campaign_id: id,
+        p_product_id: productId,
+        p_received_quantity: receivedQuantity,
+        p_performed_by: auth.context.profile.displayName,
+      });
+      if (error) throw error;
+      const receipt = Array.isArray(data) ? data[0] : data;
+      return withRefreshedSession(NextResponse.json({ receipt }), auth.context);
     }
 
     if (action === "updateCampaign") {
