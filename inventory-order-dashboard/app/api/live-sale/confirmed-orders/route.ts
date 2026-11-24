@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
     const endDate = text(url.searchParams.get("endDate"));
     const query = text(url.searchParams.get("query"));
     const status = text(url.searchParams.get("status"));
+    const campaignId = text(url.searchParams.get("campaignId"));
     const requestedPage = Number(url.searchParams.get("page") ?? "1");
     const requestedPageSize = Number(url.searchParams.get("pageSize") ?? "50");
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
@@ -68,12 +69,43 @@ export async function GET(request: NextRequest) {
     if (status && !orderStatuses.includes(status)) {
       return NextResponse.json({ message: "已結單訂單狀況不正確。" }, { status: 400 });
     }
+    if (campaignId && !uuidPattern.test(campaignId)) {
+      return NextResponse.json({ message: "連線檔期資料不正確。" }, { status: 400 });
+    }
 
     const supabase = getSupabaseAdmin();
+    const { data: campaignClaims, error: campaignClaimsError } = await supabase
+      .from("live_sale_claims")
+      .select("campaign_id")
+      .eq("status", "已轉訂單")
+      .not("converted_order_id", "is", null);
+    if (campaignClaimsError) throw campaignClaimsError;
+    const campaignIds = [...new Set((campaignClaims ?? [])
+      .map((claim) => claim.campaign_id)
+      .filter((id): id is string => typeof id === "string" && uuidPattern.test(id)))];
+    const { data: campaigns, error: campaignsError } = campaignIds.length
+      ? await supabase
+        .from("live_sale_campaigns")
+        .select("id, name, campaign_code, status, start_date")
+        .in("id", campaignIds)
+        .order("start_date", { ascending: false })
+        .order("created_at", { ascending: false })
+      : { data: [], error: null };
+    if (campaignsError) throw campaignsError;
+
+    if (!campaignId) {
+      return withRefreshedSession(NextResponse.json({
+        campaigns: campaigns ?? [],
+        orders: [],
+        pagination: { page, pageSize, total: 0, totalPages: 1 },
+      }), auth.context);
+    }
+
     const { data: claims, error: claimsError } = await supabase
       .from("live_sale_claims")
       .select("id, campaign_id, claim_number, customer_name, line_name, notification_status, claim_total, converted_order_id, created_at, updated_at")
       .eq("status", "已轉訂單")
+      .eq("campaign_id", campaignId)
       .not("converted_order_id", "is", null)
       .order("updated_at", { ascending: false })
       .limit(2000);
@@ -82,23 +114,15 @@ export async function GET(request: NextRequest) {
     const orderIds = [...new Set((claims ?? [])
       .map((claim) => claim.converted_order_id)
       .filter((id): id is string => typeof id === "string" && uuidPattern.test(id)))];
-    const campaignIds = [...new Set((claims ?? [])
-      .map((claim) => claim.campaign_id)
-      .filter((id): id is string => typeof id === "string" && uuidPattern.test(id)))];
-
-    const [ordersResult, campaignsResult] = await Promise.all([
+    const ordersResult = await (
       orderIds.length
         ? supabase.from("orders").select(orderSelect).in("id", orderIds)
-        : Promise.resolve({ data: [], error: null }),
-      campaignIds.length
-        ? supabase.from("live_sale_campaigns").select("id, name, campaign_code").in("id", campaignIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+        : Promise.resolve({ data: [], error: null })
+    );
     if (ordersResult.error) throw ordersResult.error;
-    if (campaignsResult.error) throw campaignsResult.error;
 
     const ordersById = new Map((ordersResult.data ?? []).map((order) => [order.id, order]));
-    const campaignsById = new Map((campaignsResult.data ?? []).map((campaign) => [campaign.id, campaign]));
+    const campaignsById = new Map((campaigns ?? []).map((campaign) => [campaign.id, campaign]));
     const rows = (claims ?? [])
       .map((claim) => {
         const order = typeof claim.converted_order_id === "string" ? ordersById.get(claim.converted_order_id) : undefined;
@@ -132,6 +156,7 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * pageSize;
     const orders = rows.slice(offset, offset + pageSize);
     return withRefreshedSession(NextResponse.json({
+      campaigns: campaigns ?? [],
       orders,
       pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     }), auth.context);

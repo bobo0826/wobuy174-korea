@@ -1708,7 +1708,7 @@ function CampaignDetailPage({
           </div>
           <div className="flex gap-2">
             <span className={button}>未結單</span>
-            <a href="/live-sale-orders" className={secondary}>
+            <a href={`/live-sale-orders?campaignId=${encodeURIComponent(campaign.id)}`} className={secondary}>
               已結單 →
             </a>
           </div>
