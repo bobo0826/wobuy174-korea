@@ -74,11 +74,18 @@ async function ensureCustomer(customerId: string) {
   return data;
 }
 
-async function rememberAlias(sourceInboxId: string | null, customerId: string, communityName: string) {
-  if (!sourceInboxId || !communityName) return;
+function mergeLineNames(current: string, incoming: string) {
+  const cleanCurrent = current.trim();
+  const cleanIncoming = incoming.trim();
+  if (!cleanIncoming || cleanCurrent.includes(cleanIncoming)) return cleanCurrent;
+  return cleanCurrent ? `${cleanCurrent} ／ ${cleanIncoming}`.slice(0, 160) : cleanIncoming.slice(0, 160);
+}
+
+async function rememberAlias(sourceInboxId: string | null, customerId: string, communityName: string, currentLineName: string) {
+  if (!sourceInboxId || !communityName) return currentLineName;
   const supabase = getSupabaseAdmin();
-  const { data: inbox, error: inboxError } = await supabase.from("live_sale_inbox").select("line_user_id").eq("id", sourceInboxId).maybeSingle();
-  if (inboxError || !inbox?.line_user_id) return;
+  const { data: inbox, error: inboxError } = await supabase.from("live_sale_inbox").select("line_user_id, line_display_name").eq("id", sourceInboxId).maybeSingle();
+  if (inboxError || !inbox?.line_user_id) return currentLineName;
   const { data: existing, error: lookupError } = await supabase.from("live_sale_customer_aliases").select("id").eq("line_user_id", inbox.line_user_id).eq("community_name", communityName).maybeSingle();
   if (lookupError) throw lookupError;
   const timestamp = new Date().toISOString();
@@ -86,6 +93,15 @@ async function rememberAlias(sourceInboxId: string | null, customerId: string, c
     ? await supabase.from("live_sale_customer_aliases").update({ customer_id: customerId, updated_at: timestamp }).eq("id", existing.id)
     : await supabase.from("live_sale_customer_aliases").insert({ customer_id: customerId, community_name: communityName, line_user_id: inbox.line_user_id, updated_at: timestamp });
   if (result.error) throw result.error;
+  const lineName = mergeLineNames(currentLineName, inbox.line_display_name ?? "");
+  if (lineName !== currentLineName) {
+    const { error } = await supabase
+      .from("customers")
+      .update({ line_name: lineName, updated_at: timestamp })
+      .eq("id", customerId);
+    if (error) throw error;
+  }
+  return lineName;
 }
 
 type ResolvedItem = { product_id: string | null; live_sale_product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
@@ -133,7 +149,7 @@ async function mergeIntoOpenClaim({ currentId, campaignId, customer, items, note
   const mergedItems = combineItems([...(targetItems ?? []), ...items] as ResolvedItem[]);
   const total = mergedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
   const nextNote = note && !target.note.includes(note) ? [target.note, note].filter(Boolean).join("\n") : target.note;
-  const { error: headerError } = await supabase.from("live_sale_claims").update({ claim_total: total, note: nextNote, updated_at: new Date().toISOString() }).eq("id", target.id);
+  const { error: headerError } = await supabase.from("live_sale_claims").update({ customer_name: customer.name, line_name: customer.line_name, claim_total: total, note: nextNote, updated_at: new Date().toISOString() }).eq("id", target.id);
   if (headerError) throw headerError;
   const { error: deleteItemsError } = await supabase.from("live_sale_claim_items").delete().eq("claim_id", target.id);
   if (deleteItemsError) throw deleteItemsError;
@@ -152,7 +168,11 @@ async function updateClaim(id: string, body: Record<string, unknown>) {
   const communityName = text(body.communityName);
   const note = text(body.note);
   if (!communityName || communityName.length > 80) throw new Error("請填寫喊單來源。 ");
-  const customer = customerId ? await ensureCustomer(customerId) : null;
+  let customer = customerId ? await ensureCustomer(customerId) : null;
+  if (customer) {
+    const lineName = await rememberAlias(current.source_inbox_id, customer.id, communityName, customer.line_name ?? "");
+    customer = { ...customer, line_name: lineName };
+  }
   const { data: campaign, error: campaignError } = await getSupabaseAdmin()
     .from("live_sale_campaigns")
     .select("id, campaign_code")
@@ -171,7 +191,6 @@ async function updateClaim(id: string, body: Record<string, unknown>) {
   if (deleteError) throw deleteError;
   const { error: itemError } = await supabase.from("live_sale_claim_items").insert(items.map((item) => ({ claim_id: id, ...item })));
   if (itemError) throw itemError;
-  if (customer) await rememberAlias(current.source_inbox_id, customer.id, communityName);
   if (customer && resolved) {
     const mergedId = await mergeIntoOpenClaim({ currentId: id, campaignId: current.campaign_id, customer, items, note, sourceInboxId: current.source_inbox_id });
     if (mergedId) return { ...(await fetchClaim(mergedId)), items };

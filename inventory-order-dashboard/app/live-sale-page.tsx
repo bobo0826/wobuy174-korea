@@ -120,8 +120,10 @@ type Detail = {
 type Inbox = {
   id: string;
   message_text: string;
+  line_display_name: string;
   parsed_items: Array<{
     product_id: string | null;
+    live_sale_product_id?: string | null;
     product_name: string;
     specification: string;
     unit_price: number;
@@ -361,7 +363,7 @@ function ClaimEditor({
   const [newCustomerSaving, setNewCustomerSaving] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
     name: "",
-    lineName: "",
+    lineName: inbox?.line_display_name ?? "",
     customerCategory: "社群" as Customer["customer_category"],
     preferredDeliveryMethod: "自取" as Customer["preferred_delivery_method"],
   });
@@ -380,7 +382,7 @@ function ClaimEditor({
       : (inbox?.parsed_items.map((item) => ({
           key: lineKey(),
           productId: item.product_id ?? "",
-          liveSaleProductId: "",
+          liveSaleProductId: item.live_sale_product_id ?? "",
           productName: item.product_name,
           category: "",
           specification: item.specification,
@@ -659,6 +661,7 @@ function ClaimEditor({
       {inbox && (
         <section className="mb-5 rounded-2xl border border-[#DEE8DF] bg-[#F8FBF8] p-5">
           <p className="text-xs font-semibold text-[#5E7665]">LINE 私訊原文</p>
+          {inbox.line_display_name && <p className="mt-2 text-xs text-[#6F6960]">LINE@ 名稱：{inbox.line_display_name}</p>}
           <p className="mt-2 whitespace-pre-wrap text-sm">
             {inbox.message_text}
           </p>
@@ -1661,8 +1664,10 @@ function CampaignDetailPage({
                 </p>
                 <p className="mt-3 text-xs text-[#8D877E]">
                   {item.matched_customer
-                    ? `已配對：${item.matched_customer.name}`
-                    : "尚未配對客戶"}
+                    ? `已配對：${item.matched_customer.name}${item.matched_customer.line_name ? ` · ${item.matched_customer.line_name}` : ""}`
+                    : item.line_display_name
+                      ? `LINE@ 名稱：${item.line_display_name}`
+                      : "尚未配對客戶"}
                 </p>
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <button

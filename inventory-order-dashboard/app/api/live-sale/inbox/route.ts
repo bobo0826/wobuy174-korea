@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     let query = supabase
       .from("live_sale_inbox")
-      .select("id, line_message_id, line_user_id, message_text, campaign_id, parsed_items, customer_id, status, received_at, processed_at, created_at, customers(id, name, line_name)")
+      .select("id, line_message_id, line_user_id, line_display_name, message_text, campaign_id, parsed_items, customer_id, status, received_at, processed_at, created_at, customers(id, name, line_name)")
       .eq("source_type", "text")
       .in("status", statuses)
       .order("received_at", { ascending: false })

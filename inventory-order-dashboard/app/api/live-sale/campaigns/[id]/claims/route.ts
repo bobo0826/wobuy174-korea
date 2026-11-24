@@ -67,9 +67,16 @@ async function resolveItems(rawItems: unknown, campaign: { id: string; campaign_
   return items;
 }
 
-async function rememberCustomerAlias({ sourceInboxId, customerId, communityName }: { sourceInboxId: string; customerId: string; communityName: string }) {
+function mergeLineNames(current: string, incoming: string) {
+  const cleanCurrent = current.trim();
+  const cleanIncoming = incoming.trim();
+  if (!cleanIncoming || cleanCurrent.includes(cleanIncoming)) return cleanCurrent;
+  return cleanCurrent ? `${cleanCurrent} ／ ${cleanIncoming}`.slice(0, 160) : cleanIncoming.slice(0, 160);
+}
+
+async function rememberCustomerAlias({ sourceInboxId, customerId, communityName, currentLineName }: { sourceInboxId: string; customerId: string; communityName: string; currentLineName: string }) {
   const supabase = getSupabaseAdmin();
-  const { data: inbox, error: inboxError } = await supabase.from("live_sale_inbox").select("id, line_user_id").eq("id", sourceInboxId).maybeSingle();
+  const { data: inbox, error: inboxError } = await supabase.from("live_sale_inbox").select("id, line_user_id, line_display_name").eq("id", sourceInboxId).maybeSingle();
   if (inboxError) throw inboxError;
   if (!inbox) throw new Error("找不到選擇的 LINE 私訊。 ");
   const now = new Date().toISOString();
@@ -85,6 +92,15 @@ async function rememberCustomerAlias({ sourceInboxId, customerId, communityName 
     const { error } = await supabase.from("live_sale_customer_aliases").upsert({ customer_id: customerId, community_name: communityName, line_user_id: "", updated_at: now }, { onConflict: "customer_id,community_name" });
     if (error) throw error;
   }
+  const lineName = mergeLineNames(currentLineName, inbox.line_display_name ?? "");
+  if (lineName !== currentLineName) {
+    const { error } = await supabase
+      .from("customers")
+      .update({ line_name: lineName, updated_at: now })
+      .eq("id", customerId);
+    if (error) throw error;
+  }
+  return lineName;
 }
 
 type ResolvedItem = { product_id: string | null; live_sale_product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
@@ -169,11 +185,16 @@ export async function POST(request: NextRequest, { params }: Context) {
     if (campaign.status === "已封存") return NextResponse.json({ message: "已封存檔期不可新增喊單。" }, { status: 409 });
     const items = await resolveItems(body.items, campaign);
 
-    const { data: customer, error: customerError } = customerId
+    const { data: selectedCustomer, error: customerError } = customerId
       ? await supabase.from("customers").select("id, name, line_name").eq("id", customerId).maybeSingle()
       : { data: null, error: null };
     if (customerError) throw customerError;
-    if (customerId && !customer) return NextResponse.json({ message: "找不到選擇的客戶。" }, { status: 400 });
+    if (customerId && !selectedCustomer) return NextResponse.json({ message: "找不到選擇的客戶。" }, { status: 400 });
+    let customer = selectedCustomer;
+    if (customer && sourceInboxId) {
+      const lineName = await rememberCustomerAlias({ sourceInboxId, customerId: customer.id, communityName, currentLineName: customer.line_name ?? "" });
+      customer = { ...customer, line_name: lineName };
+    }
     const total = items.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
     const resolved = Boolean(customer) && items.every((item) => Boolean(item.product_id));
     const status = resolved ? "待結帳" : "待核對";
@@ -219,7 +240,6 @@ export async function POST(request: NextRequest, { params }: Context) {
     if (sourceInboxId) {
       const { error: inboxError } = await supabase.from("live_sale_inbox").update({ campaign_id: campaignId, customer_id: customer?.id ?? null, status: "已建立喊單", processed_at: new Date().toISOString() }).eq("id", sourceInboxId);
       if (inboxError) throw inboxError;
-      if (customer) await rememberCustomerAlias({ sourceInboxId, customerId: customer.id, communityName });
     }
     const { data: created, error: createdError } = await supabase.from("live_sale_claims").select("id, campaign_id, claim_number, customer_id, customer_name, line_name, community_name, source_inbox_id, status, claim_total, note, payment_marked_at, payment_marked_by, converted_order_id, created_at, updated_at").eq("id", createdId).single();
     if (createdError) throw createdError;
