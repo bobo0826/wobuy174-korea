@@ -46,19 +46,17 @@ const fieldAliases: Record<keyof ProductDraft, string[]> = {
   safety_stock: ["安全庫存"],
 };
 
-const template = `請用以下格式傳送：
+const template = `直接複製後填寫：
 新增商品
-商品名稱：範例商品
+商品名稱：
 國家：韓國
-商品分類：棉被
-商品子分類：涼感被
-商品規格：雙人
-最新成本：850
-當地價格：30000
-一般售價：1280
-備註：
+最新成本：
+當地價格：
+一般售價：
 
-商品會先加入進行中檔期的暫存商品庫；客人確認喊單後才會建立正式商品與貨號。`;
+以上五項必填，價格只填數字即可。商品會先存入目前連線檔期的暫存商品庫；客人確認喊單後才會建立正式商品與貨號。
+
+需要時再自行加上：商品分類、商品規格、備註。`;
 
 const normalize = (value: string) => value.trim().toLowerCase().replaceAll(/\s/g, "");
 const normalizeProductLabel = (value: string) => normalize(value).replaceAll(/[｜|·・/／_－-]/g, "");
