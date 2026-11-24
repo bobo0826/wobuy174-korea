@@ -1228,6 +1228,7 @@ function CampaignDetailPage({
   const [sourceSpreadsheetUrl, setSourceSpreadsheetUrl] = useState("");
   const [showCampaignSettings, setShowCampaignSettings] = useState(false);
   const [showLiveProducts, setShowLiveProducts] = useState(false);
+  const [claimSearch, setClaimSearch] = useState("");
   const [procurementSearch, setProcurementSearch] = useState("");
   const [receivedDrafts, setReceivedDrafts] = useState<Record<string, string>>({});
   const [receivingProductId, setReceivingProductId] = useState("");
@@ -1235,6 +1236,28 @@ function CampaignDetailPage({
     () => new Map(catalog.map((item) => [String(item.id), item])),
     [catalog],
   );
+  const liveProductById = useMemo(
+    () => new Map(liveProducts.map((item) => [item.id, item])),
+    [liveProducts],
+  );
+  const orderNetProfit = useMemo(() => {
+    let total = 0;
+    let hasUnmatchedCost = false;
+    for (const claim of detail?.claims ?? []) {
+      if (!(["待結帳", "已結帳", "已轉訂單"] as ClaimStatus[]).includes(claim.status)) continue;
+      for (const item of claim.items) {
+        const product = item.product_id ? catalogById.get(item.product_id) : undefined;
+        const liveProduct = item.live_sale_product_id ? liveProductById.get(item.live_sale_product_id) : undefined;
+        const cost = product?.cost ?? liveProduct?.cost;
+        if (cost === undefined) {
+          hasUnmatchedCost = true;
+          continue;
+        }
+        total += (item.unit_price - cost) * item.quantity;
+      }
+    }
+    return hasUnmatchedCost ? null : total;
+  }, [catalogById, detail?.claims, liveProductById]);
 
   const load = async () => {
     setLoading(true);
@@ -1310,6 +1333,7 @@ function CampaignDetailPage({
       setCustomers([]);
       setCustomersLoaded(false);
       setReceivedDrafts({});
+      setClaimSearch("");
       setProcurementSearch("");
       void load();
     }, 0);
@@ -1490,7 +1514,15 @@ function CampaignDetailPage({
 
   const { campaign, claims, summary, procurement } = detail;
   const campaignArchived = campaign.status === "已封存";
-  const visibleClaims = claims.filter((claim) => claim.status !== "已轉訂單");
+  const claimKeyword = claimSearch.trim().toLocaleLowerCase("zh-TW");
+  const visibleClaims = claims.filter((claim) => {
+    if (claim.status === "已轉訂單") return false;
+    if (!claimKeyword) return true;
+    return [claim.claim_number, claim.customer_name, claim.line_name]
+      .join(" ")
+      .toLocaleLowerCase("zh-TW")
+      .includes(claimKeyword);
+  });
   const visibleProcurement = procurement.filter((line) => {
     const keyword = procurementSearch.trim().toLocaleLowerCase();
     return !keyword || [line.productName, line.specification, line.category]
@@ -1713,13 +1745,24 @@ function CampaignDetailPage({
             </a>
           </div>
         </div>
+        <div className="border-b border-[#F0EDE8] px-5 py-3">
+          <label className="flex h-10 w-full items-center gap-2 rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#928C84] md:max-w-sm">
+            ⌕
+            <input
+              value={claimSearch}
+              onChange={(event) => setClaimSearch(event.target.value)}
+              placeholder="搜尋喊單編號、客戶或 LINE@ 名稱"
+              className="min-w-0 flex-1 bg-transparent text-[#58534C] outline-none"
+            />
+          </label>
+        </div>
         <div className="divide-y divide-[#F0EDE8] md:hidden">
           {visibleClaims.length ? (
             visibleClaims.map((claim) => (
               <article key={claim.id} onClick={() => void openEditor({ claim })} className="grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 px-3 py-2.5 hover:bg-[#FCFBF9]">
                 <span className="flex min-w-0 items-center gap-2">
                   <b className="shrink-0 whitespace-nowrap text-[15px] tracking-[-.02em] text-[#5E7665]">{claim.claim_number}</b>
-                  <span className="min-w-0 truncate text-[15px] font-extrabold leading-none text-[#403C36]">{claim.customer_name || "未配對客戶"}</span>
+                  <span className="min-w-0 truncate text-[15px] font-extrabold leading-none text-[#403C36]">{claim.customer_name || "未配對客戶"}{claim.line_name ? <small className="ml-1 text-[11px] font-medium text-[#938D84]">（{claim.line_name}）</small> : null}</span>
                 </span>
                 <b className="justify-self-end whitespace-nowrap text-sm text-[#403C36]">{money(claim.claim_total)}</b>
                 <span className="justify-self-end"><Pill status={claim.status} /></span>
@@ -1768,7 +1811,7 @@ function CampaignDetailPage({
                         </button>
                       </td>
                       <td className="px-3 py-4">
-                        {claim.customer_name || "未配對客戶"}
+                        <span>{claim.customer_name || "未配對客戶"}</span>{claim.line_name ? <small className="ml-1 text-xs text-[#938D84]">（{claim.line_name}）</small> : null}
                       </td>
                       <td className="px-3 py-4">
                         <Pill status={claim.status} />
@@ -1803,7 +1846,7 @@ function CampaignDetailPage({
           </table>
         </div>
       </section>
-      <div className="mt-5 grid grid-cols-5 gap-1.5 sm:gap-3">
+      <div className="mt-5 grid grid-cols-4 gap-1.5 sm:gap-3">
         <Metric
           label="目前連線業績"
           value={money(summary.activeAmount)}
@@ -1811,15 +1854,9 @@ function CampaignDetailPage({
           compact
         />
         <Metric
-          label="已結單"
-          value={money(summary.paidAmount)}
-          note="人員已確認完成結單"
-          compact
-        />
-        <Metric
-          label="未結單"
-          value={money(summary.pendingAmount)}
-          note="完成核對、等待結單"
+          label="目前訂單淨利"
+          value={orderNetProfit === null ? "待核對" : money(orderNetProfit)}
+          note="未結單＋已結單"
           compact
         />
         <Metric
