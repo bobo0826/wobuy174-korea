@@ -1195,12 +1195,14 @@ function CampaignDetailPage({
   campaignId,
   catalog,
   openOrder,
+  openProduct,
   back,
   onDeleted,
 }: {
   campaignId: string;
   catalog: Product[];
   openOrder: (id: string) => void;
+  openProduct: (id: string) => void;
   back: () => void;
   onDeleted: () => Promise<void>;
 }) {
@@ -1862,10 +1864,22 @@ function CampaignDetailPage({
         </div>
         <div className="divide-y divide-[#F0EDE8] md:hidden">
           {visibleProcurement.length ? visibleProcurement.map((line) => (
-            <div key={line.productId ?? `${line.productName}-${line.specification}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_92px] items-center gap-3 px-3 py-3">
+            <div
+              key={line.productId ?? `${line.productName}-${line.specification}`}
+              role={line.productId ? "link" : undefined}
+              tabIndex={line.productId ? 0 : undefined}
+              onClick={() => line.productId && openProduct(line.productId)}
+              onKeyDown={(event) => {
+                if (line.productId && (event.key === "Enter" || event.key === " ")) {
+                  event.preventDefault();
+                  openProduct(line.productId);
+                }
+              }}
+              className={`grid min-w-0 grid-cols-[minmax(0,1fr)_92px] items-center gap-3 px-3 py-3 ${line.productId ? "cursor-pointer hover:bg-[#FCFBF9] focus:outline-none focus-visible:bg-[#F3F7F3]" : ""}`}
+            >
               <span className="min-w-0"><b className="block truncate text-sm">{line.productName}</b><small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small><small className="mt-1 block text-xs text-[#817B72]">需求 {line.demandQuantity} · 可售 {line.availableQuantity ?? "—"} · {line.purchaseQuantity === null ? "待核對" : line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</small></span>
               {line.productId && line.receivedQuantity !== null ? (
-                <label className="text-right text-[11px] font-semibold text-[#6F6960]">到貨累計
+                <label onClick={(event) => event.stopPropagation()} className="text-right text-[11px] font-semibold text-[#6F6960]">到貨累計
                   <input
                     type="number"
                     min="0"
@@ -1904,6 +1918,15 @@ function CampaignDetailPage({
                       line.productId ??
                       `${line.productName}-${line.specification}`
                     }
+                    onClick={() => line.productId && openProduct(line.productId)}
+                    onKeyDown={(event) => {
+                      if (line.productId && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        openProduct(line.productId);
+                      }
+                    }}
+                    tabIndex={line.productId ? 0 : undefined}
+                    className={line.productId ? "cursor-pointer hover:bg-[#FCFBF9] focus:outline-none focus-visible:bg-[#F3F7F3]" : undefined}
                   >
                     <td className="px-5 py-4">
                       <b>{line.productName}</b>
@@ -1923,6 +1946,7 @@ function CampaignDetailPage({
                           min="0"
                           inputMode="numeric"
                           aria-label={`${line.productName} 累計到貨數量`}
+                          onClick={(event) => event.stopPropagation()}
                           disabled={campaignArchived || receivingProductId === line.productId}
                           value={receivedDrafts[line.productId] ?? String(line.receivedQuantity)}
                           onChange={(event) => setReceivedDrafts((current) => ({ ...current, [line.productId!]: event.target.value }))}
@@ -1991,11 +2015,13 @@ function CampaignDetailPage({
 export function LiveSalePage({
   catalog,
   openOrder,
+  openProduct,
   back,
   initialCampaignId = "",
 }: {
   catalog: Product[];
   openOrder: (id: string) => void;
+  openProduct: (id: string) => void;
   back: () => void;
   initialCampaignId?: string;
 }) {
@@ -2075,6 +2101,7 @@ export function LiveSalePage({
         campaignId={selected}
         catalog={catalog}
         openOrder={openOrder}
+        openProduct={openProduct}
         back={() => {
           setSelected("");
           void load();
