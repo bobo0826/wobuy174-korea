@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSignedIn, withRefreshedSession } from "@/lib/auth";
 import {
-  googleSheetCsvUrl,
+  googleSheetCsvUrls,
   liveProductDuplicateKey,
   readLiveSaleProductsCsv,
 } from "@/lib/google-sheet-import";
@@ -30,15 +30,25 @@ export async function POST(request: NextRequest, { params }: Context) {
     if (campaign.status === "已封存") return NextResponse.json({ message: "已封存檔期僅供查看，不能同步商品。" }, { status: 409 });
     if (!campaign.source_spreadsheet_url) return NextResponse.json({ message: "請先在檔期設定填入 Google 試算表連結。" }, { status: 400 });
 
-    const response = await fetch(googleSheetCsvUrl(campaign.source_spreadsheet_url), {
-      redirect: "follow",
-      headers: { "User-Agent": "wobuy174-inventory-import/1.0" },
-    });
-    const csv = await response.text();
-    if (!response.ok || /<!doctype html|<html/i.test(csv.slice(0, 300))) {
-      return NextResponse.json({ message: "無法讀取試算表。請確認已設為「知道連結的人可檢視」。" }, { status: 422 });
-    }
-    const { products, invalidRows } = readLiveSaleProductsCsv(csv, campaign.name);
+    const parsedSheets = await Promise.all(
+      googleSheetCsvUrls(campaign.source_spreadsheet_url).map(async (url, index) => {
+        const response = await fetch(url, {
+          redirect: "follow",
+          headers: { "User-Agent": "wobuy174-inventory-import/1.0" },
+        });
+        const csv = await response.text();
+        if (!response.ok || /<!doctype html|<html/i.test(csv.slice(0, 300))) {
+          throw new Error(`無法讀取第 ${index + 1} 個工作表。請確認已設為「知道連結的人可檢視」。`);
+        }
+        const result = readLiveSaleProductsCsv(csv, campaign.name);
+        return {
+          products: result.products,
+          invalidRows: result.invalidRows.map((row) => `第 ${index + 1} 份／第 ${row} 列`),
+        };
+      }),
+    );
+    const products = parsedSheets.flatMap((sheet) => sheet.products);
+    const invalidRows = parsedSheets.flatMap((sheet) => sheet.invalidRows);
     const { data: existing, error: existingError } = await supabase
       .from("live_sale_products")
       .select("name, specification")

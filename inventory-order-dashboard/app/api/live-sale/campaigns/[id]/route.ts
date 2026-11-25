@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSignedIn, withRefreshedSession } from "@/lib/auth";
+import { googleSheetCsvUrls } from "@/lib/google-sheet-import";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -235,10 +236,9 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       if (endDate && endDate < startDate) return NextResponse.json({ message: "結束日期不可早於開始日期。" }, { status: 400 });
       if (sourceSpreadsheetUrl) {
         try {
-          const url = new URL(sourceSpreadsheetUrl);
-          if (url.hostname !== "docs.google.com" || !/^\/spreadsheets\/d\//.test(url.pathname)) throw new Error("invalid");
+          googleSheetCsvUrls(sourceSpreadsheetUrl);
         } catch {
-          return NextResponse.json({ message: "請填入有效的 Google 試算表連結。" }, { status: 400 });
+          return NextResponse.json({ message: "請逐行填入有效的 Google 試算表工作表連結。" }, { status: 400 });
         }
       }
       const { data, error } = await supabase.from("live_sale_campaigns").update({ name, status, note, start_date: startDate, end_date: endDate || null, source_spreadsheet_url: sourceSpreadsheetUrl, updated_at: new Date().toISOString() }).eq("id", id).select("id, name, campaign_code, status, start_date, end_date, note, source_spreadsheet_url, created_by, created_at, updated_at").single();

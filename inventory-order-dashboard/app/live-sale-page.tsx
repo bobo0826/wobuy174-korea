@@ -1046,22 +1046,22 @@ function LiveSaleProductPanel({
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
   const [search, setSearch] = useState("");
-  const [specificationFilter, setSpecificationFilter] = useState("");
-  const specifications = useMemo(
-    () => [...new Set(products.map((product) => product.specification.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-Hant")),
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const categories = useMemo(
+    () => [...new Set(products.map((product) => product.category.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-Hant")),
     [products],
   );
   const visibleProducts = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase();
     return products.filter((product) => {
-      const matchesSpecification = !specificationFilter || product.specification === specificationFilter;
+      const matchesCategory = !categoryFilter || product.category === categoryFilter;
       const matchesKeyword = !keyword || [product.name, product.country, product.category, product.subcategory, product.specification]
         .join(" ")
         .toLocaleLowerCase()
         .includes(keyword);
-      return matchesSpecification && matchesKeyword;
+      return matchesCategory && matchesKeyword;
     });
-  }, [products, search, specificationFilter]);
+  }, [categoryFilter, products, search]);
   const currencySymbol = localCurrency[form.country] ?? "$";
   const update = (key: keyof ReturnType<typeof blankLiveProduct>, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -1122,7 +1122,7 @@ function LiveSaleProductPanel({
       const response = await fetch(`/api/live-sale/campaigns/${campaignId}/products/sync`, { method: "POST" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message ?? "無法同步 Google 試算表商品。");
-      setSyncNotice(`已新增 ${result.importedCount ?? 0} 項；略過 ${result.skippedDuplicateCount ?? 0} 項重複資料${result.skippedInvalidRows?.length ? `；第 ${result.skippedInvalidRows.join("、")} 列資料不完整` : ""}。`);
+      setSyncNotice(`已新增 ${result.importedCount ?? 0} 項；略過 ${result.skippedDuplicateCount ?? 0} 項重複資料${result.skippedInvalidRows?.length ? `；${result.skippedInvalidRows.join("、")}資料不完整` : ""}。`);
       await onChanged();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "無法同步 Google 試算表商品。");
@@ -1167,15 +1167,15 @@ function LiveSaleProductPanel({
           placeholder="搜尋商品名稱、分類或規格"
           className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm"
         />
-        <label className="sr-only" htmlFor="live-product-specification">篩選商品規格</label>
+        <label className="sr-only" htmlFor="live-product-category">篩選產品分類</label>
         <select
-          id="live-product-specification"
-          value={specificationFilter}
-          onChange={(event) => setSpecificationFilter(event.target.value)}
+          id="live-product-category"
+          value={categoryFilter}
+          onChange={(event) => setCategoryFilter(event.target.value)}
           className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm"
         >
-          <option value="">全部規格</option>
-          {specifications.map((specification) => <option key={specification} value={specification}>{specification}</option>)}
+          <option value="">全部產品分類</option>
+          {categories.map((category) => <option key={category} value={category}>{category}</option>)}
         </select>
       </div>
       <div className="divide-y divide-[#F0EDE8]">
@@ -1185,7 +1185,7 @@ function LiveSaleProductPanel({
             <span className="text-right text-xs text-[#6F6960]">當地 {localCurrency[product.country] ?? "$"} {Number(product.local_price).toLocaleString("zh-TW")}<br />成本 {money(product.cost)} · 售價 {money(product.retail_price)}</span>
             {product.promoted_product_id ? <span className="rounded-full bg-[#E7F0E8] px-2.5 py-1 text-[11px] font-semibold text-[#477154]">已轉正式商品</span> : !archived && <span className="flex gap-2"><button type="button" onClick={() => edit(product)} className="text-sm font-semibold text-[#5E7665]">修改</button><button type="button" onClick={() => void remove(product)} className="text-sm font-semibold text-[#A35F37]">刪除</button></span>}
           </article>
-        )) : <p className="p-8 text-center text-sm text-[#8D877E]">{products.length ? "沒有符合目前搜尋或規格篩選的商品。" : "尚未建立檔期商品；可在客人喊單前先暫存品項。"}</p>}
+        )) : <p className="p-8 text-center text-sm text-[#8D877E]">{products.length ? "沒有符合目前搜尋或產品分類篩選的商品。" : "尚未建立檔期商品；可在客人喊單前先暫存品項。"}</p>}
       </div>
     </section>
   );
@@ -1652,14 +1652,16 @@ function CampaignDetailPage({
             />
           </label>
           <label className="text-sm font-semibold lg:col-span-3">
-            Google 試算表連結
-            <input
+            Google 試算表連結（可多個）
+            <textarea
               disabled={campaignArchived}
               value={sourceSpreadsheetUrl}
               onChange={(event) => setSourceSpreadsheetUrl(event.target.value)}
-              placeholder="https://docs.google.com/spreadsheets/d/..."
-              className="mt-2 h-10 w-full rounded-xl border border-[#E6E1DB] px-3 font-normal"
+              placeholder={"每行貼上一個工作表連結\nhttps://docs.google.com/spreadsheets/d/.../edit?gid=0"}
+              rows={3}
+              className="mt-2 w-full rounded-xl border border-[#E6E1DB] px-3 py-2 font-normal"
             />
+            <small className="mt-1 block font-normal text-xs text-[#8D877E]">每一行可貼上同一份或不同試算表的工作表連結；系統會依商品名稱與規格略過重複資料。</small>
           </label>
           <div className="flex flex-wrap items-end justify-end gap-2">
             <button disabled={campaignArchived} onClick={() => void saveCampaign()} className={`${secondary} disabled:opacity-45`}>

@@ -88,6 +88,16 @@ export function googleSheetCsvUrl(sourceUrl: string) {
   return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv&gid=${encodeURIComponent(gid)}`;
 }
 
+// 同一檔期可貼上多個工作表網址（每行一個）。每個網址會依自己的 gid 匯出對應分頁。
+export function googleSheetCsvUrls(sourceUrls: string) {
+  const urls = sourceUrls
+    .split(/[\n\r,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!urls.length) throw new Error("請至少填入一個 Google 試算表連結。 ");
+  return urls.map(googleSheetCsvUrl);
+}
+
 export function readLiveSaleProductsCsv(csv: string, campaignName: string) {
   const rows = parseCsv(csv);
   if (!rows.length) return { products: [], invalidRows: [] as number[] };
