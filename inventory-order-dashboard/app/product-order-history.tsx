@@ -6,12 +6,31 @@ type RelatedOrder = {
   id: string;
   order_number: string;
   order_date: string;
+  ordered_at: string;
   status: string;
   customer_name: string;
   quantity: number;
 };
 
 const statuses = new Set(["預購中", "未出貨", "已出貨", "已取消"]);
+
+function orderTimeLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const parts = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date).reduce<Record<string, string>>((result, part) => {
+    result[part.type] = part.value;
+    return result;
+  }, {});
+  return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+}
 
 export function ProductOrderHistory({ productId, productName, open, onClose, onOpenOrder }: {
   productId: string | number;
@@ -73,6 +92,7 @@ export function ProductOrderHistory({ productId, productName, open, onClose, onO
           <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASED IN ORDERS</p>
           <h2 id="product-orders-title" className="mt-1 text-xl font-semibold">購買此商品的訂單</h2>
           <p className="mt-2 text-sm text-[#7D776E]">{productName}</p>
+          <p className="mt-1 text-xs text-[#5E7665]">已依實際下單時間由早到晚排列。</p>
         </div>
         <button aria-label="關閉購買訂單" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#E7E2DB] text-lg text-[#777168]">×</button>
       </div>
@@ -80,8 +100,8 @@ export function ProductOrderHistory({ productId, productName, open, onClose, onO
       <div className="max-h-[calc(88vh-220px)] overflow-auto">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-left text-sm">
-            <thead className="sticky top-0 bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="w-12 px-5 py-3 sm:px-6"><input aria-label="選取全部可列印訂單" type="checkbox" checked={allSelected} onChange={toggleAll} /></th><th className="px-3 py-3">訂單編號</th><th className="px-3 py-3">訂購者姓名</th><th className="px-3 py-3">訂購日期</th><th className="px-3 py-3">數量</th><th className="px-3 py-3">狀態</th><th className="px-5 py-3 text-right sm:px-6">操作</th></tr></thead>
-            <tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={7} className="px-6 py-12 text-center text-[#8D877E]">載入相關訂單中…</td></tr> : orders.length ? orders.map((order) => <tr key={order.id} className="hover:bg-[#FCFBF9]"><td className="px-5 py-4 sm:px-6">{order.status !== "已取消" && <input aria-label={`選取訂單 ${order.order_number}`} type="checkbox" checked={selectedIds.includes(order.id)} onChange={() => toggle(order.id)} />}</td><td className="px-3 py-4 font-semibold text-[#4A4640]">{order.order_number}</td><td className="px-3 py-4 text-[#625D55]">{order.customer_name}</td><td className="px-3 py-4 text-[#625D55]">{order.order_date}</td><td className="px-3 py-4 text-[#625D55]">{order.quantity} 件</td><td className="px-3 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone(order.status)}`}>{statuses.has(order.status) ? order.status : "—"}</span></td><td className="px-5 py-4 text-right sm:px-6"><button onClick={() => onOpenOrder(order.id)} className="text-sm font-semibold text-[#5E7665]">查看訂單詳情 →</button></td></tr>) : <tr><td colSpan={7} className="px-6 py-12 text-center text-[#8D877E]">尚無包含此商品的訂單。</td></tr>}</tbody>
+            <thead className="sticky top-0 bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="w-12 px-5 py-3 sm:px-6"><input aria-label="選取全部可列印訂單" type="checkbox" checked={allSelected} onChange={toggleAll} /></th><th className="px-3 py-3">訂單編號</th><th className="px-3 py-3">訂購者姓名</th><th className="px-3 py-3">下單時間（依序）</th><th className="px-3 py-3">數量</th><th className="px-3 py-3">狀態</th><th className="px-5 py-3 text-right sm:px-6">操作</th></tr></thead>
+            <tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={7} className="px-6 py-12 text-center text-[#8D877E]">載入相關訂單中…</td></tr> : orders.length ? orders.map((order, index) => <tr key={order.id} className="hover:bg-[#FCFBF9]"><td className="px-5 py-4 sm:px-6">{order.status !== "已取消" && <input aria-label={`選取訂單 ${order.order_number}`} type="checkbox" checked={selectedIds.includes(order.id)} onChange={() => toggle(order.id)} />}</td><td className="px-3 py-4 font-semibold text-[#4A4640]">{order.order_number}</td><td className="px-3 py-4 text-[#625D55]">{order.customer_name}</td><td className="px-3 py-4 text-[#625D55]"><span className="mr-2 text-xs font-bold text-[#5E7665]">{index + 1}.</span>{orderTimeLabel(order.ordered_at)}</td><td className="px-3 py-4 text-[#625D55]">{order.quantity} 件</td><td className="px-3 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone(order.status)}`}>{statuses.has(order.status) ? order.status : "—"}</span></td><td className="px-5 py-4 text-right sm:px-6"><button onClick={() => onOpenOrder(order.id)} className="text-sm font-semibold text-[#5E7665]">查看訂單詳情 →</button></td></tr>) : <tr><td colSpan={7} className="px-6 py-12 text-center text-[#8D877E]">尚無包含此商品的訂單。</td></tr>}</tbody>
           </table>
         </div>
       </div>

@@ -14,12 +14,14 @@ type RelatedOrderRow = {
     id: string;
     order_number: string;
     order_date: string;
+    created_at: string;
     status: string;
     customers: { name: string } | { name: string }[] | null;
   } | {
     id: string;
     order_number: string;
     order_date: string;
+    created_at: string;
     status: string;
     customers: { name: string } | { name: string }[] | null;
   }[] | null;
@@ -37,9 +39,9 @@ export async function GET(request: NextRequest, { params }: Context) {
 
     const { data, error } = await getSupabaseAdmin()
       .from("order_items")
-      .select("id, order_id, quantity, orders!inner(id, order_number, order_date, status, customers(name))")
+      .select("id, order_id, quantity, created_at, orders!inner(id, order_number, order_date, created_at, status, customers(name))")
       .eq("product_id", id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: true });
     if (error) throw error;
 
     const orders = (data as RelatedOrderRow[] ?? []).flatMap((item) => {
@@ -50,11 +52,14 @@ export async function GET(request: NextRequest, { params }: Context) {
         id: order.id,
         order_number: order.order_number,
         order_date: order.order_date,
+        ordered_at: order.created_at,
         status: order.status,
         customer_name: customer?.name ?? "未指定客戶",
         quantity: item.quantity,
       }];
     });
+
+    orders.sort((left, right) => new Date(left.ordered_at).getTime() - new Date(right.ordered_at).getTime());
 
     return withRefreshedSession(NextResponse.json({ orders }), auth.context);
   } catch (error) {
