@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Product = {
   id: string | number;
@@ -1216,6 +1216,7 @@ function CampaignDetailPage({
     inbox?: Inbox | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncingClaims, setSyncingClaims] = useState(false);
   const [opening, setOpening] = useState(false);
   const [deletingInboxId, setDeletingInboxId] = useState("");
   const [error, setError] = useState("");
@@ -1297,6 +1298,29 @@ function CampaignDetailPage({
       setLoading(false);
     }
   };
+  const refreshClaimUpdates = useCallback(async (showNotice = false) => {
+    setSyncingClaims(true);
+    try {
+      const [detailResponse, inboxResponse] = await Promise.all([
+        fetch(`/api/live-sale/campaigns/${campaignId}`),
+        fetch(`/api/live-sale/inbox?status=%E5%BE%85%E8%99%95%E7%90%86&campaignId=${encodeURIComponent(campaignId)}`),
+      ]);
+      const [detailData, inboxData] = await Promise.all([
+        detailResponse.json(),
+        inboxResponse.json(),
+      ]);
+      if (!detailResponse.ok) throw new Error(detailData.message ?? "無法同步喊單。");
+      if (!inboxResponse.ok) throw new Error(inboxData.message ?? "無法同步 LINE 私訊。");
+      setDetail(detailData as Detail);
+      setInbox(inboxData.inbox ?? []);
+      if (showNotice) setNotice("已同步喊單；符合下單規則的新 LINE 私訊會顯示在待確認區。");
+      setError("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法同步喊單。");
+    } finally {
+      setSyncingClaims(false);
+    }
+  }, [campaignId]);
   const saveReceivedQuantity = async (line: Procurement, value: string) => {
     if (!line.productId || line.receivedQuantity === null) return;
     const receivedQuantity = Number(value);
@@ -1341,6 +1365,12 @@ function CampaignDetailPage({
     // 只在切換檔期時重讀資料；load 會同步本次檔期的內容。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void refreshClaimUpdates();
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [refreshClaimUpdates]);
   const openEditor = async (value: { claim?: Claim; inbox?: Inbox | null }) => {
     setOpening(true);
     try {
@@ -1679,14 +1709,24 @@ function CampaignDetailPage({
       </section>}
       {showLiveProducts && <div id="campaign-products"><LiveSaleProductPanel campaignId={campaignId} archived={campaignArchived} products={liveProducts} sourceSpreadsheetUrl={campaign.source_spreadsheet_url ?? ""} onChanged={load} /></div>}
       <section className="mb-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
-        <div className="border-b border-[#F0EDE8] p-5">
-          <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">
-            LINE DIRECT MESSAGES
-          </p>
-          <h2 className="mt-1 text-lg font-semibold">待確認 LINE 私訊</h2>
-          <p className="mt-1 text-xs text-[#8D877E]">
-            所有連線期間的 LINE 喊單會先留在這裡；人員確認客戶與商品後，才會自動併入同檔期、同客戶的未結單。
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#F0EDE8] p-5">
+          <div>
+            <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">
+              LINE DIRECT MESSAGES
+            </p>
+            <h2 className="mt-1 text-lg font-semibold">待確認 LINE 私訊</h2>
+            <p className="mt-1 text-xs text-[#8D877E]">
+              LINE 訊息會即時寫入，畫面也會每 15 秒自動同步；人員確認客戶與商品後，才會自動併入同檔期、同客戶的未結單。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { void refreshClaimUpdates(true); }}
+            disabled={syncingClaims}
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-[#DED9D1] bg-white px-3 text-sm font-semibold text-[#5E7665] disabled:opacity-45"
+          >
+            {syncingClaims ? "同步中…" : "同步喊單"}
+          </button>
         </div>
         {inbox.length ? (
           <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3">
