@@ -1231,6 +1231,7 @@ function CampaignDetailPage({
   const [showLiveProducts, setShowLiveProducts] = useState(false);
   const [claimSearch, setClaimSearch] = useState("");
   const [procurementSearch, setProcurementSearch] = useState("");
+  const [procurementCategory, setProcurementCategory] = useState("");
   const [receivedDrafts, setReceivedDrafts] = useState<Record<string, string>>({});
   const [receivingProductId, setReceivingProductId] = useState("");
   const catalogById = useMemo(
@@ -1359,6 +1360,7 @@ function CampaignDetailPage({
       setReceivedDrafts({});
       setClaimSearch("");
       setProcurementSearch("");
+      setProcurementCategory("");
       void load();
     }, 0);
     return () => window.clearTimeout(timer);
@@ -1553,13 +1555,21 @@ function CampaignDetailPage({
       .toLocaleLowerCase("zh-TW")
       .includes(claimKeyword);
   });
-  const visibleProcurement = procurement.filter((line) => {
-    const keyword = procurementSearch.trim().toLocaleLowerCase();
-    return !keyword || [line.productName, line.specification, line.category]
-      .join(" ")
-      .toLocaleLowerCase()
-      .includes(keyword);
-  });
+  const procurementCategories = [...new Set(procurement.map((line) => line.category.trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, "zh-TW"));
+  const visibleProcurement = procurement
+    .filter((line) => {
+      const keyword = procurementSearch.trim().toLocaleLowerCase();
+      const matchesKeyword = !keyword || [line.productName, line.specification, line.category]
+        .join(" ")
+        .toLocaleLowerCase()
+        .includes(keyword);
+      return matchesKeyword && (!procurementCategory || line.category === procurementCategory);
+    })
+    .sort((left, right) => {
+      const byName = left.productName.localeCompare(right.productName, "zh-TW");
+      return byName || left.specification.localeCompare(right.specification, "zh-TW");
+    });
   return (
     <>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
@@ -1930,15 +1940,28 @@ function CampaignDetailPage({
                 可直接填寫累計到貨數量；系統會同步更新商品資料庫的可售庫存與庫存異動紀錄。
               </p>
             </div>
-            <label className="w-full sm:w-72">
-              <span className="sr-only">搜尋採購商品</span>
-              <input
-                value={procurementSearch}
-                onChange={(event) => setProcurementSearch(event.target.value)}
-                placeholder="搜尋商品、分類或規格"
-                className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm"
-              />
-            </label>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <label className="w-full sm:w-72">
+                <span className="sr-only">搜尋採購商品</span>
+                <input
+                  value={procurementSearch}
+                  onChange={(event) => setProcurementSearch(event.target.value)}
+                  placeholder="搜尋商品、分類或規格"
+                  className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm"
+                />
+              </label>
+              <label className="w-full sm:w-44">
+                <span className="sr-only">篩選商品分類</span>
+                <select
+                  value={procurementCategory}
+                  onChange={(event) => setProcurementCategory(event.target.value)}
+                  className="h-10 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm text-[#58534C]"
+                >
+                  <option value="">全部商品分類</option>
+                  {procurementCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </label>
+            </div>
           </div>
         </div>
         <div className="divide-y divide-[#F0EDE8] md:hidden">

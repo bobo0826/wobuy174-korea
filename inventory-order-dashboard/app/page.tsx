@@ -33,6 +33,24 @@ type View =
   | "newPurchase";
 type Tone = "green" | "orange" | "blue" | "stone";
 
+type MobileToolbarTarget = "liveSale" | "orders" | "products" | "stock" | "more";
+type MobileToolbarConfig = [MobileToolbarTarget, MobileToolbarTarget, MobileToolbarTarget];
+
+const defaultMobileToolbar: MobileToolbarConfig = ["liveSale", "orders", "products"];
+const mobileToolbarTargets: Record<MobileToolbarTarget, { label: string; icon: string }> = {
+  liveSale: { label: "連線", icon: "🛍️" },
+  orders: { label: "訂單", icon: "💰" },
+  products: { label: "商品", icon: "📦" },
+  stock: { label: "庫存", icon: "🧺" },
+  more: { label: "更多", icon: "〰" },
+};
+
+function isMobileToolbarConfig(value: unknown): value is MobileToolbarConfig {
+  return Array.isArray(value)
+    && value.length === 3
+    && value.every((target) => typeof target === "string" && target in mobileToolbarTargets);
+}
+
 const catalogViews = new Set<View>([
   "liveSale",
   "products",
@@ -1271,7 +1289,11 @@ function GenericPage({ view, go }: { view: "purchases" | "reports" | "settings";
   return <><Header eyebrow={info[0]} title={info[1]} description={info[2]}><Primary onClick={view === "purchases" ? () => go("newPurchase") : undefined}>{info[3]}</Primary></Header><div className="grid gap-5 md:grid-cols-2">{view === "purchases" ? <><Card className="p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">PURCHASE ORDERS</p><h2 className="mt-2 text-xl font-semibold">進行中的採購單</h2><div className="mt-5 space-y-4">{[["#PO-260721-04", "Seoul Daily", "今天", "待收貨"], ["#PO-260718-03", "Mori Select", "7/22", "部分收貨"], ["#PO-260716-02", "Atelier Home", "7/25", "已發送"]].map(([id, vendor, date, state]) => <div key={id} className="flex items-center justify-between border-b border-[#F0EDE8] pb-4"><span><b className="block text-sm">{id}</b><small className="mt-1 block text-xs text-[#938D84]">{vendor} · 預計 {date} 到貨</small></span><Pill tone="blue">{state}</Pill></div>)}</div></Card><Card className="p-6"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">SUPPLIERS</p><h2 className="mt-2 text-xl font-semibold">常用供應商</h2><p className="mt-2 text-sm text-[#898379]">集中管理供應商資料、交易條件與最低訂購量。</p><Secondary onClick={() => go("suppliers")} className="mt-6">管理供應商</Secondary></Card></> : view === "reports" ? <><Metric label="銷售總額" value="NT$ 284,600" note="本月累計 · +16.8%" accent/><Metric label="商品售罄率" value="72.4%" note="售出／可售庫存"/><Card className="p-6"><h2 className="font-semibold">銷售概況</h2><div className="mt-8 flex h-40 items-end gap-2">{[35,58,48,72,52,88,65,92,74,83,68,95].map((h,i) => <span key={i} className={`flex-1 rounded-t-md ${i===11?"bg-[#738C7A]":"bg-[#DFE8E1]"}`} style={{height:`${h}%`}} />)}</div></Card><Card className="p-6"><h2 className="font-semibold">本月熱銷商品</h2><div className="mt-5 space-y-4">{products.slice(0,3).map((product,i)=><div key={product.id}><div className="flex justify-between text-sm"><b>{product.name}</b><span className="text-[#5E7665]">{86-i*12} 件</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-[#F0EDE8]"><span className="block h-full rounded-full bg-[#86A28E]" style={{width:`${94-i*13}%`}}/></div></div>)}</div></Card></> : <><Card className="p-6"><h2 className="font-semibold">基本設定</h2><div className="mt-5 grid gap-4 sm:grid-cols-2">{[["品牌名稱","MUSE STOCK"],["預設幣別","TWD · 新台幣"],["時區","Asia/Taipei"],["訂單編號前綴","WB"]].map(([label,value])=><label key={label} className="text-sm font-semibold text-[#58534C]">{label}<input defaultValue={value} className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"/></label>)}</div></Card><Card className="p-6"><h2 className="font-semibold">通知設定</h2><div className="mt-4 divide-y divide-[#F0EDE8]">{["低庫存提醒","待確認訂單提醒","取消訂單自動回補庫存"].map(title=><div key={title} className="flex items-center justify-between py-4"><span><b className="block text-sm">{title}</b><small className="mt-1 block text-xs text-[#938D84]">系統將在需要處理時通知管理人員。</small></span><span className="relative h-6 w-11 rounded-full bg-[#78957E]"><i className="absolute right-1 top-1 h-4 w-4 rounded-full bg-white"/></span></div>)}</div></Card></>}</div></>;
 }
 
-function SystemSettings({ currentUser }: { currentUser: CurrentUser }) {
+function SystemSettings({ currentUser, mobileToolbar, onSaveMobileToolbar }: {
+  currentUser: CurrentUser;
+  mobileToolbar: MobileToolbarConfig;
+  onSaveMobileToolbar: (value: MobileToolbarConfig) => void;
+}) {
   const isAdmin = currentUser.role === "admin";
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(isAdmin);
@@ -1280,6 +1302,10 @@ function SystemSettings({ currentUser }: { currentUser: CurrentUser }) {
   const [showForm, setShowForm] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ displayName: "", email: "", password: "", role: "staff" as "admin" | "staff" });
+  const [toolbarDraft, setToolbarDraft] = useState<MobileToolbarConfig>(mobileToolbar);
+  const [toolbarNotice, setToolbarNotice] = useState("");
+
+  useEffect(() => { setToolbarDraft(mobileToolbar); }, [mobileToolbar]);
 
   const loadUsers = async () => {
     if (!isAdmin) return;
@@ -1351,6 +1377,28 @@ function SystemSettings({ currentUser }: { currentUser: CurrentUser }) {
     <Header eyebrow="SETTINGS" title="系統設定" description="管理後台帳號、角色權限與系統偏好。" />
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-5">
+        <Card className="p-5 sm:p-6">
+          <p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">MOBILE TOOLBAR</p>
+          <h2 className="mt-2 text-xl font-semibold">手機下方工具欄</h2>
+          <p className="mt-2 text-sm leading-6 text-[#807A72]">可調整總覽右側、建立按鈕右側與最右側的功能。總覽與中央建立按鈕會固定保留。</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            {toolbarDraft.map((target, index) => (
+              <label key={index} className="text-sm font-semibold text-[#58534C]">
+                {index === 0 ? "第 2 個按鈕" : index === 1 ? "第 4 個按鈕" : "第 5 個按鈕"}
+                <select
+                  aria-label={`手機工具欄第 ${index === 0 ? 2 : index === 1 ? 4 : 5} 個按鈕`}
+                  value={target}
+                  onChange={(event) => setToolbarDraft((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value as MobileToolbarTarget : item) as MobileToolbarConfig)}
+                  className="mt-2 h-11 w-full rounded-xl border border-[#E6E1DB] bg-[#FCFBF9] px-3 text-sm font-normal outline-none"
+                >
+                  {(Object.keys(mobileToolbarTargets) as MobileToolbarTarget[]).map((option) => <option key={option} value={option}>{mobileToolbarTargets[option].label}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+          <div className="mt-5 flex justify-end"><Primary onClick={() => { onSaveMobileToolbar(toolbarDraft); setToolbarNotice("手機工具欄已儲存於這台裝置。"); }}>儲存工具欄</Primary></div>
+          {toolbarNotice && <p role="status" className="mt-4 rounded-xl border border-[#D7E7D9] bg-[#EEF5EF] px-4 py-3 text-sm font-semibold text-[#45634C]">{toolbarNotice}</p>}
+        </Card>
         <Card className="p-5 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">ACCOUNT MANAGEMENT</p><h2 className="mt-2 text-xl font-semibold">系統帳號管理</h2><p className="mt-2 text-sm leading-6 text-[#807A72]">管理員可建立帳號、指定管理員或員工角色，以及移除離職帳號。</p></div>
@@ -2136,6 +2184,7 @@ function CreateOrder({ catalog, stock, confirmOrder, back, openCustomers }: { ca
 export default function Home() {
   const [view, setView] = useState<View>("dashboard");
   const [liveSaleCampaignId, setLiveSaleCampaignId] = useState("");
+  const [mobileToolbar, setMobileToolbar] = useState<MobileToolbarConfig>(defaultMobileToolbar);
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
@@ -2203,6 +2252,16 @@ export default function Home() {
     setView("orders");
   }, []);
   useEffect(() => {
+    if (!currentUser) return;
+    try {
+      const stored = window.localStorage.getItem(`wobuy174.mobile-toolbar.${currentUser.id}`);
+      const parsed = stored ? JSON.parse(stored) : null;
+      setMobileToolbar(isMobileToolbarConfig(parsed) ? parsed : defaultMobileToolbar);
+    } catch {
+      setMobileToolbar(defaultMobileToolbar);
+    }
+  }, [currentUser]);
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedView = params.get("view");
     if (requestedView === "orders" || requestedView === "liveSale") {
@@ -2226,6 +2285,25 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
     if (catalogViews.has(next) && !productsLoaded && !productsLoading) void refreshProducts().catch(() => undefined);
     if (next === "stock" && productsLoaded) void refreshProducts().catch(() => undefined);
+  };
+  const saveMobileToolbar = (next: MobileToolbarConfig) => {
+    setMobileToolbar(next);
+    try {
+      window.localStorage.setItem(`wobuy174.mobile-toolbar.${currentUser?.id ?? "default"}`, JSON.stringify(next));
+    } catch {
+      // 瀏覽器禁止本機儲存時，仍保留本次操作期間的設定。
+    }
+  };
+  const openActiveLiveSale = async () => {
+    try {
+      const response = await fetch("/api/live-sale/campaigns");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法讀取連線檔期。");
+      const campaign = (result.campaigns ?? []).find((item: { status?: string }) => item.status === "進行中");
+      go("liveSale", campaign?.id ? { campaignId: campaign.id } : undefined);
+    } catch {
+      go("liveSale");
+    }
   };
   const openLiveSaleOrder = (orderId: string) => {
     window.open(`/orders/${encodeURIComponent(orderId)}`, "_blank", "noopener,noreferrer");
@@ -2303,9 +2381,25 @@ export default function Home() {
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} goLiveSale={() => go("liveSale")} onInventoryChanged={refreshProducts} initialQuery={orderSearchQuery} initialOrderId={orderSearchTargetId}/> : view === "liveSale" ? <LiveSalePage catalog={databaseProducts} openOrder={openLiveSaleOrder} openProduct={(id) => openProduct(id)} back={() => go("orders")} initialCampaignId={liveSaleCampaignId} /> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPageCostV3 product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)} editProduct={() => openEditProduct(selectedProduct)} openOrder={openProductOrder}/> : view === "editProduct" ? <EditProductCostV3 product={editingProduct ?? selectedProduct} back={() => go("product")} onUpdated={(product) => { updateDatabaseProduct(product); setEditingProduct(product); go("product"); }} /> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseForeignCosts key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverviewV2 catalog={databaseProducts} stock={stock} openProduct={openProduct} saveStockAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
+  const content = view === "dashboard" ? <Dashboard go={go}/> : view === "orders" ? <OrdersV2 created={createdOrder} go={go} goLiveSale={() => go("liveSale")} onInventoryChanged={refreshProducts} initialQuery={orderSearchQuery} initialOrderId={orderSearchTargetId}/> : view === "liveSale" ? <LiveSalePage catalog={databaseProducts} openOrder={openLiveSaleOrder} openProduct={(id) => openProduct(id)} back={() => go("orders")} initialCampaignId={liveSaleCampaignId} /> : view === "products" ? <Products catalog={catalog} openProduct={openProduct} openNewProduct={openNewProduct} openImportProducts={() => go("importProducts")} deleteProduct={deleteDatabaseProduct}/> : view === "product" ? <ProductPageCostV3 product={selectedProduct} stock={stock[String(selectedProduct.id)] ?? selectedProduct.available} back={() => go("products")} openStock={() => go("stock")} copyProduct={() => copyProduct(selectedProduct)} editProduct={() => openEditProduct(selectedProduct)} openOrder={openProductOrder}/> : view === "editProduct" ? <EditProductCostV3 product={editingProduct ?? selectedProduct} back={() => go("product")} onUpdated={(product) => { updateDatabaseProduct(product); setEditingProduct(product); go("product"); }} /> : view === "newProduct" ? <NewProduct back={() => go("products")} onCreated={(product) => addDatabaseProducts([product])} initialProduct={productDraft}/> : view === "importProducts" ? <ImportProducts back={() => go("products")} onImported={addDatabaseProducts}/> : view === "newPurchase" ? <NewPurchaseForeignCosts key={purchaseDraft?.id ?? "new"} catalog={databaseProducts} initialPurchase={purchaseDraft} back={() => { setPurchaseDraft(null); go("purchases"); }} openSuppliers={() => go("suppliers")} onSaved={refreshProducts}/> : view === "purchases" ? <PurchasesPageV2 go={go} onInventoryChanged={refreshProducts} onEdit={(purchase) => { setPurchaseDraft(purchase); go("newPurchase"); }} /> : view === "finance" ? <FinancePage /> : view === "inventory" ? <InventoryManagement go={go}/> : view === "stock" ? <StockOverviewV2 catalog={databaseProducts} stock={stock} openProduct={openProduct} saveStockAdjustment={saveStockAdjustment}/> : view === "create" ? <CreateOrder catalog={catalog} stock={stock} confirmOrder={confirmOrder} back={() => go("orders")} openCustomers={() => go("customers")}/> : view === "settings" ? <SystemSettings currentUser={currentUser} mobileToolbar={mobileToolbar} onSaveMobileToolbar={saveMobileToolbar} /> : view === "customers" ? <CustomerManagement /> : view === "suppliers" ? <SupplierManagement /> : <GenericPage view={view} go={go}/>;
   const isProductsView = view === "products" || view === "product" || view === "editProduct" || view === "newProduct" || view === "importProducts";
   const isMobileActive = (id: View) => view === id || (id === "products" && isProductsView);
+  const isMobileToolbarActive = (target: MobileToolbarTarget) => target === "liveSale"
+    ? view === "liveSale"
+    : target === "products"
+      ? isProductsView
+      : target === "more"
+        ? !["dashboard", "orders", "liveSale", "products", "product", "editProduct", "newProduct", "importProducts", "create"].includes(view)
+        : view === target;
+  const openMobileToolbar = (target: MobileToolbarTarget) => {
+    if (target === "liveSale") { void openActiveLiveSale(); return; }
+    if (target === "more") { setMenuOpen(true); return; }
+    go(target);
+  };
+  const mobileToolbarButton = (target: MobileToolbarTarget, position: number) => {
+    const item = mobileToolbarTargets[target];
+    return <button key={`${target}-${position}`} data-mobile-tool={target} onClick={() => openMobileToolbar(target)} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold ${isMobileToolbarActive(target) ? "text-[#45634C]" : "text-[#807A72]"}`}><span className="text-base leading-none">{item.icon}</span>{item.label}</button>;
+  };
   const links = <nav className="space-y-1">{nav.map(item => <button key={item.id} onClick={() => go(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold ${view === item.id || (view === "liveSale" && item.id === "orders") || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#EAF1EB] text-[#45634C]" : "text-[#6B665E] hover:bg-[#F2F0EC]"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-lg text-[9px] ${view === item.id || (view === "liveSale" && item.id === "orders") || (isProductsView && item.id === "products") || (view === "newPurchase" && item.id === "purchases") ? "bg-[#D8E6DA]" : "bg-[#F0EDE8] text-[#888178]"}`}>{item.no}</span>{item.label}</button>)}</nav>;
   const displayRole = currentUser.role === "admin" ? "系統管理員" : "員工";
   const initial = currentUser.displayName.trim().slice(0, 1) || "U";
@@ -2366,5 +2460,5 @@ export default function Home() {
     </div>
   );
   const mobileSearch = mobileSearchOpen && <div className="fixed inset-0 z-[70] bg-[#F8F7F4] md:hidden"><div className="flex h-full flex-col"><div className="flex items-center gap-3 border-b border-[#E9E5DF] bg-white px-4 py-3"><button aria-label="關閉全站搜尋" onClick={closeMobileSearch} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E4E0D9] text-lg text-[#625D55]">←</button><label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#D7E4D9] bg-[#F7FAF7] px-3 text-sm text-[#738078]"><span>⌕</span><input autoFocus aria-label="全站搜尋" value={globalSearchQuery} onChange={(event) => setGlobalSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") closeMobileSearch(); }} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[#99A09A]" placeholder="搜尋商品、訂單或客戶" /></label></div><div className="min-h-0 flex-1 overflow-y-auto pb-[calc(5rem+env(safe-area-inset-bottom))]">{!globalKeyword ? <div className="px-5 py-7"><p className="text-[11px] font-bold tracking-[.16em] text-[#A09A90]">QUICK SEARCH</p><h2 className="mt-2 text-xl font-semibold">搜尋整個系統</h2><p className="mt-2 text-sm leading-6 text-[#7B766E]">可輸入商品名稱、貨號、分類、訂單編號或客戶名稱。</p></div> : <div>{globalProductMatches.length > 0 && <section className="border-b border-[#E9E5DF] py-2"><p className="px-5 pb-2 pt-3 text-[10px] font-bold tracking-[.14em] text-[#9A948B]">商品</p>{globalProductMatches.map((product) => <button key={product.id} onClick={() => { closeMobileSearch(); openProduct(product); }} className="flex w-full items-center gap-3 px-5 py-3.5 text-left active:bg-[#F0F4EF]"><ProductTile product={product} small /><span className="min-w-0"><b className="block truncate text-sm">{product.name}</b><small className="mt-1 block truncate text-xs text-[#938D84]">{product.sku} · {taxonomyLabel(product)}</small></span></button>)}</section>}{globalOrdersLoading ? <p className="px-5 py-5 text-sm text-[#8D877E]">正在載入訂單資料…</p> : globalOrderMatches.length > 0 ? <section className="py-2"><p className="px-5 pb-2 pt-3 text-[10px] font-bold tracking-[.14em] text-[#9A948B]">訂單</p>{globalOrderMatches.map((order) => <button key={order.id} onClick={() => openGlobalOrder(order)} className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left active:bg-[#F8F6F2]"><span className="min-w-0"><b className="block truncate text-sm">{order.order_number}</b><small className="mt-1 block truncate text-xs text-[#938D84]">{order.customers?.name || "未指定客戶"} · {order.order_items.map((item) => item.product_name).join("、") || "無商品"}</small></span><span className="shrink-0 text-xs font-semibold text-[#5E7665]">{order.status}</span></button>)}</section> : null}{globalOrdersError && <p className="px-5 py-5 text-sm font-semibold text-[#A35F37]">{globalOrdersError}</p>}{!globalOrdersLoading && !globalOrdersError && !globalProductMatches.length && !globalOrderMatches.length && <p className="px-5 py-7 text-center text-sm text-[#8D877E]">找不到符合的商品或訂單。</p>}</div>}</div></div></div>;
-  return <div className="min-h-screen bg-[#F8F7F4] text-[#292824]"><aside className="fixed inset-y-0 left-0 z-40 hidden w-[244px] flex-col border-r border-[#E9E5DF] bg-[#FCFBF9] px-4 py-5 lg:flex"><div className="px-2"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold text-[#45413B]">商品與庫存管理</p></div><div className="mt-10">{links}</div><div className="mt-auto"><Primary onClick={() => go("create")} className="w-full">＋ 建立訂單</Primary><button onClick={() => go("settings")} className="mt-6 flex w-full items-center gap-3 border-t border-[#E9E5DF] px-2 pt-5 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E5DDD2] text-xs font-bold text-[#766859]">{initial}</span><span className="min-w-0"><b className="block truncate text-sm">{currentUser.displayName}</b><small className="block text-xs text-[#969087]">{displayRole}</small></span></button></div></aside><div className="lg:pl-[244px]"><header className="sticky top-0 z-30 flex h-[60px] items-center justify-between border-b border-[#E9E5DF] bg-[#F8F7F4]/90 px-4 backdrop-blur sm:h-[68px] sm:px-8"><div className="flex min-w-0 items-center gap-2 sm:gap-3"><button aria-label="開啟選單" onClick={() => setMenuOpen(true)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-lg lg:hidden">≡</button><button aria-label="開啟全站搜尋" onClick={openMobileSearch} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-lg text-[#625D55] md:hidden">⌕</button>{globalSearch}<b className="truncate text-sm md:hidden">wobuy174</b></div><div className="relative flex shrink-0 items-center gap-2"><InstallAppButton className="px-2 text-[11px] sm:px-3 sm:text-xs"/><button aria-label="通知" className="relative hidden h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-[#726C63] sm:flex">◌<span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[#C8796D]"/></button><button onClick={() => setAccountOpen((value) => !value)} className="hidden h-10 items-center gap-2 rounded-xl border border-[#E4E0D9] bg-white px-3 text-sm font-semibold sm:flex"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E5DDD2] text-[10px]">{initial}</span>{currentUser.displayName}</button>{accountOpen && <div className="absolute right-0 top-12 w-52 rounded-2xl border border-[#E9E5DF] bg-white p-2 shadow-xl"><button onClick={() => { go("settings"); setAccountOpen(false); }} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#5D7764] hover:bg-[#F3F7F3]">系統設定</button><button onClick={signOut} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#9A5B38] hover:bg-[#FFF7F0]">登出</button></div>}</div></header><main className="mobile-safe-bottom mx-auto w-full max-w-[1600px] px-4 py-5 pb-[calc(6.8rem+env(safe-area-inset-bottom))] sm:px-8 sm:py-9 sm:pb-9">{content}</main></div>{menuOpen && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="關閉選單" onClick={() => setMenuOpen(false)} className="absolute inset-0 bg-[#292824]/30"/><aside className="relative flex h-full w-[min(84vw,320px)] flex-col overflow-y-auto bg-[#FCFBF9] p-5 shadow-2xl"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold">商品與庫存管理</p><div className="mt-8">{links}</div><div className="mt-auto border-t border-[#E9E5DF] pt-5"><button onClick={signOut} className="text-sm font-semibold text-[#A35F37]">登出</button><div className="mt-4 grid grid-cols-2 gap-2"><Secondary onClick={() => go("newProduct")}>＋ 商品</Secondary><Primary onClick={() => go("create")}>＋ 訂單</Primary></div></div></aside></div>}{mobileSearch}<nav aria-label="手機主要導覽" className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[#E1DDD6] bg-[#FCFBF9]/95 px-1 pt-1 backdrop-blur lg:hidden"><button onClick={() => go("dashboard")} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold ${isMobileActive("dashboard") ? "text-[#45634C]" : "text-[#807A72]"}`}><span className="text-base leading-none">⌂</span>總覽</button><button onClick={() => go("orders")} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold ${isMobileActive("orders") || view === "liveSale" ? "text-[#45634C]" : "text-[#807A72]"}`}><span className="text-base leading-none">☷</span>訂單</button><button onClick={() => go("create")} aria-label="建立訂單" className="-mt-5 flex h-12 w-12 justify-self-center self-center items-center justify-center rounded-2xl border-3 border-[#F8F7F4] bg-[#292824] text-xl font-light text-white shadow-lg">＋</button><button onClick={() => go("products")} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold ${isMobileActive("products") ? "text-[#45634C]" : "text-[#807A72]"}`}><span className="text-base leading-none">♧</span>商品</button><button onClick={() => setMenuOpen(true)} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold ${!["dashboard", "orders", "liveSale", "products", "product", "editProduct", "newProduct", "importProducts", "create"].includes(view) ? "text-[#45634C]" : "text-[#807A72]"}`}><span className="text-base leading-none">♡</span>更多</button></nav></div>;
+  return <div className="min-h-screen bg-[#F8F7F4] text-[#292824]"><aside className="fixed inset-y-0 left-0 z-40 hidden w-[244px] flex-col border-r border-[#E9E5DF] bg-[#FCFBF9] px-4 py-5 lg:flex"><div className="px-2"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold text-[#45413B]">商品與庫存管理</p></div><div className="mt-10">{links}</div><div className="mt-auto"><Primary onClick={() => go("create")} className="w-full">＋ 建立訂單</Primary><button onClick={() => go("settings")} className="mt-6 flex w-full items-center gap-3 border-t border-[#E9E5DF] px-2 pt-5 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E5DDD2] text-xs font-bold text-[#766859]">{initial}</span><span className="min-w-0"><b className="block truncate text-sm">{currentUser.displayName}</b><small className="block text-xs text-[#969087]">{displayRole}</small></span></button></div></aside><div className="lg:pl-[244px]"><header className="sticky top-0 z-30 flex h-[60px] items-center justify-between border-b border-[#E9E5DF] bg-[#F8F7F4]/90 px-4 backdrop-blur sm:h-[68px] sm:px-8"><div className="flex min-w-0 items-center gap-2 sm:gap-3"><button aria-label="開啟選單" onClick={() => setMenuOpen(true)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-lg lg:hidden">≡</button><button aria-label="開啟全站搜尋" onClick={openMobileSearch} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-lg text-[#625D55] md:hidden">⌕</button>{globalSearch}<b className="truncate text-sm md:hidden">wobuy174</b></div><div className="relative flex shrink-0 items-center gap-2"><InstallAppButton className="px-2 text-[11px] sm:px-3 sm:text-xs"/><button aria-label="通知" className="relative hidden h-10 w-10 items-center justify-center rounded-xl border border-[#E4E0D9] bg-white text-[#726C63] sm:flex">◌<span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[#C8796D]"/></button><button onClick={() => setAccountOpen((value) => !value)} className="hidden h-10 items-center gap-2 rounded-xl border border-[#E4E0D9] bg-white px-3 text-sm font-semibold sm:flex"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E5DDD2] text-[10px]">{initial}</span>{currentUser.displayName}</button>{accountOpen && <div className="absolute right-0 top-12 w-52 rounded-2xl border border-[#E9E5DF] bg-white p-2 shadow-xl"><button onClick={() => { go("settings"); setAccountOpen(false); }} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#5D7764] hover:bg-[#F3F7F3]">系統設定</button><button onClick={signOut} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#9A5B38] hover:bg-[#FFF7F0]">登出</button></div>}</div></header><main className="mobile-safe-bottom mx-auto w-full max-w-[1600px] px-4 py-5 pb-[calc(6.8rem+env(safe-area-inset-bottom))] sm:px-8 sm:py-9 sm:pb-9">{content}</main></div>{menuOpen && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="關閉選單" onClick={() => setMenuOpen(false)} className="absolute inset-0 bg-[#292824]/30"/><aside className="relative flex h-full w-[min(84vw,320px)] flex-col overflow-y-auto bg-[#FCFBF9] p-5 shadow-2xl"><p className="text-[11px] font-bold tracking-[.2em] text-[#8E887F]">MUSE STOCK</p><p className="mt-1 text-sm font-semibold">商品與庫存管理</p><div className="mt-8">{links}</div><div className="mt-auto border-t border-[#E9E5DF] pt-5"><button onClick={signOut} className="text-sm font-semibold text-[#A35F37]">登出</button><div className="mt-4 grid grid-cols-2 gap-2"><Secondary onClick={() => go("newProduct")}>＋ 商品</Secondary><Primary onClick={() => go("create")}>＋ 訂單</Primary></div></div></aside></div>}{mobileSearch}<nav aria-label="手機主要導覽" className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[#E1DDD6] bg-[#FCFBF9]/95 px-1 pt-1 backdrop-blur lg:hidden"><button onClick={() => go("dashboard")} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold ${isMobileActive("dashboard") ? "text-[#45634C]" : "text-[#807A72]"}`}><span className="text-base leading-none">🐱</span>總覽</button>{mobileToolbarButton(mobileToolbar[0], 2)}<button onClick={() => go("create")} aria-label="建立訂單" className="-mt-5 flex h-12 w-12 justify-self-center self-center items-center justify-center rounded-2xl border-3 border-[#F8F7F4] bg-[#292824] text-xl font-light text-white shadow-lg">＋</button>{mobileToolbarButton(mobileToolbar[1], 4)}{mobileToolbarButton(mobileToolbar[2], 5)}</nav></div>;
 }

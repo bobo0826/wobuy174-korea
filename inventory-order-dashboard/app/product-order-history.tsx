@@ -4,15 +4,27 @@ import { useEffect, useMemo, useState } from "react";
 
 type RelatedOrder = {
   id: string;
+  order_id: string | null;
   order_number: string;
   order_date: string;
   ordered_at: string;
   status: string;
   customer_name: string;
   quantity: number;
+  source: "order" | "claim";
 };
 
-const statuses = new Set(["預購中", "未出貨", "已出貨", "已取消"]);
+const statuses = new Set(["待核對", "待結帳", "已結帳", "已轉訂單", "預購中", "未出貨", "已出貨", "已取消"]);
+const statusLabel: Record<string, string> = {
+  待核對: "待核對",
+  待結帳: "未結單",
+  已結帳: "已結單",
+  已轉訂單: "已結單",
+  預購中: "預購中",
+  未出貨: "未出貨",
+  已出貨: "已出貨",
+  已取消: "已取消",
+};
 
 function orderTimeLabel(value: string) {
   const date = new Date(value);
@@ -73,16 +85,19 @@ export function ProductOrderHistory({ productId, productName, open, onClose, onO
     return () => { active = false; };
   }, [open, productId]);
 
-  const selectable = useMemo(() => orders.filter((order) => order.status !== "已取消"), [orders]);
+  const selectable = useMemo(() => orders.filter((order) => order.order_id && order.status !== "已取消"), [orders]);
   const allSelected = Boolean(selectable.length) && selectable.every((order) => selectedIds.includes(order.id));
   const toggle = (id: string) => setSelectedIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
   const toggleAll = () => setSelectedIds(allSelected ? [] : selectable.map((order) => order.id));
   const print = () => {
-    const ids = selectable.filter((order) => selectedIds.includes(order.id)).map((order) => order.id);
+    const ids = selectable
+      .filter((order) => selectedIds.includes(order.id))
+      .map((order) => order.order_id)
+      .filter((id): id is string => Boolean(id));
     if (!ids.length) return;
     window.open(`/shipping-slip?${new URLSearchParams({ orderIds: ids.join(",") }).toString()}`, "_blank", "noopener,noreferrer");
   };
-  const tone = (status: string) => status === "已出貨" ? "bg-[#E7F0E8] text-[#477154]" : status === "預購中" ? "bg-[#FAECDD] text-[#A66932]" : status === "未出貨" ? "bg-[#E5EEF2] text-[#4B6D79]" : "bg-[#F0EDE8] text-[#6F6960]";
+  const tone = (status: string) => status === "已出貨" || status === "已結帳" || status === "已轉訂單" ? "bg-[#E7F0E8] text-[#477154]" : status === "預購中" || status === "待核對" ? "bg-[#FAECDD] text-[#A66932]" : status === "未出貨" || status === "待結帳" ? "bg-[#E5EEF2] text-[#4B6D79]" : "bg-[#F0EDE8] text-[#6F6960]";
 
   if (!open) return null;
   return <div className="fixed inset-0 z-50 flex items-end bg-[#292824]/35 sm:items-center sm:justify-center sm:p-6">
@@ -101,7 +116,7 @@ export function ProductOrderHistory({ productId, productName, open, onClose, onO
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead className="sticky top-0 bg-[#FBFAF8] text-[11px] text-[#928C83]"><tr><th className="w-12 px-5 py-3 sm:px-6"><input aria-label="選取全部可列印訂單" type="checkbox" checked={allSelected} onChange={toggleAll} /></th><th className="px-3 py-3">訂單編號</th><th className="px-3 py-3">訂購者姓名</th><th className="px-3 py-3">下單時間（依序）</th><th className="px-3 py-3">數量</th><th className="px-3 py-3">狀態</th><th className="px-5 py-3 text-right sm:px-6">操作</th></tr></thead>
-            <tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={7} className="px-6 py-12 text-center text-[#8D877E]">載入相關訂單中…</td></tr> : orders.length ? orders.map((order, index) => <tr key={order.id} className="hover:bg-[#FCFBF9]"><td className="px-5 py-4 sm:px-6">{order.status !== "已取消" && <input aria-label={`選取訂單 ${order.order_number}`} type="checkbox" checked={selectedIds.includes(order.id)} onChange={() => toggle(order.id)} />}</td><td className="px-3 py-4 font-semibold text-[#4A4640]">{order.order_number}</td><td className="px-3 py-4 text-[#625D55]">{order.customer_name}</td><td className="px-3 py-4 text-[#625D55]"><span className="mr-2 text-xs font-bold text-[#5E7665]">{index + 1}.</span>{orderTimeLabel(order.ordered_at)}</td><td className="px-3 py-4 text-[#625D55]">{order.quantity} 件</td><td className="px-3 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone(order.status)}`}>{statuses.has(order.status) ? order.status : "—"}</span></td><td className="px-5 py-4 text-right sm:px-6"><button onClick={() => onOpenOrder(order.id)} className="text-sm font-semibold text-[#5E7665]">查看訂單詳情 →</button></td></tr>) : <tr><td colSpan={7} className="px-6 py-12 text-center text-[#8D877E]">尚無包含此商品的訂單。</td></tr>}</tbody>
+            <tbody className="divide-y divide-[#F0EDE8]">{loading ? <tr><td colSpan={7} className="px-6 py-12 text-center text-[#8D877E]">載入相關訂單中…</td></tr> : orders.length ? orders.map((order, index) => <tr key={order.id} className="hover:bg-[#FCFBF9]"><td className="px-5 py-4 sm:px-6">{order.order_id && order.status !== "已取消" && <input aria-label={`選取訂單 ${order.order_number}`} type="checkbox" checked={selectedIds.includes(order.id)} onChange={() => toggle(order.id)} />}</td><td className="px-3 py-4 font-semibold text-[#4A4640]">{order.order_number}{order.source === "claim" && <small className="mt-1 block text-xs font-normal text-[#8D877E]">連線喊單</small>}</td><td className="px-3 py-4 text-[#625D55]">{order.customer_name}</td><td className="px-3 py-4 text-[#625D55]"><span className="mr-2 text-xs font-bold text-[#5E7665]">{index + 1}.</span>{orderTimeLabel(order.ordered_at)}</td><td className="px-3 py-4 text-[#625D55]">{order.quantity} 件</td><td className="px-3 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone(order.status)}`}>{statuses.has(order.status) ? statusLabel[order.status] ?? order.status : "—"}</span></td><td className="px-5 py-4 text-right sm:px-6">{order.order_id ? <button onClick={() => onOpenOrder(order.order_id!)} className="text-sm font-semibold text-[#5E7665]">查看訂單詳情 →</button> : <span className="text-xs text-[#8D877E]">尚未轉訂單</span>}</td></tr>) : <tr><td colSpan={7} className="px-6 py-12 text-center text-[#8D877E]">尚無包含此商品的訂單。</td></tr>}</tbody>
           </table>
         </div>
       </div>

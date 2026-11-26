@@ -69,7 +69,8 @@ main > section.grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4 {
 }
 
 /* 手機使用時避免 iOS 因輸入欄位字級小於 16px 而自動放大畫面。 */
-@media (max-width: 639px) {
+/* 底部導覽在 lg 以下都會顯示；平板寬度也必須保留足夠頁尾空間。 */
+@media (max-width: 1023px) {
   input,
   select,
   textarea {
@@ -171,6 +172,15 @@ main > section.grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4 {
     color: currentColor;
     font-size: 19px;
     font-weight: 800;
+  }
+
+  /* 可自訂的按鈕直接顯示各自的圖示，不沿用固定位置的舊圖示。 */
+  .mobile-bottom-nav > button[data-mobile-tool] > span {
+    font-size: 15px !important;
+  }
+
+  .mobile-bottom-nav > button[data-mobile-tool] > span::after {
+    content: none !important;
   }
 }
 
