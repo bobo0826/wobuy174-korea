@@ -834,12 +834,8 @@ function ClaimEditor({
         <div className="divide-y divide-[#F0EDE8] md:hidden">
           {lines.length ? (
             <>
-              <div className="grid grid-cols-[minmax(0,1fr)_34px_54px_54px_54px] gap-1 border-b border-[#F0EDE8] bg-[#FBFAF8] px-3 py-2.5 text-[10px] font-bold tracking-wide text-[#928C83]">
-                <span>品名</span>
-                <span className="text-center">數量</span>
-                <span className="text-right">售價</span>
-                <span className="text-right">成本</span>
-                <span className="text-right text-[#477154]">淨利</span>
+              <div className="border-b border-[#F0EDE8] bg-[#FBFAF8] px-3 py-2 text-[10px] font-bold tracking-wide text-[#928C83]">
+                商品名稱、規格與本次喊單金額
               </div>
               {lines.map((line) => {
               const product = catalogById.get(line.productId);
@@ -848,12 +844,25 @@ function ClaimEditor({
               const lineCost = unitCost === undefined ? null : unitCost * line.quantity;
               const profit = unitCost === undefined ? null : (line.unitPrice - unitCost) * line.quantity;
               return (
-                <div key={line.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_34px_54px_54px_54px] items-center gap-1 px-3 py-3">
-                  <span className="min-w-0"><b className="block truncate text-sm text-[#403C36]">{line.productName || "待核對商品"}</b><small className="mt-0.5 block truncate text-[11px] text-[#938D84]">{line.specification || "—"}</small></span>
-                  <input aria-label={`${line.productName} 數量`} disabled={locked} type="number" min="0" value={line.quantity} onChange={(event) => { const quantity = Math.max(0, Number(event.target.value) || 0); setLines((current) => quantity === 0 ? current.filter((item) => item.key !== line.key) : current.map((item) => item.key === line.key ? { ...item, quantity } : item)); }} className="h-9 min-w-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1 text-center text-sm" />
-                  <input aria-label={`${line.productName} 單價`} disabled={locked} type="number" min="0" value={line.unitPrice} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, unitPrice: Math.max(0, Number(event.target.value) || 0) } : item))} className="h-9 min-w-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1 text-right text-sm" />
-                  <span className="truncate text-right text-[11px] text-[#817B72]">{lineCost === null ? "—" : money(lineCost)}</span>
-                  <span className={`truncate text-right text-[11px] font-semibold ${profit === null ? "text-[#928C83]" : profit < 0 ? "text-[#A66932]" : "text-[#477154]"}`}>{profit === null ? "—" : money(profit)}</span>
+                <div key={line.key} className="min-w-0 px-3 py-3.5">
+                  <div className="min-w-0">
+                    <b className="block break-words text-sm leading-5 text-[#403C36]">{line.productName || "待核對商品"}</b>
+                    <small className="mt-1 block break-words text-xs text-[#938D84]">規格：{line.specification || "未填規格"}</small>
+                  </div>
+                  <div className="mt-3 grid grid-cols-4 gap-1.5">
+                    <label className="min-w-0 text-center text-[10px] font-semibold text-[#928C83]">數量
+                      <input aria-label={`${line.productName} 數量`} disabled={locked} type="number" min="0" value={line.quantity} onChange={(event) => { const quantity = Math.max(0, Number(event.target.value) || 0); setLines((current) => quantity === 0 ? current.filter((item) => item.key !== line.key) : current.map((item) => item.key === line.key ? { ...item, quantity } : item)); }} className="mt-1 h-10 w-full min-w-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1 text-center text-sm text-[#403C36]" />
+                    </label>
+                    <label className="min-w-0 text-center text-[10px] font-semibold text-[#928C83]">售價
+                      <input aria-label={`${line.productName} 單價`} disabled={locked} type="number" min="0" value={line.unitPrice} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, unitPrice: Math.max(0, Number(event.target.value) || 0) } : item))} className="mt-1 h-10 w-full min-w-0 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-1 text-center text-sm text-[#403C36]" />
+                    </label>
+                    <span className="min-w-0 text-center text-[10px] font-semibold text-[#928C83]">成本
+                      <b className="mt-1 flex h-10 items-center justify-center truncate text-[11px] font-medium text-[#817B72]">{lineCost === null ? "—" : money(lineCost)}</b>
+                    </span>
+                    <span className="min-w-0 text-center text-[10px] font-semibold text-[#477154]">淨利
+                      <b className={`mt-1 flex h-10 items-center justify-center truncate text-[11px] font-semibold ${profit === null ? "text-[#928C83]" : profit < 0 ? "text-[#A66932]" : "text-[#477154]"}`}>{profit === null ? "—" : money(profit)}</b>
+                    </span>
+                  </div>
                 </div>
               );
               })}
@@ -1233,6 +1242,7 @@ function CampaignDetailPage({
   const [procurementSearch, setProcurementSearch] = useState("");
   const [procurementCategory, setProcurementCategory] = useState("");
   const [receivedDrafts, setReceivedDrafts] = useState<Record<string, string>>({});
+  const [receivedErrors, setReceivedErrors] = useState<Record<string, string>>({});
   const [receivingProductId, setReceivingProductId] = useState("");
   const catalogById = useMemo(
     () => new Map(catalog.map((item) => [String(item.id), item])),
@@ -1326,14 +1336,20 @@ function CampaignDetailPage({
     if (!line.productId || line.receivedQuantity === null) return;
     const receivedQuantity = Number(value);
     if (!Number.isInteger(receivedQuantity) || receivedQuantity < 0) {
-      setError("到貨數量請填寫零或正整數。");
+      const message = "到貨數量請填寫零或正整數。";
+      setError(message);
+      setReceivedErrors((current) => ({ ...current, [line.productId!]: message }));
       setReceivedDrafts((current) => ({ ...current, [line.productId!]: String(line.receivedQuantity) }));
       return;
     }
-    if (receivedQuantity === line.receivedQuantity) return;
+    if (receivedQuantity === line.receivedQuantity) {
+      setReceivedErrors((current) => ({ ...current, [line.productId!]: "" }));
+      return;
+    }
     setReceivingProductId(line.productId);
     setError("");
     setNotice("");
+    setReceivedErrors((current) => ({ ...current, [line.productId!]: "" }));
     try {
       const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, {
         method: "PATCH",
@@ -1346,7 +1362,9 @@ function CampaignDetailPage({
       setNotice("已更新累計到貨數量，商品資料庫可售庫存也已同步。" );
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "無法更新到貨數量。");
+      const message = reason instanceof Error ? reason.message : "無法更新到貨數量。";
+      setError(message);
+      setReceivedErrors((current) => ({ ...current, [line.productId!]: message }));
       setReceivedDrafts((current) => ({ ...current, [line.productId!]: String(line.receivedQuantity) }));
     } finally {
       setReceivingProductId("");
@@ -1358,6 +1376,7 @@ function CampaignDetailPage({
       setCustomers([]);
       setCustomersLoaded(false);
       setReceivedDrafts({});
+      setReceivedErrors({});
       setClaimSearch("");
       setProcurementSearch("");
       setProcurementCategory("");
@@ -1968,31 +1987,49 @@ function CampaignDetailPage({
           {visibleProcurement.length ? visibleProcurement.map((line) => (
             <div
               key={line.productId ?? `${line.productName}-${line.specification}`}
-              role={line.productId ? "link" : undefined}
-              tabIndex={line.productId ? 0 : undefined}
-              onClick={() => line.productId && openProduct(line.productId)}
-              onKeyDown={(event) => {
-                if (line.productId && (event.key === "Enter" || event.key === " ")) {
-                  event.preventDefault();
-                  openProduct(line.productId);
-                }
-              }}
-              className={`grid min-w-0 grid-cols-[minmax(0,1fr)_92px] items-center gap-3 px-3 py-3 ${line.productId ? "cursor-pointer hover:bg-[#FCFBF9] focus:outline-none focus-visible:bg-[#F3F7F3]" : ""}`}
+              className="grid min-w-0 grid-cols-[minmax(0,1fr)_92px] items-start gap-3 px-3 py-3"
             >
-              <span className="min-w-0"><b className="block truncate text-sm">{line.productName}</b><small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small><small className="mt-1 block text-xs text-[#817B72]">需求 {line.demandQuantity} · 可售 {line.availableQuantity ?? "—"} · {line.purchaseQuantity === null ? "待核對" : line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</small></span>
+              {line.productId ? (
+                <button
+                  type="button"
+                  onClick={() => openProduct(line.productId!)}
+                  className="min-w-0 rounded-lg text-left hover:bg-[#FCFBF9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#B7CDBB]"
+                >
+                  <b className="block truncate text-sm">{line.productName}</b>
+                  <small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small>
+                  <small className="mt-1 block text-xs text-[#817B72]">需求 {line.demandQuantity} · 可售 {line.availableQuantity ?? "—"} · {line.purchaseQuantity === null ? "待核對" : line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</small>
+                </button>
+              ) : <span className="min-w-0"><b className="block truncate text-sm">{line.productName}</b><small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small><small className="mt-1 block text-xs text-[#817B72]">需求 {line.demandQuantity} · 可售 {line.availableQuantity ?? "—"} · {line.purchaseQuantity === null ? "待核對" : line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</small></span>}
               {line.productId && line.receivedQuantity !== null ? (
-                <label onClick={(event) => event.stopPropagation()} className="text-right text-[11px] font-semibold text-[#6F6960]">到貨累計
+                <label className="text-right text-[11px] font-semibold text-[#6F6960]">到貨累計
                   <input
                     type="number"
                     min="0"
                     inputMode="numeric"
+                    aria-label={`${line.productName} 累計到貨數量`}
                     disabled={campaignArchived || receivingProductId === line.productId}
                     value={receivedDrafts[line.productId] ?? String(line.receivedQuantity)}
-                    onChange={(event) => setReceivedDrafts((current) => ({ ...current, [line.productId!]: event.target.value }))}
-                    onBlur={(event) => void saveReceivedQuantity(line, event.target.value)}
-                    onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                    onChange={(event) => {
+                      setReceivedDrafts((current) => ({ ...current, [line.productId!]: event.target.value }));
+                      setReceivedErrors((current) => ({ ...current, [line.productId!]: "" }));
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void saveReceivedQuantity(line, event.currentTarget.value);
+                      }
+                    }}
                     className="mt-1 h-10 w-full rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-right text-sm font-semibold text-[#403C36] disabled:opacity-50"
                   />
+                  <button
+                    type="button"
+                    disabled={campaignArchived || receivingProductId === line.productId}
+                    onClick={() => void saveReceivedQuantity(line, receivedDrafts[line.productId!] ?? String(line.receivedQuantity))}
+                    className="mt-1 inline-flex h-7 w-full items-center justify-center rounded-md border border-[#D7E2D8] bg-[#F2F7F2] px-2 text-[11px] font-semibold text-[#477154] disabled:opacity-50"
+                  >
+                    {receivingProductId === line.productId ? "更新中…" : "更新到貨"}
+                  </button>
+                  {receivedErrors[line.productId] && <small className="mt-1 block text-left text-[11px] font-normal leading-4 text-[#A35F37]">{receivedErrors[line.productId]}</small>}
                 </label>
               ) : <span className="text-right text-xs text-[#8D877E]">請先核對商品</span>}
             </div>
