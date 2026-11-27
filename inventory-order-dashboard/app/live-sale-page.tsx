@@ -1267,6 +1267,7 @@ function CampaignDetailPage({
   const [procurementSearch, setProcurementSearch] = useState("");
   const [procurementCategory, setProcurementCategory] = useState("");
   const [procurementOrderFilter, setProcurementOrderFilter] = useState<ProcurementOrderFilter>("已下單");
+  const [procurementShortageOnly, setProcurementShortageOnly] = useState(false);
   const [receivedDrafts, setReceivedDrafts] = useState<Record<string, string>>({});
   const [receivedErrors, setReceivedErrors] = useState<Record<string, string>>({});
   const [receivingProductId, setReceivingProductId] = useState("");
@@ -1487,6 +1488,7 @@ function CampaignDetailPage({
       setProcurementSearch("");
       setProcurementCategory("");
       setProcurementOrderFilter("已下單");
+      setProcurementShortageOnly(false);
       void load();
     }, 0);
     return () => window.clearTimeout(timer);
@@ -1683,6 +1685,9 @@ function CampaignDetailPage({
   });
   const procurementCategories = [...new Set(procurement.map((line) => line.category.trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, "zh-TW"));
+  const shortageProcurementCount = procurement.filter(
+    (line) => (line.shortageQuantity ?? 0) > 0,
+  ).length;
   const visibleProcurement = procurement
     .filter((line) => {
       const keyword = procurementSearch.trim().toLocaleLowerCase();
@@ -1691,7 +1696,8 @@ function CampaignDetailPage({
         .toLocaleLowerCase()
         .includes(keyword);
       const matchesOrderStatus = procurementOrderFilter === "全部" || line.orderStatus === procurementOrderFilter;
-      return matchesKeyword && matchesOrderStatus && (!procurementCategory || line.category === procurementCategory);
+      const matchesShortage = !procurementShortageOnly || (line.shortageQuantity ?? 0) > 0;
+      return matchesKeyword && matchesOrderStatus && matchesShortage && (!procurementCategory || line.category === procurementCategory);
     })
     .sort((left, right) => {
       const byName = left.productName.localeCompare(right.productName, "zh-TW");
@@ -2101,6 +2107,14 @@ function CampaignDetailPage({
                 {filter}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => setProcurementShortageOnly((current) => !current)}
+              aria-pressed={procurementShortageOnly}
+              className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm font-semibold ${procurementShortageOnly ? "border-[#A35F37] bg-[#A35F37] text-white" : "border-[#E8CDBD] bg-white text-[#A35F37]"}`}
+            >
+              {shortageProcurementCount ? `只看缺貨（${shortageProcurementCount}）` : "只看缺貨"}
+            </button>
             <span className="hidden w-px self-stretch bg-[#E8E3DC] sm:block" aria-hidden="true" />
             <button
               type="button"
