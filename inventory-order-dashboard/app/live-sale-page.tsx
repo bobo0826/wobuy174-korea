@@ -94,9 +94,11 @@ type Campaign = {
 };
 type Procurement = {
   productId: string | null;
+  liveSaleProductId: string | null;
   productName: string;
   specification: string;
   category: string;
+  orderStatus: "已下單" | "未下單";
   demandQuantity: number;
   paidQuantity: number;
   unresolvedQuantity: number;
@@ -111,6 +113,7 @@ type Procurement = {
     quantity: number;
   }>;
 };
+type ProcurementOrderFilter = "全部" | "已下單" | "未下單";
 type Detail = {
   campaign: Campaign;
   claims: Claim[];
@@ -1241,6 +1244,7 @@ function CampaignDetailPage({
   const [claimSearch, setClaimSearch] = useState("");
   const [procurementSearch, setProcurementSearch] = useState("");
   const [procurementCategory, setProcurementCategory] = useState("");
+  const [procurementOrderFilter, setProcurementOrderFilter] = useState<ProcurementOrderFilter>("已下單");
   const [receivedDrafts, setReceivedDrafts] = useState<Record<string, string>>({});
   const [receivedErrors, setReceivedErrors] = useState<Record<string, string>>({});
   const [receivingProductId, setReceivingProductId] = useState("");
@@ -1333,39 +1337,45 @@ function CampaignDetailPage({
     }
   }, [campaignId]);
   const saveReceivedQuantity = async (line: Procurement, value: string) => {
-    if (!line.productId || line.receivedQuantity === null) return;
+    const receiptKey = line.productId ?? line.liveSaleProductId;
+    if (!receiptKey) return;
+    const currentReceivedQuantity = line.receivedQuantity ?? 0;
     const receivedQuantity = Number(value);
     if (!Number.isInteger(receivedQuantity) || receivedQuantity < 0) {
       const message = "到貨數量請填寫零或正整數。";
       setError(message);
-      setReceivedErrors((current) => ({ ...current, [line.productId!]: message }));
-      setReceivedDrafts((current) => ({ ...current, [line.productId!]: String(line.receivedQuantity) }));
+      setReceivedErrors((current) => ({ ...current, [receiptKey]: message }));
+      setReceivedDrafts((current) => ({ ...current, [receiptKey]: String(currentReceivedQuantity) }));
       return;
     }
-    if (receivedQuantity === line.receivedQuantity) {
-      setReceivedErrors((current) => ({ ...current, [line.productId!]: "" }));
+    if (receivedQuantity === currentReceivedQuantity) {
+      setReceivedErrors((current) => ({ ...current, [receiptKey]: "" }));
       return;
     }
-    setReceivingProductId(line.productId);
+    setReceivingProductId(receiptKey);
     setError("");
     setNotice("");
-    setReceivedErrors((current) => ({ ...current, [line.productId!]: "" }));
+    setReceivedErrors((current) => ({ ...current, [receiptKey]: "" }));
     try {
       const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "updateReceived", productId: line.productId, receivedQuantity }),
+        body: JSON.stringify(
+          line.productId
+            ? { action: "updateReceived", productId: line.productId, receivedQuantity }
+            : { action: "receiveUnclaimed", liveSaleProductId: line.liveSaleProductId, receivedQuantity },
+        ),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message ?? "無法更新到貨數量。");
-      setReceivedDrafts((current) => ({ ...current, [line.productId!]: String(receivedQuantity) }));
-      setNotice("已更新累計到貨數量，商品資料庫可售庫存也已同步。" );
+      setReceivedDrafts((current) => ({ ...current, [receiptKey]: String(receivedQuantity) }));
+      setNotice(line.productId ? "已更新累計到貨數量，商品資料庫可售庫存也已同步。" : "已建立正式商品並入庫，商品資料庫可售庫存也已同步。");
       await load();
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "無法更新到貨數量。";
       setError(message);
-      setReceivedErrors((current) => ({ ...current, [line.productId!]: message }));
-      setReceivedDrafts((current) => ({ ...current, [line.productId!]: String(line.receivedQuantity) }));
+      setReceivedErrors((current) => ({ ...current, [receiptKey]: message }));
+      setReceivedDrafts((current) => ({ ...current, [receiptKey]: String(currentReceivedQuantity) }));
     } finally {
       setReceivingProductId("");
     }
@@ -1380,6 +1390,7 @@ function CampaignDetailPage({
       setClaimSearch("");
       setProcurementSearch("");
       setProcurementCategory("");
+      setProcurementOrderFilter("已下單");
       void load();
     }, 0);
     return () => window.clearTimeout(timer);
@@ -1583,7 +1594,8 @@ function CampaignDetailPage({
         .join(" ")
         .toLocaleLowerCase()
         .includes(keyword);
-      return matchesKeyword && (!procurementCategory || line.category === procurementCategory);
+      const matchesOrderStatus = procurementOrderFilter === "全部" || line.orderStatus === procurementOrderFilter;
+      return matchesKeyword && matchesOrderStatus && (!procurementCategory || line.category === procurementCategory);
     })
     .sort((left, right) => {
       const byName = left.productName.localeCompare(right.productName, "zh-TW");
@@ -1942,8 +1954,8 @@ function CampaignDetailPage({
         />
         <Metric
           label="採購商品"
-          value={`${procurement.length} 項`}
-          note="依商品與規格彙整"
+          value={`${procurement.filter((line) => line.orderStatus === "已下單").length} 項`}
+          note="已下單商品"
           compact
         />
       </div>
@@ -1956,7 +1968,7 @@ function CampaignDetailPage({
               </p>
               <h2 className="mt-1 text-lg font-semibold">商品採購與缺貨統整</h2>
               <p className="mt-1 text-xs text-[#8D877E]">
-                可直接填寫累計到貨數量；系統會同步更新商品資料庫的可售庫存與庫存異動紀錄。
+                可切換已下單與未下單商品；實際購入的未下單商品第一次登錄到貨時，才會建立正式商品並同步庫存。
               </p>
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
@@ -1982,6 +1994,18 @@ function CampaignDetailPage({
               </label>
             </div>
           </div>
+          <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="篩選是否已有客人下單">
+            {(["全部", "已下單", "未下單"] as ProcurementOrderFilter[]).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setProcurementOrderFilter(filter)}
+                className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm font-semibold ${procurementOrderFilter === filter ? "border-[#292824] bg-[#292824] text-white" : "border-[#DED9D1] bg-white text-[#5E7665]"}`}
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="divide-y divide-[#F0EDE8] md:hidden">
           {visibleProcurement.length ? visibleProcurement.map((line) => (
@@ -1997,21 +2021,22 @@ function CampaignDetailPage({
                 >
                   <b className="block truncate text-sm">{line.productName}</b>
                   <small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small>
-                  <small className="mt-1 block text-xs text-[#817B72]">需求 {line.demandQuantity} · 可售 {line.availableQuantity ?? "—"} · {line.purchaseQuantity === null ? "待核對" : line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</small>
+                  <small className="mt-1 block text-xs text-[#817B72]">{line.orderStatus} · {line.orderStatus === "已下單" ? `需求 ${line.demandQuantity} · ` : ""}可售 {line.availableQuantity ?? "—"} · {line.purchaseQuantity === null ? "待核對" : line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</small>
                 </button>
-              ) : <span className="min-w-0"><b className="block truncate text-sm">{line.productName}</b><small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small><small className="mt-1 block text-xs text-[#817B72]">需求 {line.demandQuantity} · 可售 {line.availableQuantity ?? "—"} · {line.purchaseQuantity === null ? "待核對" : line.purchaseQuantity ? `需採 ${line.purchaseQuantity}` : "供應足夠"}</small></span>}
-              {line.productId && line.receivedQuantity !== null ? (
+              ) : <span className="min-w-0"><b className="block truncate text-sm">{line.productName}</b><small className="block truncate text-xs text-[#8D877E]">{[line.category, line.specification].filter(Boolean).join(" · ") || "待確認商品"}</small><small className="mt-1 block text-xs text-[#817B72]">{line.orderStatus} · {line.orderStatus === "已下單" ? `需求 ${line.demandQuantity} · ` : ""}{line.productId ? `可售 ${line.availableQuantity ?? "—"}` : "尚未建立正式庫存"}</small></span>}
+              {line.productId || line.liveSaleProductId ? (
                 <label className="text-right text-[11px] font-semibold text-[#6F6960]">到貨累計
                   <input
                     type="number"
                     min="0"
                     inputMode="numeric"
                     aria-label={`${line.productName} 累計到貨數量`}
-                    disabled={campaignArchived || receivingProductId === line.productId}
-                    value={receivedDrafts[line.productId] ?? String(line.receivedQuantity)}
+                    disabled={campaignArchived || receivingProductId === (line.productId ?? line.liveSaleProductId)}
+                    value={receivedDrafts[line.productId ?? line.liveSaleProductId!] ?? String(line.receivedQuantity ?? 0)}
                     onChange={(event) => {
-                      setReceivedDrafts((current) => ({ ...current, [line.productId!]: event.target.value }));
-                      setReceivedErrors((current) => ({ ...current, [line.productId!]: "" }));
+                      const receiptKey = line.productId ?? line.liveSaleProductId!;
+                      setReceivedDrafts((current) => ({ ...current, [receiptKey]: event.target.value }));
+                      setReceivedErrors((current) => ({ ...current, [receiptKey]: "" }));
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -2023,13 +2048,14 @@ function CampaignDetailPage({
                   />
                   <button
                     type="button"
-                    disabled={campaignArchived || receivingProductId === line.productId}
-                    onClick={() => void saveReceivedQuantity(line, receivedDrafts[line.productId!] ?? String(line.receivedQuantity))}
+                    disabled={campaignArchived || receivingProductId === (line.productId ?? line.liveSaleProductId)}
+                    onClick={() => void saveReceivedQuantity(line, receivedDrafts[line.productId ?? line.liveSaleProductId!] ?? String(line.receivedQuantity ?? 0))}
                     className="mt-1 inline-flex h-7 w-full items-center justify-center rounded-md border border-[#D7E2D8] bg-[#F2F7F2] px-2 text-[11px] font-semibold text-[#477154] disabled:opacity-50"
                   >
-                    {receivingProductId === line.productId ? "更新中…" : "更新到貨"}
+                    {receivingProductId === (line.productId ?? line.liveSaleProductId) ? "更新中…" : line.productId ? "更新到貨" : "入庫並更新"}
                   </button>
-                  {receivedErrors[line.productId] && <small className="mt-1 block text-left text-[11px] font-normal leading-4 text-[#A35F37]">{receivedErrors[line.productId]}</small>}
+                  {!line.productId && <small className="mt-1 block text-left text-[10px] font-normal leading-4 text-[#817B72]">首次入庫會建立正式商品</small>}
+                  {receivedErrors[line.productId ?? line.liveSaleProductId!] && <small className="mt-1 block text-left text-[11px] font-normal leading-4 text-[#A35F37]">{receivedErrors[line.productId ?? line.liveSaleProductId!]}</small>}
                 </label>
               ) : <span className="text-right text-xs text-[#8D877E]">請先核對商品</span>}
             </div>
@@ -2070,25 +2096,28 @@ function CampaignDetailPage({
                     <td className="px-5 py-4">
                       <b>{line.productName}</b>
                       <small className="mt-1 block text-xs text-[#8D877E]">
-                        {[line.category, line.specification]
+                        {[line.orderStatus, line.category, line.specification]
                           .filter(Boolean)
-                          .join(" · ") || "待確認商品"}
+                          .join(" · ")}
                       </small>
                     </td>
                     <td className="px-3 py-4 font-semibold">
                       {line.demandQuantity}
                     </td>
                     <td className="px-3 py-4">
-                      {line.productId && line.receivedQuantity !== null ? (
+                      {line.productId || line.liveSaleProductId ? (
                         <input
                           type="number"
                           min="0"
                           inputMode="numeric"
                           aria-label={`${line.productName} 累計到貨數量`}
                           onClick={(event) => event.stopPropagation()}
-                          disabled={campaignArchived || receivingProductId === line.productId}
-                          value={receivedDrafts[line.productId] ?? String(line.receivedQuantity)}
-                          onChange={(event) => setReceivedDrafts((current) => ({ ...current, [line.productId!]: event.target.value }))}
+                          disabled={campaignArchived || receivingProductId === (line.productId ?? line.liveSaleProductId)}
+                          value={receivedDrafts[line.productId ?? line.liveSaleProductId!] ?? String(line.receivedQuantity ?? 0)}
+                          onChange={(event) => {
+                            const receiptKey = line.productId ?? line.liveSaleProductId!;
+                            setReceivedDrafts((current) => ({ ...current, [receiptKey]: event.target.value }));
+                          }}
                           onBlur={(event) => void saveReceivedQuantity(line, event.target.value)}
                           onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
                           className="h-10 w-24 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-right font-semibold disabled:opacity-50"
@@ -2097,7 +2126,7 @@ function CampaignDetailPage({
                     </td>
                     <td className="px-3 py-4">
                       {line.availableQuantity === null
-                        ? "待核對商品"
+                        ? line.orderStatus === "未下單" ? "尚未入庫" : "待核對商品"
                         : line.availableQuantity}
                     </td>
                     <td className="px-3 py-4 font-semibold text-[#A35F37]">

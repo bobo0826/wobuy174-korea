@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSignedIn, withRefreshedSession } from "@/lib/auth";
 import { googleSheetCsvUrls } from "@/lib/google-sheet-import";
+import { promoteLiveSaleProduct } from "@/lib/live-sale-products";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ function buildCampaignDetail(
   products: Array<Record<string, unknown>>,
   allocations: Array<Record<string, unknown>>,
   convertedOrders: Array<Record<string, unknown>>,
+  liveSaleProducts: Array<Record<string, unknown>>,
 ) {
   const itemsByClaim = new Map<string, Array<Record<string, unknown>>>();
   for (const item of items) {
@@ -46,9 +48,11 @@ function buildCampaignDetail(
   const summary = { claimCount: 0, activeAmount: 0, paidAmount: 0, pendingAmount: 0, unresolvedCount: 0 };
   const procurementLines = new Map<string, {
     productId: string | null;
+    liveSaleProductId: string | null;
     productName: string;
     specification: string;
     category: string;
+    orderStatus: "已下單" | "未下單";
     demandQuantity: number;
     paidQuantity: number;
     unresolvedQuantity: number;
@@ -67,12 +71,15 @@ function buildCampaignDetail(
 
     for (const item of claim.items as Array<Record<string, unknown>>) {
       const productId = typeof item.product_id === "string" && item.product_id ? item.product_id : null;
+      const liveSaleProductId = typeof item.live_sale_product_id === "string" && item.live_sale_product_id ? item.live_sale_product_id : null;
       const key = productId ?? `unresolved:${String(item.product_name)}:${String(item.specification)}`;
       const current = procurementLines.get(key) ?? {
         productId,
+        liveSaleProductId,
         productName: String(item.product_name || "待確認商品"),
         specification: String(item.specification || ""),
         category: String(item.category || ""),
+        orderStatus: "已下單" as const,
         demandQuantity: 0,
         paidQuantity: 0,
         unresolvedQuantity: 0,
@@ -94,6 +101,33 @@ function buildCampaignDetail(
     }
   }
 
+  // 檔期商品庫中尚未被喊單的商品也需要在採購表可見：人員若實際買到它，
+  // 可直接由採購表登錄到貨，首次登錄時才會建立正式商品與庫存。
+  const claimedLiveProductIds = new Set(
+    items
+      .map((item) => item.live_sale_product_id)
+      .filter((value): value is string => typeof value === "string" && Boolean(value)),
+  );
+  for (const liveProduct of liveSaleProducts) {
+    const liveSaleProductId = typeof liveProduct.id === "string" ? liveProduct.id : "";
+    if (!liveSaleProductId || claimedLiveProductIds.has(liveSaleProductId)) continue;
+    const productId = typeof liveProduct.promoted_product_id === "string" && liveProduct.promoted_product_id
+      ? liveProduct.promoted_product_id
+      : null;
+    procurementLines.set(`live:${liveSaleProductId}`, {
+      productId,
+      liveSaleProductId,
+      productName: String(liveProduct.name || "未命名檔期商品"),
+      specification: String(liveProduct.specification || ""),
+      category: String(liveProduct.category || ""),
+      orderStatus: "未下單",
+      demandQuantity: 0,
+      paidQuantity: 0,
+      unresolvedQuantity: 0,
+      sourceClaims: [],
+    });
+  }
+
   const procurement = [...procurementLines.values()].map((line) => {
     const product = line.productId ? productById.get(line.productId) : undefined;
     const availableQuantity = product && product.available_stock !== null && product.available_stock !== undefined ? Number(product.available_stock) : null;
@@ -112,12 +146,12 @@ function buildCampaignDetail(
         ? receivedByProductId.get(line.productId) ?? 0
         : null,
       availableQuantity,
-      purchaseQuantity: availableQuantity === null ? null : Math.max(0, line.demandQuantity - availableQuantity),
+      purchaseQuantity: line.orderStatus === "未下單" ? 0 : availableQuantity === null ? null : Math.max(0, line.demandQuantity - availableQuantity),
       availabilityNote: product ? "已同步商品資料庫可售庫存" : "",
-      shortageQuantity: availableQuantity === null ? null : Math.max(0, line.demandQuantity - availableQuantity),
+      shortageQuantity: line.orderStatus === "未下單" ? 0 : availableQuantity === null ? null : Math.max(0, line.demandQuantity - availableQuantity),
       affectedCustomers,
     };
-  }).sort((a, b) => b.demandQuantity - a.demandQuantity || a.productName.localeCompare(b.productName, "zh-Hant"));
+  }).sort((a, b) => a.orderStatus.localeCompare(b.orderStatus, "zh-Hant") || b.demandQuantity - a.demandQuantity || a.productName.localeCompare(b.productName, "zh-Hant"));
 
   return { campaign, claims: hydratedClaims, summary, procurement };
 }
@@ -148,7 +182,15 @@ export async function GET(request: NextRequest, { params }: Context) {
       ? await supabase.from("live_sale_claim_items").select("id, claim_id, product_id, live_sale_product_id, product_name, category, specification, unit_price, quantity, created_at").in("claim_id", claimIds)
       : { data: [], error: null };
     if (itemError) throw itemError;
-    const productIds = [...new Set((items ?? []).map((item) => item.product_id).filter((item): item is string => typeof item === "string" && uuidPattern.test(item)))];
+    const { data: liveSaleProducts, error: liveSaleProductError } = await supabase
+      .from("live_sale_products")
+      .select("id, campaign_id, name, category, specification, promoted_product_id")
+      .eq("campaign_id", id);
+    if (liveSaleProductError) throw liveSaleProductError;
+    const productIds = [...new Set([
+      ...(items ?? []).map((item) => item.product_id),
+      ...(liveSaleProducts ?? []).map((item) => item.promoted_product_id),
+    ].filter((item): item is string => typeof item === "string" && uuidPattern.test(item)))];
     const { data: products, error: productError } = productIds.length
       ? await supabase.from("products").select("id, available_stock").in("id", productIds)
       : { data: [], error: null };
@@ -166,7 +208,7 @@ export async function GET(request: NextRequest, { params }: Context) {
       ? await supabase.from("orders").select("id, order_number, status, payment_method, reconciliation_status, delivery_method, total").in("id", convertedOrderIds)
       : { data: [], error: null };
     if (convertedOrderError) throw convertedOrderError;
-    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], products ?? [], allocations ?? [], convertedOrders ?? [])), auth.context);
+    return withRefreshedSession(NextResponse.json(buildCampaignDetail(campaign, claims ?? [], items ?? [], products ?? [], allocations ?? [], convertedOrders ?? [], liveSaleProducts ?? [])), auth.context);
   } catch (error) {
     return NextResponse.json({ message: errorMessage(error, "無法讀取連線檔期內容。") }, { status: 503 });
   }
@@ -221,6 +263,31 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       if (error) throw error;
       const receipt = Array.isArray(data) ? data[0] : data;
       return withRefreshedSession(NextResponse.json({ receipt }), auth.context);
+    }
+
+    if (action === "receiveUnclaimed") {
+      const liveSaleProductId = text(body.liveSaleProductId);
+      const receivedQuantity = nonNegativeInteger(body.receivedQuantity);
+      if (!uuidPattern.test(liveSaleProductId) || receivedQuantity === undefined || receivedQuantity === null) {
+        return NextResponse.json({ message: "到貨數量資料不正確。" }, { status: 400 });
+      }
+      const campaign = await supabase
+        .from("live_sale_campaigns")
+        .select("id, campaign_code")
+        .eq("id", id)
+        .maybeSingle();
+      if (campaign.error) throw campaign.error;
+      if (!campaign.data) return NextResponse.json({ message: "找不到連線檔期。" }, { status: 404 });
+      const promoted = await promoteLiveSaleProduct(campaign.data, liveSaleProductId);
+      const { data, error } = await supabase.rpc("set_live_sale_received_quantity", {
+        p_campaign_id: id,
+        p_product_id: promoted.product.id,
+        p_received_quantity: receivedQuantity,
+        p_performed_by: auth.context.profile.displayName,
+      });
+      if (error) throw error;
+      const receipt = Array.isArray(data) ? data[0] : data;
+      return withRefreshedSession(NextResponse.json({ receipt, product: promoted.product }), auth.context);
     }
 
     if (action === "updateCampaign") {
