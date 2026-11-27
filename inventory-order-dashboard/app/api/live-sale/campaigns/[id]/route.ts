@@ -14,7 +14,14 @@ const campaignStatuses = ["進行中", "已結單", "已封存"];
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const nonNegativeInteger = (value: unknown) => value === null || value === "" || value === undefined ? null : (Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : undefined);
-const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
+const errorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
+};
 
 function buildCampaignDetail(
   campaign: Record<string, unknown>,
