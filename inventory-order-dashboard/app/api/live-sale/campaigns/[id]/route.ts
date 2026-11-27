@@ -272,6 +272,35 @@ export async function PATCH(request: NextRequest, { params }: Context) {
       return withRefreshedSession(NextResponse.json({ receipt }), auth.context);
     }
 
+    if (action === "updateReceivedBatch") {
+      const rawEntries = Array.isArray(body.entries) ? body.entries : [];
+      if (!rawEntries.length || rawEntries.length > 100) {
+        return NextResponse.json({ message: "請選擇 1 至 100 項商品批量更新。" }, { status: 400 });
+      }
+      const seenProductIds = new Set<string>();
+      const entries: Array<{ productId: string; receivedQuantity: number }> = [];
+      for (const rawEntry of rawEntries) {
+        if (!rawEntry || typeof rawEntry !== "object") {
+          return NextResponse.json({ message: "批量到貨資料不正確。" }, { status: 400 });
+        }
+        const entry = rawEntry as Record<string, unknown>;
+        const productId = text(entry.productId);
+        const receivedQuantity = nonNegativeInteger(entry.receivedQuantity);
+        if (!uuidPattern.test(productId) || receivedQuantity === undefined || receivedQuantity === null || seenProductIds.has(productId)) {
+          return NextResponse.json({ message: "批量到貨資料不正確，請確認商品與數量。" }, { status: 400 });
+        }
+        seenProductIds.add(productId);
+        entries.push({ productId, receivedQuantity });
+      }
+      const { data, error } = await supabase.rpc("set_live_sale_received_quantities", {
+        p_campaign_id: id,
+        p_entries: entries,
+        p_performed_by: auth.context.profile.displayName,
+      });
+      if (error) throw error;
+      return withRefreshedSession(NextResponse.json({ receipts: data ?? [] }), auth.context);
+    }
+
     if (action === "receiveUnclaimed") {
       const liveSaleProductId = text(body.liveSaleProductId);
       const receivedQuantity = nonNegativeInteger(body.receivedQuantity);

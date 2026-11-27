@@ -1270,6 +1270,9 @@ function CampaignDetailPage({
   const [receivedDrafts, setReceivedDrafts] = useState<Record<string, string>>({});
   const [receivedErrors, setReceivedErrors] = useState<Record<string, string>>({});
   const [receivingProductId, setReceivingProductId] = useState("");
+  const [batchReceiptMode, setBatchReceiptMode] = useState(false);
+  const [selectedReceiptProductIds, setSelectedReceiptProductIds] = useState<string[]>([]);
+  const [savingReceiptBatch, setSavingReceiptBatch] = useState(false);
   const catalogById = useMemo(
     () => new Map(catalog.map((item) => [String(item.id), item])),
     [catalog],
@@ -1410,6 +1413,67 @@ function CampaignDetailPage({
       setReceivingProductId("");
     }
   };
+  const toggleReceiptProduct = (productId: string) => {
+    setSelectedReceiptProductIds((current) => current.includes(productId)
+      ? current.filter((id) => id !== productId)
+      : [...current, productId]);
+  };
+  const saveReceivedBatch = async () => {
+    const lines = procurement.filter((line) => line.productId && selectedReceiptProductIds.includes(line.productId));
+    if (!lines.length) {
+      setError("請先勾選要更新到貨數量的已下單商品。");
+      return;
+    }
+    const entries: Array<{ productId: string; receivedQuantity: number }> = [];
+    const nextErrors: Record<string, string> = {};
+    for (const line of lines) {
+      const productId = line.productId!;
+      const enteredValue = (receivedDrafts[productId] ?? String(line.receivedQuantity ?? 0)).trim();
+      const receivedQuantity = Number(enteredValue);
+      if (!enteredValue || !Number.isInteger(receivedQuantity) || receivedQuantity < 0) {
+        nextErrors[productId] = "到貨數量請填寫零或正整數。";
+        continue;
+      }
+      entries.push({ productId, receivedQuantity });
+    }
+    if (Object.keys(nextErrors).length) {
+      setReceivedErrors((current) => ({ ...current, ...nextErrors }));
+      setError("請先修正標示的到貨數量。");
+      return;
+    }
+    const changedEntries = entries.filter((entry) => {
+      const line = lines.find((item) => item.productId === entry.productId);
+      return entry.receivedQuantity !== (line?.receivedQuantity ?? 0);
+    });
+    if (!changedEntries.length) {
+      setNotice("已選商品的到貨累計沒有變更。");
+      return;
+    }
+    setSavingReceiptBatch(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/live-sale/campaigns/${campaignId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updateReceivedBatch", entries: changedEntries }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法批量更新到貨數量。");
+      setReceivedDrafts((current) => ({
+        ...current,
+        ...Object.fromEntries(changedEntries.map((entry) => [entry.productId, String(entry.receivedQuantity)])),
+      }));
+      setSelectedReceiptProductIds([]);
+      setBatchReceiptMode(false);
+      setNotice(`已批量更新 ${changedEntries.length} 項商品的到貨累計，庫存已同步。`);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法批量更新到貨數量。");
+    } finally {
+      setSavingReceiptBatch(false);
+    }
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1417,6 +1481,8 @@ function CampaignDetailPage({
       setCustomersLoaded(false);
       setReceivedDrafts({});
       setReceivedErrors({});
+      setSelectedReceiptProductIds([]);
+      setBatchReceiptMode(false);
       setClaimSearch("");
       setProcurementSearch("");
       setProcurementCategory("");
@@ -2035,14 +2101,30 @@ function CampaignDetailPage({
                 {filter}
               </button>
             ))}
+            <span className="hidden w-px self-stretch bg-[#E8E3DC] sm:block" aria-hidden="true" />
+            <button
+              type="button"
+              disabled={campaignArchived || savingReceiptBatch}
+              onClick={() => {
+                setBatchReceiptMode((current) => !current);
+                setSelectedReceiptProductIds([]);
+                setError("");
+              }}
+              className={batchReceiptMode ? button : secondary}
+            >
+              {batchReceiptMode ? "取消批量調整" : "批量調整到貨"}
+            </button>
+            {batchReceiptMode && <button type="button" disabled={!selectedReceiptProductIds.length || savingReceiptBatch} onClick={() => void saveReceivedBatch()} className={button}>{savingReceiptBatch ? "儲存中…" : `儲存已選 ${selectedReceiptProductIds.length} 項`}</button>}
           </div>
+          {batchReceiptMode && <p className="mt-3 text-xs leading-5 text-[#6F6960]">勾選已下單商品，填妥各自的到貨累計後，按「儲存已選」。未下單商品首次入庫仍需逐項處理。</p>}
         </div>
         <div className="divide-y divide-[#F0EDE8] md:hidden">
           {visibleProcurement.length ? visibleProcurement.map((line) => (
             <div
               key={line.productId ?? `${line.productName}-${line.specification}`}
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_92px] items-start gap-3 px-3 py-3"
+              className={`grid min-w-0 items-start gap-3 px-3 py-3 ${batchReceiptMode && line.productId ? "grid-cols-[24px_minmax(0,1fr)_92px]" : "grid-cols-[minmax(0,1fr)_92px]"}`}
             >
+              {batchReceiptMode && line.productId && <label className="mt-1 flex h-6 items-center justify-center"><input type="checkbox" checked={selectedReceiptProductIds.includes(line.productId)} onChange={() => toggleReceiptProduct(line.productId!)} aria-label={`選取 ${line.productName}`} className="h-4 w-4 rounded border-[#CFC8BF] text-[#477154] focus:ring-[#B7CDBB]" /></label>}
               {line.productId ? (
                 <button
                   type="button"
@@ -2061,7 +2143,7 @@ function CampaignDetailPage({
                     min="0"
                     inputMode="numeric"
                     aria-label={`${line.productName} 累計到貨數量`}
-                    disabled={campaignArchived || receivingProductId === (line.productId ?? line.liveSaleProductId)}
+                    disabled={campaignArchived || savingReceiptBatch || receivingProductId === (line.productId ?? line.liveSaleProductId)}
                     value={receivedDrafts[line.productId ?? line.liveSaleProductId!] ?? String(line.receivedQuantity ?? 0)}
                     onChange={(event) => {
                       const receiptKey = line.productId ?? line.liveSaleProductId!;
@@ -2071,10 +2153,11 @@ function CampaignDetailPage({
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
-                        void saveReceivedQuantity(line, event.currentTarget.value);
+                        if (!batchReceiptMode || !line.productId) void saveReceivedQuantity(line, event.currentTarget.value);
                       }
                     }}
                     onBlur={(event) => {
+                      if (batchReceiptMode && line.productId) return;
                       // 點擊同一欄位中的更新按鈕時，改由按鈕讀取最新輸入值送出，避免重複請求。
                       const nextTarget = event.relatedTarget as Node | null;
                       if (nextTarget && event.currentTarget.parentElement?.contains(nextTarget)) return;
@@ -2082,7 +2165,7 @@ function CampaignDetailPage({
                     }}
                     className="mt-1 h-10 w-full rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-right text-sm font-semibold text-[#403C36] disabled:opacity-50"
                   />
-                  <button
+                  {!batchReceiptMode && <button
                     type="button"
                     disabled={campaignArchived || receivingProductId === (line.productId ?? line.liveSaleProductId)}
                     onClick={(event) => {
@@ -2092,8 +2175,8 @@ function CampaignDetailPage({
                     className="mt-1 inline-flex h-7 w-full items-center justify-center rounded-md border border-[#D7E2D8] bg-[#F2F7F2] px-2 text-[11px] font-semibold text-[#477154] disabled:opacity-50"
                   >
                     {receivingProductId === (line.productId ?? line.liveSaleProductId) ? "更新中…" : line.productId ? "更新到貨" : "入庫並更新"}
-                  </button>
-                  <small className="mt-1 block text-left text-[10px] font-normal leading-4 text-[#817B72]">輸入累計數量後離開欄位會自動更新庫存</small>
+                  </button>}
+                  <small className="mt-1 block text-left text-[10px] font-normal leading-4 text-[#817B72]">{batchReceiptMode && line.productId ? "勾選後按上方「儲存已選」批量更新。" : "輸入累計數量後離開欄位會自動更新庫存"}</small>
                   {!line.productId && <small className="mt-1 block text-left text-[10px] font-normal leading-4 text-[#817B72]">首次入庫會建立正式商品</small>}
                   {receivedErrors[line.productId ?? line.liveSaleProductId!] && <small className="mt-1 block text-left text-[11px] font-normal leading-4 text-[#A35F37]">{receivedErrors[line.productId ?? line.liveSaleProductId!]}</small>}
                 </label>
@@ -2105,6 +2188,7 @@ function CampaignDetailPage({
           <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="bg-[#FBFAF8] text-[11px] text-[#928C83]">
               <tr>
+                {batchReceiptMode && <th className="w-12 px-2 py-3 text-center">選取</th>}
                 <th className="px-5 py-3">商品／規格</th>
                 <th className="px-3 py-3">喊單需求</th>
                 <th className="px-3 py-3">到貨累計</th>
@@ -2133,6 +2217,7 @@ function CampaignDetailPage({
                     tabIndex={line.productId ? 0 : undefined}
                     className={line.productId ? "cursor-pointer hover:bg-[#FCFBF9] focus:outline-none focus-visible:bg-[#F3F7F3]" : undefined}
                   >
+                    {batchReceiptMode && <td className="px-2 py-4 text-center" onClick={(event) => event.stopPropagation()}>{line.productId ? <input type="checkbox" checked={selectedReceiptProductIds.includes(line.productId)} onChange={() => toggleReceiptProduct(line.productId!)} aria-label={`選取 ${line.productName}`} className="h-4 w-4 rounded border-[#CFC8BF] text-[#477154] focus:ring-[#B7CDBB]" /> : <span className="text-xs text-[#A09A90]">—</span>}</td>}
                     <td className="px-5 py-4">
                       <b>{line.productName}</b>
                       <small className="mt-1 block text-xs text-[#8D877E]">
@@ -2152,14 +2237,14 @@ function CampaignDetailPage({
                           inputMode="numeric"
                           aria-label={`${line.productName} 累計到貨數量`}
                           onClick={(event) => event.stopPropagation()}
-                          disabled={campaignArchived || receivingProductId === (line.productId ?? line.liveSaleProductId)}
+                          disabled={campaignArchived || savingReceiptBatch || receivingProductId === (line.productId ?? line.liveSaleProductId)}
                           value={receivedDrafts[line.productId ?? line.liveSaleProductId!] ?? String(line.receivedQuantity ?? 0)}
                           onChange={(event) => {
                             const receiptKey = line.productId ?? line.liveSaleProductId!;
                             setReceivedDrafts((current) => ({ ...current, [receiptKey]: event.target.value }));
                           }}
-                          onBlur={(event) => void saveReceivedQuantity(line, event.target.value)}
-                          onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                          onBlur={(event) => { if (!batchReceiptMode || !line.productId) void saveReceivedQuantity(line, event.target.value); }}
+                          onKeyDown={(event) => { if (event.key === "Enter" && (!batchReceiptMode || !line.productId)) event.currentTarget.blur(); }}
                           className="h-10 w-24 rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-right font-semibold disabled:opacity-50"
                         />
                       ) : <span className="text-[#8D877E]">請先核對</span>}
@@ -2207,7 +2292,7 @@ function CampaignDetailPage({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="p-10 text-center text-[#8D877E]">
+                  <td colSpan={batchReceiptMode ? 9 : 8} className="p-10 text-center text-[#8D877E]">
                     {procurement.length ? "沒有符合搜尋條件的商品。" : "建立喊單後，這裡會依商品規格自動統整採購數量。"}
                   </td>
                 </tr>
