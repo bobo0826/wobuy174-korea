@@ -21,10 +21,55 @@ function doPost(event) {
       return respond_({ ok: true });
     }
 
+    if (payload.entity === "liveSaleProduct") {
+      upsertLiveSaleProduct_(payload);
+      return respond_({ ok: true });
+    }
+
     return respond_({ ok: false, message: "尚未支援的同步資料類型。" });
   } catch (error) {
     return respond_({ ok: false, message: error && error.message ? error.message : "同步失敗。" });
   }
+}
+
+function upsertLiveSaleProduct_(payload) {
+  const spreadsheetId = String(payload.spreadsheetId || "").trim();
+  if (!spreadsheetId) throw new Error("缺少檔期試算表 ID。");
+
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  const sheetName = String(payload.sheetName || "系統新增商品");
+  let sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(sheetName);
+    sheet.getRange(1, 1, 1, 13).setValues([["系統商品 ID", "檔期編號", "商品名稱", "國家", "商品分類", "商品子分類", "商品規格", "當地價格", "台幣成本", "一般售價", "備註", "建立時間", "更新時間"]]);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, 13).setFontWeight("bold").setFontStyle("italic").setBackground("#f3f3f3");
+  }
+
+  const row = findRowBySourceIdFromRow_(sheet, payload.sourceId, 2);
+  // 修改從試算表匯入的商品時，不會把它們複製進這個系統新增分頁。
+  if (!row && payload.action === "update") return;
+
+  const product = payload.record || {};
+  const values = [[
+    payload.sourceId || "",
+    payload.campaignCode || "",
+    product.name || "",
+    product.country || "",
+    product.category || "",
+    product.subcategory || "",
+    product.specification || "",
+    Number(product.local_price || 0),
+    Number(product.cost || 0),
+    Number(product.retail_price || 0),
+    product.note || "",
+    product.created_at ? new Date(product.created_at) : new Date(),
+    new Date(),
+  ]];
+  const targetRow = row || Math.max(sheet.getLastRow() + 1, 2);
+  sheet.getRange(targetRow, 1, 1, values[0].length).setValues(values);
+  sheet.getRange(targetRow, 8, 1, 3).setNumberFormat("#,##0");
+  sheet.getRange(targetRow, 12, 1, 2).setNumberFormat("yyyy/mm/dd hh:mm");
 }
 
 function upsertProduct_(payload) {
@@ -57,11 +102,15 @@ function upsertProduct_(payload) {
 }
 
 function findRowBySourceId_(sheet, sourceId) {
+  return findRowBySourceIdFromRow_(sheet, sourceId, 4);
+}
+
+function findRowBySourceIdFromRow_(sheet, sourceId, firstDataRow) {
   const lastRow = sheet.getLastRow();
-  if (lastRow < 4) return null;
-  const ids = sheet.getRange(4, 1, lastRow - 3, 1).getValues();
+  if (lastRow < firstDataRow) return null;
+  const ids = sheet.getRange(firstDataRow, 1, lastRow - firstDataRow + 1, 1).getValues();
   for (let index = 0; index < ids.length; index += 1) {
-    if (ids[index][0] === sourceId) return index + 4;
+    if (ids[index][0] === sourceId) return index + firstDataRow;
   }
   return null;
 }

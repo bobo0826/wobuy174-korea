@@ -78,14 +78,20 @@ export function parseCsv(text: string) {
 }
 
 export function googleSheetCsvUrl(sourceUrl: string) {
+  const spreadsheetId = googleSheetSpreadsheetId(sourceUrl);
+  const url = new URL(sourceUrl);
+  const gid = url.searchParams.get("gid") || url.hash.match(/gid=(\d+)/)?.[1] || "0";
+  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+}
+
+export function googleSheetSpreadsheetId(sourceUrl: string) {
   const url = new URL(sourceUrl);
   if (url.hostname !== "docs.google.com") {
     throw new Error("請使用 Google 試算表連結。 ");
   }
   const match = url.pathname.match(/^\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
   if (!match) throw new Error("找不到 Google 試算表識別碼。 ");
-  const gid = url.searchParams.get("gid") || url.hash.match(/gid=(\d+)/)?.[1] || "0";
-  return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+  return match[1];
 }
 
 // 同一檔期可貼上多個工作表網址（每行一個）。每個網址會依自己的 gid 匯出對應分頁。

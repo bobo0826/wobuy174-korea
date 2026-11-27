@@ -1107,6 +1107,13 @@ function LiveSaleProductPanel({
       if (!response.ok) throw new Error(result.message ?? "無法儲存檔期商品。");
       setForm(blankLiveProduct());
       setOpen(false);
+      if (result.sync?.status === "synced") {
+        setSyncNotice("已同步至 Google 試算表的「系統新增商品」工作表。");
+      } else if (result.sync?.status === "failed") {
+        setSyncNotice(`商品已儲存，但尚未同步至 Google 試算表：${result.sync.message}`);
+      } else {
+        setSyncNotice("商品已儲存；尚未設定 Google 試算表自動同步。");
+      }
       await onChanged();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "無法儲存檔期商品。");
@@ -1142,6 +1149,21 @@ function LiveSaleProductPanel({
       setSyncing(false);
     }
   };
+  const syncManualProducts = async () => {
+    setSyncing(true);
+    setError("");
+    setSyncNotice("");
+    try {
+      const response = await fetch(`/api/live-sale/campaigns/${campaignId}/products/sync-manual`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? "無法回寫系統新增的檔期商品。 ");
+      setSyncNotice(`已回寫 ${result.syncedCount ?? 0} 項系統新增商品至「系統新增商品」工作表；略過 ${result.skippedSpreadsheetCount ?? 0} 項原試算表商品。`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "無法回寫系統新增的檔期商品。 ");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <section className="mb-5 overflow-hidden rounded-2xl border border-[#E9E5DF] bg-white">
@@ -1151,7 +1173,7 @@ function LiveSaleProductPanel({
           <h2 className="mt-1 text-lg font-semibold">檔期商品庫</h2>
           <p className="mt-1 text-xs text-[#8D877E]">只暫存於此檔期；客人喊單後才會建立正式商品。封存時會清除未被喊單的品項。</p>
         </div>
-        {!archived && <div className="flex flex-wrap gap-2"><button type="button" disabled={!sourceSpreadsheetUrl || syncing} onClick={() => void sync()} className={secondary}>{syncing ? "同步中…" : "同步試算表"}</button><button type="button" onClick={() => { setForm(blankLiveProduct()); setError(""); setOpen((value) => !value); }} className={secondary}>{open ? "收合表單" : "新增檔期商品"}</button></div>}
+        {!archived && <div className="flex flex-wrap gap-2"><button type="button" disabled={!sourceSpreadsheetUrl || syncing} onClick={() => void sync()} className={secondary}>{syncing ? "同步中…" : "同步試算表"}</button><button type="button" disabled={!sourceSpreadsheetUrl || syncing} onClick={() => void syncManualProducts()} className={secondary}>{syncing ? "同步中…" : "回寫手動商品"}</button><button type="button" onClick={() => { setForm(blankLiveProduct()); setError(""); setOpen((value) => !value); }} className={secondary}>{open ? "收合表單" : "新增檔期商品"}</button></div>}
       </div>
       {error && <p className="mx-5 mt-5 rounded-xl border border-[#F1D4C4] bg-[#FFF7F0] p-3 text-sm text-[#A35F37]">{error}</p>}
       {syncNotice && <p className="mx-5 mt-5 rounded-xl border border-[#D9E5DB] bg-[#EEF5EF] p-3 text-sm text-[#477154]">{syncNotice}</p>}
