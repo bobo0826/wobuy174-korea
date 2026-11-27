@@ -1340,7 +1340,15 @@ function CampaignDetailPage({
     const receiptKey = line.productId ?? line.liveSaleProductId;
     if (!receiptKey) return;
     const currentReceivedQuantity = line.receivedQuantity ?? 0;
-    const receivedQuantity = Number(value);
+    const enteredValue = value.trim();
+    if (!enteredValue) {
+      const message = "請輸入到貨累計數量。";
+      setError(message);
+      setReceivedErrors((current) => ({ ...current, [receiptKey]: message }));
+      setReceivedDrafts((current) => ({ ...current, [receiptKey]: String(currentReceivedQuantity) }));
+      return;
+    }
+    const receivedQuantity = Number(enteredValue);
     if (!Number.isInteger(receivedQuantity) || receivedQuantity < 0) {
       const message = "到貨數量請填寫零或正整數。";
       setError(message);
@@ -2044,16 +2052,26 @@ function CampaignDetailPage({
                         void saveReceivedQuantity(line, event.currentTarget.value);
                       }
                     }}
+                    onBlur={(event) => {
+                      // 點擊同一欄位中的更新按鈕時，改由按鈕讀取最新輸入值送出，避免重複請求。
+                      const nextTarget = event.relatedTarget as Node | null;
+                      if (nextTarget && event.currentTarget.parentElement?.contains(nextTarget)) return;
+                      void saveReceivedQuantity(line, event.currentTarget.value);
+                    }}
                     className="mt-1 h-10 w-full rounded-lg border border-[#E6E1DB] bg-[#FCFBF9] px-2 text-right text-sm font-semibold text-[#403C36] disabled:opacity-50"
                   />
                   <button
                     type="button"
                     disabled={campaignArchived || receivingProductId === (line.productId ?? line.liveSaleProductId)}
-                    onClick={() => void saveReceivedQuantity(line, receivedDrafts[line.productId ?? line.liveSaleProductId!] ?? String(line.receivedQuantity ?? 0))}
+                    onClick={(event) => {
+                      const input = event.currentTarget.parentElement?.querySelector<HTMLInputElement>('input[type="number"]');
+                      void saveReceivedQuantity(line, input?.value ?? String(line.receivedQuantity ?? 0));
+                    }}
                     className="mt-1 inline-flex h-7 w-full items-center justify-center rounded-md border border-[#D7E2D8] bg-[#F2F7F2] px-2 text-[11px] font-semibold text-[#477154] disabled:opacity-50"
                   >
                     {receivingProductId === (line.productId ?? line.liveSaleProductId) ? "更新中…" : line.productId ? "更新到貨" : "入庫並更新"}
                   </button>
+                  <small className="mt-1 block text-left text-[10px] font-normal leading-4 text-[#817B72]">輸入累計數量後離開欄位會自動更新庫存</small>
                   {!line.productId && <small className="mt-1 block text-left text-[10px] font-normal leading-4 text-[#817B72]">首次入庫會建立正式商品</small>}
                   {receivedErrors[line.productId ?? line.liveSaleProductId!] && <small className="mt-1 block text-left text-[11px] font-normal leading-4 text-[#A35F37]">{receivedErrors[line.productId ?? line.liveSaleProductId!]}</small>}
                 </label>
