@@ -105,13 +105,6 @@ async function rememberCustomerAlias({ sourceInboxId, customerId, communityName,
 
 type ResolvedItem = { product_id: string | null; live_sale_product_id: string | null; product_name: string; category: string; specification: string; unit_price: number; quantity: number };
 
-async function lineUserIdForInbox(supabase: ReturnType<typeof getSupabaseAdmin>, inboxId: string) {
-  if (!inboxId) return "";
-  const { data, error } = await supabase.from("live_sale_inbox").select("line_user_id").eq("id", inboxId).maybeSingle();
-  if (error) throw error;
-  return typeof data?.line_user_id === "string" ? data.line_user_id.trim() : "";
-}
-
 function combineItems(items: ResolvedItem[]) {
   const combined = new Map<string, ResolvedItem>();
   for (const item of items) {
@@ -122,10 +115,8 @@ function combineItems(items: ResolvedItem[]) {
   return [...combined.values()];
 }
 
-async function appendToOpenClaim({ campaignId, customer, items, note, sourceInboxId }: { campaignId: string; customer: { id: string; name: string; line_name: string }; items: ResolvedItem[]; note: string; sourceInboxId: string }) {
+async function appendToOpenClaim({ campaignId, customer, items, note, sourceInboxId }: { campaignId: string; customer: { id: string; name: string; line_name: string }; items: ResolvedItem[]; note: string; sourceInboxId: string | null }) {
   const supabase = getSupabaseAdmin();
-  const sourceLineUserId = await lineUserIdForInbox(supabase, sourceInboxId);
-  if (!sourceLineUserId) return null;
   const { data: candidates, error: targetError } = await supabase
     .from("live_sale_claims")
     .select("id, claim_total, note, source_inbox_id")
@@ -134,13 +125,9 @@ async function appendToOpenClaim({ campaignId, customer, items, note, sourceInbo
     .in("status", ["待核對", "待結帳"])
     .order("created_at", { ascending: true })
   if (targetError) throw targetError;
-  const targetInboxIds = [...new Set((candidates ?? []).map((candidate) => candidate.source_inbox_id).filter(Boolean))] as string[];
-  const { data: targetInboxes, error: inboxError } = targetInboxIds.length
-    ? await supabase.from("live_sale_inbox").select("id, line_user_id").in("id", targetInboxIds)
-    : { data: [], error: null };
-  if (inboxError) throw inboxError;
-  const userIdByInbox = new Map((targetInboxes ?? []).map((inbox) => [inbox.id, inbox.line_user_id]));
-  const target = (candidates ?? []).find((candidate) => userIdByInbox.get(candidate.source_inbox_id ?? "") === sourceLineUserId);
+  // 客戶資料是由人員選取／配對後才會進到這裡；同檔期、同 customer_id
+  // 的未結單應視為同一位客戶，即使較早的喊單是手動建立而沒有 LINE 來源。
+  const target = candidates?.[0];
   if (!target) return null;
   const { data: existingItems, error: existingItemsError } = await supabase
     .from("live_sale_claim_items")
@@ -150,7 +137,12 @@ async function appendToOpenClaim({ campaignId, customer, items, note, sourceInbo
   const mergedItems = combineItems([...(existingItems ?? []), ...items] as ResolvedItem[]);
   const total = mergedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
   const nextNote = note && !target.note.includes(note) ? [target.note, note].filter(Boolean).join("\n") : target.note;
-  const { error: headerError } = await supabase.from("live_sale_claims").update({ claim_total: total, note: nextNote, updated_at: new Date().toISOString() }).eq("id", target.id);
+  const { error: headerError } = await supabase.from("live_sale_claims").update({
+    claim_total: total,
+    note: nextNote,
+    source_inbox_id: target.source_inbox_id ?? sourceInboxId ?? null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", target.id);
   if (headerError) throw headerError;
   const { error: deleteError } = await supabase.from("live_sale_claim_items").delete().eq("claim_id", target.id);
   if (deleteError) throw deleteError;
@@ -200,9 +192,9 @@ export async function POST(request: NextRequest, { params }: Context) {
     const status = resolved ? "待結帳" : "待核對";
     let createdId = "";
 
-    // 同檔期、同客戶且尚未結帳的喊單會自動合併。未辨識客戶或商品的訊息
+    // 同檔期、同客戶資料且尚未結帳的喊單會自動合併。未辨識客戶或商品的訊息
     // 仍保留為待核對，待人員完成配對後才會在修改流程中合併。
-    if (customer && resolved && sourceInboxId) createdId = await appendToOpenClaim({ campaignId, customer, items, note, sourceInboxId }) ?? "";
+    if (customer && resolved) createdId = await appendToOpenClaim({ campaignId, customer, items, note, sourceInboxId: sourceInboxId || null }) ?? "";
 
     for (let attempt = 0; !createdId && attempt < 3; attempt += 1) {
       const claimNumber = await nextClaimNumber(campaignId, campaign.campaign_code);
